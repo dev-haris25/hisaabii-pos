@@ -28,6 +28,7 @@
     "kpiPaymentsToday": "Staff payments today",
     "chartSalesTrend": "Sales — last 7 days",
     "chartSalesTrendSubtitle": "Daily completed sales totals",
+    "chartSalesSeries": "Sales",
     "chartCategoryMix": "Category mix",
     "chartCategoryMixSubtitle": "Today's revenue by category",
     "emptyChart": "No chart data for this range yet.",

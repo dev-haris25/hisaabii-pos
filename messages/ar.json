@@ -28,6 +28,7 @@
     "kpiPaymentsToday": "مدفوعات الموظفين اليوم",
     "chartSalesTrend": "المبيعات لآخر 7 أيام",
     "chartSalesTrendSubtitle": "إجمالي المبيعات اليومية المكتملة",
+    "chartSalesSeries": "المبيعات",
     "chartCategoryMix": "مزيج التصنيفات",
     "chartCategoryMixSubtitle": "إيراد اليوم حسب التصنيف",
     "emptyChart": "لا توجد بيانات رسم لهذا النطاق.",

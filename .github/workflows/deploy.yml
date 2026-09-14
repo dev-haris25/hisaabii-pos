@@ -113,6 +113,11 @@ jobs:
 
           # Apply DB schema before serving traffic
           bunx prisma generate || { echo "prisma generate failed"; exit 1; }
+
+          # One-off destructive reset (remove this block after it runs once)
+          HISABI_CONFIRM_DB_RESET=yes PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes \
+            bun run db:reset || { echo "db:reset failed"; exit 1; }
+
           bunx prisma migrate deploy || { echo "prisma migrate deploy failed"; exit 1; }
 
           # Clean stale build output before production build

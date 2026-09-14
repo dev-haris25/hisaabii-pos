@@ -505,10 +505,26 @@ export function DashboardClient({ hasBusinessProfile = true }) {
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART.outline} opacity={0.5} />
                     <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke={CHART.outline} />
                     <YAxis tick={{ fontSize: 12 }} stroke={CHART.outline} width={48} />
-                    <Tooltip formatter={(v) => [money(v), t('kpiSalesToday')]} />
+                    <Tooltip
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null
+                        return (
+                          <div className="rounded-lg border border-hisabi-outline-variant/30 bg-hisabi-surface-container-lowest px-hisabi-sm py-hisabi-xs shadow-sm">
+                            <p className="type-label-sm text-hisabi-on-surface-variant">
+                              {label}
+                            </p>
+                            <p className="type-label-md text-hisabi-on-surface font-semibold">
+                              {t('chartSalesSeries')}:{' '}
+                              <span dir="ltr">{money(payload[0]?.value)}</span>
+                            </p>
+                          </div>
+                        )
+                      }}
+                    />
                     <Area
                       type="monotone"
                       dataKey="total"
+                      name={t('chartSalesSeries')}
                       stroke={CHART.primary}
                       fill="url(#salesFill)"
                       strokeWidth={2}
