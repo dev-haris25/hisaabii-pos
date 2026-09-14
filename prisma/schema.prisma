@@ -1,0 +1,1019 @@
+// Hisabi POS — Prisma schema
+//
+// Multi-restaurant (Hisabi-style): User identity + BusinessMembership join +
+// User.activeBusinessProfileId. Roles are predefined per restaurant and assigned
+// via EmployeeRole (many-to-many on BusinessMembership). Restaurant ownership is
+// BusinessProfile.ownerUserId (not a role). HR Employee records are scoped per
+// restaurant and optionally linked to a BusinessMembership for login.
+//
+// Field names on Invoice / InvoiceLine / ZatcaDevice / BusinessProfile address fields
+// deliberately mirror Hisabi's schema (see Hisabi/prisma/schema.prisma) so the copied
+// src/lib/zatca/* mapping/signing code needs minimal adaptation.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Tenant root
+// ---------------------------------------------------------------------------
+
+/// Restaurant/business tenant. Users may belong to many via BusinessMembership.
+model BusinessProfile {
+  id             String  @id @default(cuid())
+  /// Canonical restaurant owner (not an RBAC role). Exactly one per restaurant.
+  ownerUserId    String
+  owner          User    @relation("BusinessProfileOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  /// Arabic company name — used as seller name on ZATCA invoices and receipts.
+  companyNameAr  String
+  /// Optional English name for bilingual receipts/UI.
+  companyNameEn  String?
+  crNumber       String
+  vatNumber      String
+  /// Composed Arabic address line — seller address on invoices.
+  addressAr      String
+  /// Optional composed English address line.
+  addressEn      String?
+  streetAr       String  @default("")
+  streetEn       String  @default("")
+  districtAr     String  @default("")
+  districtEn     String  @default("")
+  cityAr         String  @default("")
+  cityEn         String  @default("")
+  buildingNumber String  @default("")
+  secondaryNumber String @default("")
+  postalCode     String  @default("")
+  /// Optional short address (national short address code) for display/receipts.
+  shortAddress   String  @default("")
+  email          String?
+  phone          String?
+  /// Standard KSA VAT rate applied when a menu item's vatPreset is `standard`, e.g. "15".
+  defaultVatPercent String @default("15")
+  logoMimeType      String?
+  /// Local/object storage path for the restaurant logo (receipt header, UI branding).
+  logoStoragePath   String?
+
+  /// First receipt printer (kept in sync with receiptPrinters[0] for older clients).
+  /// Extra printers live in ReceiptPrinter. The on-site print bridge reads these
+  /// via the API, not from a global .env (each restaurant has its own LAN).
+  printerIp   String?
+  printerPort Int     @default(9100)
+  receiptPrinters ReceiptPrinter[]
+
+  /// System-generated unique slug (e.g. r-a7k2m9xq) — kept for display/legacy.
+  slug String @unique
+
+  /// Owner deferred ZATCA onboarding from the UI.
+  zatcaOnboardingSkipped Boolean   @default(false)
+  /// sandbox | simulation | production — same vocabulary as Hisabi's ZatcaDevice.environment.
+  zatcaEnvironment       String    @default("sandbox")
+  onboardingCompletedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activeForUsers    User[]                 @relation("UserActiveBusinessProfile")
+  memberships       BusinessMembership[]
+  roles             Role[]
+  invitations       UserInvitation[]
+  menuCategories    MenuCategory[]
+  menuItems         MenuItem[]
+  invoices          Invoice[]
+  invoiceCounter    InvoiceCounter?
+  creditNotes       CreditNote[]
+  debitNotes        DebitNote[]
+  creditNoteCounter CreditNoteCounter?
+  debitNoteCounter  DebitNoteCounter?
+  zatcaDevice       ZatcaDevice?
+  notifications     Notification[]
+
+  idTypes               IdType[]
+  payslipCategories     PayslipCategory[]
+  employees             Employee[]
+  employeePromotions    EmployeePromotion[]
+  salarySlipCounter     SalarySlipCounter?
+  salarySlips           SalarySlip[]
+  employeePayments      EmployeePayment[]
+  businessSettings      BusinessSettings?
+
+  @@index([ownerUserId])
+  @@map("business_profiles")
+}
+
+/// Extra LAN thermal printers for a restaurant (same receipt printed to each).
+model ReceiptPrinter {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  ip                String
+  port              Int             @default(9100)
+  sortOrder         Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([businessProfileId])
+  @@map("receipt_printers")
+}
+
+/// Per-restaurant operational settings (numbering, formats).
+model BusinessSettings {
+  businessProfileId String          @id
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  invoicePrefix    String @default("INV-")
+  creditNotePrefix String @default("CN-")
+  debitNotePrefix  String @default("DN-")
+  salarySlipPrefix String @default("SS-")
+  numberPadding    Int    @default(4)
+
+  dateFormat   String @default("dd/MM/yyyy")
+  numberFormat String @default("1,234.56")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("business_settings")
+}
+
+// ---------------------------------------------------------------------------
+// User / auth — email+password for all login-capable employees
+// ---------------------------------------------------------------------------
+
+/// Login identity. Restaurant access is via BusinessMembership;
+/// activeBusinessProfileId is the switch pointer. HR-only (Kitchen/Staff /
+/// zero-role) people have no User row at all.
+model User {
+  id String @id @default(cuid())
+
+  activeBusinessProfileId String?
+  activeBusinessProfile   BusinessProfile? @relation("UserActiveBusinessProfile", fields: [activeBusinessProfileId], references: [id], onDelete: SetNull)
+
+  name   String
+  active Boolean @default(true)
+
+  email         String  @unique
+  passwordHash  String
+  emailVerified Boolean @default(false)
+
+  preferredLocale String?
+
+  /// In-app notification category toggles (Profile settings will edit these).
+  notifyZatca    Boolean @default(true)
+  notifyHr       Boolean @default(true)
+  notifySalesOps Boolean @default(true)
+  notifyTeam     Boolean @default(true)
+
+  /// When set, the first-login product tour offer has been shown (started or skipped).
+  productTourSeenAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships        BusinessMembership[]
+  ownedBusinesses    BusinessProfile[]    @relation("BusinessProfileOwner")
+  invoicesCreated    Invoice[]            @relation("InvoiceCreatedBy")
+  creditNotesCreated CreditNote[]         @relation("CreditNoteCreatedBy")
+  debitNotesCreated  DebitNote[]          @relation("DebitNoteCreatedBy")
+  otpCodes           OtpCode[]
+  salarySlipsCreated SalarySlip[]         @relation("SalarySlipCreatedBy")
+  notifications      Notification[]
+
+  @@index([activeBusinessProfileId])
+  @@map("users")
+}
+
+/// Join table: which restaurants a User can access (Hisabi-style BusinessMembership).
+/// Roles for this membership live on EmployeeRole (many-to-many).
+model BusinessMembership {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  employeeRoles EmployeeRole[]
+  employee      Employee?
+
+  @@unique([userId, businessProfileId])
+  @@index([businessProfileId])
+  @@map("business_memberships")
+}
+
+enum OtpPurpose {
+  register
+  password_reset
+}
+
+/// Email OTP for sign-up verification / password reset.
+model OtpCode {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose    OtpPurpose
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int        @default(0)
+  createdAt  DateTime   @default(now())
+
+  @@index([userId, purpose])
+  @@map("otp_codes")
+}
+
+// ---------------------------------------------------------------------------
+// RBAC — predefined roles per restaurant (no custom roles in UI)
+// ---------------------------------------------------------------------------
+
+model Role {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  name              String
+  isSystem          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  permissions RolePermission[]
+  employeeRoles EmployeeRole[]
+  invitations UserInvitation[]
+
+  @@unique([businessProfileId, name])
+  @@index([businessProfileId])
+  @@map("roles")
+}
+
+model RolePermission {
+  id      String @id @default(cuid())
+  roleId  String
+  role    Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  action  String
+  subject String
+
+  @@unique([roleId, action, subject])
+  @@index([roleId])
+  @@map("role_permissions")
+}
+
+/// Many-to-many: which Role(s) a BusinessMembership carries at that restaurant.
+model EmployeeRole {
+  id                   String             @id @default(cuid())
+  businessMembershipId String
+  businessMembership   BusinessMembership @relation(fields: [businessMembershipId], references: [id], onDelete: Cascade)
+  roleId               String
+  role                 Role               @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  createdAt            DateTime           @default(now())
+
+  @@unique([businessMembershipId, roleId])
+  @@index([roleId])
+  @@map("employee_roles")
+}
+
+/// Invitation to join a restaurant with one or more predefined roles.
+model UserInvitation {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  email             String
+  /// Primary role for display; all assigned roles also stored via roleIds JSON.
+  roleId            String
+  role              Role            @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  /// JSON array of role IDs to assign on accept (supports multi-role).
+  roleIdsJson       String          @default("[]")
+  /// Pending employee draft id (created before accept) so HR fields survive invite.
+  employeeId        String?
+  invitedByUserId   String
+  tokenHash         String
+  status            String          @default("pending")
+  expiresAt         DateTime
+  createdAt         DateTime        @default(now())
+
+  @@unique([businessProfileId, email, status])
+  @@index([businessProfileId, status])
+  @@index([tokenHash])
+  @@map("user_invitations")
+}
+
+// ---------------------------------------------------------------------------
+// Menu (rules.md #22 — deliberately no inventory/stock fields)
+// ---------------------------------------------------------------------------
+
+model MenuCategory {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  nameAr    String
+  nameEn    String?
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items MenuItem[]
+
+  @@index([businessProfileId, active, sortOrder])
+  @@map("menu_categories")
+}
+
+enum VatPreset {
+  standard
+  zero
+  exempt
+}
+
+model MenuItem {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  categoryId String?
+  category   MenuCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  nameAr String
+  nameEn String?
+  /// Stored as a string, never a float — see rules.md #23.
+  price  String
+
+  vatPreset VatPreset @default(standard)
+  active    Boolean   @default(true)
+  sortOrder Int       @default(0)
+  imageUrl  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoiceLines InvoiceLine[]
+
+  @@index([businessProfileId, active, sortOrder])
+  @@index([categoryId])
+  @@map("menu_items")
+}
+
+// ---------------------------------------------------------------------------
+// Invoices (the POS transaction *is* the ZATCA Simplified Tax Invoice — no
+// separate draft/order stage; checkout creates this row directly)
+// ---------------------------------------------------------------------------
+
+/// Per-business sequential invoice/receipt number (atomic via upsert increment).
+/// Mirrors Hisabi's InvoiceCounter — required for ZATCA's "no gaps, never resets"
+/// counter rule (rules.md #18).
+model InvoiceCounter {
+  businessProfileId String          @id
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  lastNumber        Int             @default(0)
+
+  @@map("invoice_counters")
+}
+
+enum InvoiceStatus {
+  completed
+  voided
+}
+
+enum PaymentMethod {
+  cash
+  card
+}
+
+/// pending: queued, not yet reported | cleared/reported: ZATCA accepted the
+/// simplified-invoice report | failed: retries exhausted, needs attention
+/// (rules.md #19). Same vocabulary as Hisabi's ZatcaClearanceStatus.
+enum ZatcaClearanceStatus {
+  pending
+  cleared
+  reported
+  failed
+}
+
+model Invoice {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  /// Human-facing sequential receipt number for this business (from InvoiceCounter).
+  invoiceNumber String
+  status        InvoiceStatus @default(completed)
+  /// Always "simplified" in this app (B2C-only POS) — kept as a plain field rather
+  /// than removed so the copied Hisabi ZATCA mapping/signing code (which branches
+  /// on invoice.type) needs no structural changes. Never set to "standard" here.
+  type          String        @default("simplified")
+  invoiceDate   DateTime      @default(now())
+
+  /// Staff who rang this order up — required, never nullable
+  /// (users are deactivated, never hard-deleted, so this relation is never orphaned).
+  /// Column name kept as createdByStaffId for migration stability.
+  createdByStaffId String
+  createdByStaff   User @relation("InvoiceCreatedBy", fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  // Seller snapshot — copied from BusinessProfile at creation time so a later
+  // profile edit never changes the seller details on an already-issued invoice.
+  sellerCompanyNameAr    String
+  sellerCompanyNameEn    String?
+  sellerVatNumber        String
+  sellerCrNumber         String
+  sellerAddressAr        String
+  sellerAddressEn        String?
+  sellerStreetAr         String  @default("")
+  sellerStreetEn         String  @default("")
+  sellerDistrictAr       String  @default("")
+  sellerDistrictEn       String  @default("")
+  sellerCityAr           String  @default("")
+  sellerCityEn           String  @default("")
+  sellerBuildingNumber   String  @default("")
+  sellerSecondaryNumber  String  @default("")
+  sellerPostalCode       String  @default("")
+  sellerShortAddress     String  @default("")
+  sellerCountryCode      String  @default("SA")
+  /// Optional contact snapshotted at sale time for receipt footer.
+  sellerEmail            String?
+  sellerPhone            String?
+
+  // Payment — record-only, no gateway (rules.md / plan decision).
+  paymentMethod  PaymentMethod
+  /// Cash payments only — amount handed over, for change calculation.
+  amountTendered String?
+  changeGiven    String?
+
+  // Totals — strings, never floats (rules.md #23).
+  subtotal      String
+  totalVat      String
+  grandTotal    String
+
+  notes String?
+
+  // ZATCA artifacts — field names match Hisabi's Invoice model exactly.
+  xmlPayload         String?
+  /// Base64 TLV QR — must always be the full 9-tag Phase-2 QR before printing,
+  /// never a partial Phase-1 QR (rules.md #20).
+  qrCode             String?
+  cryptographicStamp String?
+  pih                String?
+  zatcaStatus        ZatcaClearanceStatus?
+  zatcaClearedAt     DateTime?
+  /// Background report attempts (checkout + worker). Used for bounded retries.
+  zatcaReportAttempts Int       @default(0)
+  zatcaLastAttemptAt  DateTime?
+  /// Human-readable last failure (never raw ZATCA XML).
+  zatcaLastError      String?
+  /// Set when the ~23h ZATCA deadline sweep has claimed/run a retry for this invoice.
+  zatcaDeadlineRetriedAt DateTime?
+
+  /// Soft delete — failed invoices may be discarded; reported docs use cancel/void instead.
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines       InvoiceLine[]
+  creditNotes CreditNote[]
+  debitNotes  DebitNote[]
+
+  @@unique([businessProfileId, invoiceNumber])
+  @@index([businessProfileId, zatcaStatus])
+  @@index([businessProfileId, invoiceDate])
+  @@index([businessProfileId, deletedAt])
+  @@index([createdByStaffId])
+  @@index([zatcaStatus, createdAt])
+  @@index([zatcaStatus, zatcaDeadlineRetriedAt, createdAt])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id        String   @id @default(cuid())
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  /// Nullable so a later menu item deletion never breaks historical invoice lines
+  /// — the line already snapshots name/price/VAT below.
+  menuItemId String?
+  menuItem   MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+
+  nameAr    String
+  nameEn    String?
+  quantity  Int
+  /// Snapshotted unit price at time of sale — strings, never floats.
+  unitPrice String
+  discount  String    @default("0")
+  vatPreset VatPreset
+  vatAmount String
+  lineTotal String
+  sortOrder Int       @default(0)
+
+  @@index([invoiceId])
+  @@index([menuItemId])
+  @@map("invoice_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Credit / Debit Notes (ZATCA corrections — never mutate a reported Invoice)
+// ---------------------------------------------------------------------------
+
+model CreditNoteCounter {
+  businessProfileId String          @id
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  lastNumber        Int             @default(0)
+
+  @@map("credit_note_counters")
+}
+
+model DebitNoteCounter {
+  businessProfileId String          @id
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  lastNumber        Int             @default(0)
+
+  @@map("debit_note_counters")
+}
+
+/// Simplified (B2C) credit note — ZATCA InvoiceTypeCode 381 / subtype 02.
+/// Linked to an original Invoice; seller snapshot + reason (KSA-10) required.
+model CreditNote {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  creditNoteNumber String
+  noteDate         DateTime @default(now())
+
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  /// Snapshots of the original invoice — survive even if invoiceId is nulled.
+  invoiceNumberSnapshot    String
+  invoiceUuidSnapshot      String   @default("")
+  invoiceIssueDateSnapshot DateTime?
+
+  /// KSA-10 reason — Arabic is legally authoritative (ZATCA guideline).
+  reasonAr String
+  reasonEn String?
+
+  createdByStaffId String
+  createdByStaff   User @relation("CreditNoteCreatedBy", fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  sellerCompanyNameAr   String
+  sellerCompanyNameEn   String?
+  sellerVatNumber       String
+  sellerCrNumber        String
+  sellerAddressAr       String
+  sellerAddressEn       String?
+  sellerStreetAr        String @default("")
+  sellerStreetEn        String @default("")
+  sellerDistrictAr      String @default("")
+  sellerDistrictEn      String @default("")
+  sellerCityAr          String @default("")
+  sellerCityEn          String @default("")
+  sellerBuildingNumber  String @default("")
+  sellerSecondaryNumber String @default("")
+  sellerPostalCode      String @default("")
+  sellerShortAddress    String @default("")
+  sellerCountryCode     String @default("SA")
+  sellerEmail           String?
+  sellerPhone           String?
+
+  subtotal   String
+  totalVat   String
+  grandTotal String
+
+  xmlPayload         String?
+  qrCode             String?
+  cryptographicStamp String?
+  pih                String?
+  zatcaStatus        ZatcaClearanceStatus?
+  zatcaClearedAt     DateTime?
+  zatcaReportAttempts Int       @default(0)
+  zatcaLastAttemptAt  DateTime?
+  zatcaLastError      String?
+
+  /// Soft delete — failed notes may be discarded; reported notes stay for audit.
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines CreditNoteLine[]
+
+  @@unique([businessProfileId, creditNoteNumber])
+  @@index([businessProfileId, zatcaStatus])
+  @@index([businessProfileId, noteDate])
+  @@index([businessProfileId, deletedAt])
+  @@index([invoiceId])
+  @@index([createdByStaffId])
+  @@map("credit_notes")
+}
+
+model CreditNoteLine {
+  id           String     @id @default(cuid())
+  creditNoteId String
+  creditNote   CreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+
+  nameAr    String
+  nameEn    String?
+  quantity  Int
+  unitPrice String
+  vatPreset VatPreset
+  vatAmount String
+  lineTotal String
+  sortOrder Int       @default(0)
+
+  @@index([creditNoteId])
+  @@map("credit_note_lines")
+}
+
+/// Simplified (B2C) debit note — ZATCA InvoiceTypeCode 383 / subtype 02.
+model DebitNote {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  debitNoteNumber String
+  noteDate        DateTime @default(now())
+
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  invoiceNumberSnapshot    String
+  invoiceUuidSnapshot      String   @default("")
+  invoiceIssueDateSnapshot DateTime?
+
+  reasonAr String
+  reasonEn String?
+
+  createdByStaffId String
+  createdByStaff   User @relation("DebitNoteCreatedBy", fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  sellerCompanyNameAr   String
+  sellerCompanyNameEn   String?
+  sellerVatNumber       String
+  sellerCrNumber        String
+  sellerAddressAr       String
+  sellerAddressEn       String?
+  sellerStreetAr        String @default("")
+  sellerStreetEn        String @default("")
+  sellerDistrictAr      String @default("")
+  sellerDistrictEn      String @default("")
+  sellerCityAr          String @default("")
+  sellerCityEn          String @default("")
+  sellerBuildingNumber  String @default("")
+  sellerSecondaryNumber String @default("")
+  sellerPostalCode      String @default("")
+  sellerShortAddress    String @default("")
+  sellerCountryCode     String @default("SA")
+  sellerEmail           String?
+  sellerPhone           String?
+
+  subtotal   String
+  totalVat   String
+  grandTotal String
+
+  xmlPayload         String?
+  qrCode             String?
+  cryptographicStamp String?
+  pih                String?
+  zatcaStatus        ZatcaClearanceStatus?
+  zatcaClearedAt     DateTime?
+  zatcaReportAttempts Int       @default(0)
+  zatcaLastAttemptAt  DateTime?
+  zatcaLastError      String?
+
+  /// Soft delete — failed notes may be discarded; reported notes stay for audit.
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines DebitNoteLine[]
+
+  @@unique([businessProfileId, debitNoteNumber])
+  @@index([businessProfileId, zatcaStatus])
+  @@index([businessProfileId, noteDate])
+  @@index([businessProfileId, deletedAt])
+  @@index([invoiceId])
+  @@index([createdByStaffId])
+  @@map("debit_notes")
+}
+
+model DebitNoteLine {
+  id          String    @id @default(cuid())
+  debitNoteId String
+  debitNote   DebitNote @relation(fields: [debitNoteId], references: [id], onDelete: Cascade)
+
+  nameAr    String
+  nameEn    String?
+  quantity  Int
+  unitPrice String
+  vatPreset VatPreset
+  vatAmount String
+  lineTotal String
+  sortOrder Int       @default(0)
+
+  @@index([debitNoteId])
+  @@map("debit_note_lines")
+}
+
+// ---------------------------------------------------------------------------
+// ZATCA device (Fatoora credentials) — one per business, one terminal type
+// (rules.md #24: not per-physical-terminal)
+// ---------------------------------------------------------------------------
+
+/// Field names match Hisabi's ZatcaDevice exactly so src/lib/zatca/* can be
+/// copied with minimal changes.
+model ZatcaDevice {
+  id                  String          @id @default(cuid())
+  businessProfileId   String          @unique
+  businessProfile     BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  /// sandbox | simulation | production
+  environment         String    @default("sandbox")
+  egsSerialNumber     String
+  privateKeyEnc       String
+  complianceCsid      String?
+  complianceSecretEnc String?
+  complianceRequestId String?
+  productionCsid      String?
+  productionSecretEnc String?
+  /// Previous Invoice Hash — the running hash-chain tip (rules.md #18).
+  lastInvoiceHash     String    @default("")
+  invoiceCounter      Int       @default(0)
+  onboardedAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("zatca_devices")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications — per-user inbox (role-gated at create time)
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// e.g. "zatca_report_failed", "visa_expiring"
+  type    String
+  title   String
+  message String
+  link    String?
+  /// Prevents duplicate notifications for the same event per user.
+  dedupeKey String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt])
+  @@index([businessProfileId, createdAt])
+  @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// HR module (Hisabi-style, scoped per restaurant)
+// ---------------------------------------------------------------------------
+
+model IdType {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  name              String
+  deletedAt         DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  employees         Employee[]
+
+  @@index([businessProfileId])
+  @@map("id_types")
+}
+
+enum PayslipCategoryType {
+  earning
+  deduction
+}
+
+model PayslipCategory {
+  id                String              @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile     @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  name              String
+  type              PayslipCategoryType
+  defaultAmount     String              @default("0")
+  deletedAt         DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  salarySlipLines   SalarySlipLine[]
+
+  @@index([businessProfileId])
+  @@map("payslip_categories")
+}
+
+enum EmployeeStatus {
+  active
+  inactive
+}
+
+enum Gender {
+  male
+  female
+  unspecified
+}
+
+enum MaritalStatus {
+  single
+  married
+  other
+  unspecified
+}
+
+/// Per-restaurant HR record. Optionally linked to a BusinessMembership when the
+/// employee has login access (non-empty role union). Kitchen/Staff or zero-role
+/// employees have businessMembershipId = null.
+model Employee {
+  id                           String          @id @default(cuid())
+  businessProfileId            String
+  businessProfile              BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  /// Optional link to login membership at this restaurant.
+  businessMembershipId String?             @unique
+  businessMembership   BusinessMembership? @relation(fields: [businessMembershipId], references: [id], onDelete: SetNull)
+
+  name                         String
+  mobileOfficial               String?
+  emailOfficial                String?
+  joiningDate                  DateTime
+  salary                       String
+  higherEducation              String?
+  experience                   String?
+  resumeStoragePath            String?
+  appointmentLetterStoragePath String?
+  reportingToId                String?
+  reportingTo                  Employee?  @relation("EmployeeReportsTo", fields: [reportingToId], references: [id], onDelete: SetNull)
+  directReports                Employee[] @relation("EmployeeReportsTo")
+  nationality                  String?
+  dateOfBirth                  DateTime?
+  mobilePersonal               String?
+  emailPersonal                String?
+  emergencyContactName         String?
+  emergencyContactNumber       String?
+  address                      String?
+  shortAddress                 String     @default("")
+  bloodGroup                   String?
+  gender                       Gender     @default(unspecified)
+  maritalStatus                MaritalStatus @default(unspecified)
+  idTypeId                     String?
+  idType                       IdType?    @relation(fields: [idTypeId], references: [id], onDelete: SetNull)
+  idNumber                     String?
+  idExpiry                     DateTime?
+  idDocumentStoragePath        String?
+  photoStoragePath             String?
+  bankAccountName              String?
+  bankAccountNumber            String?
+  bankName                     String?
+  bankIban                     String?
+  bankBranch                   String?
+  passportNumber               String?
+  passportExpiry               DateTime?
+  passportStoragePath          String?
+  visaNumber                   String?
+  visaIssueDate                DateTime?
+  visaEntryDate                DateTime?
+  visaExpiry                   DateTime?
+  visaStoragePath              String?
+  remark                       String?
+  status                       EmployeeStatus @default(active)
+  deletedAt                    DateTime?
+  createdAt                    DateTime       @default(now())
+  updatedAt                    DateTime       @updatedAt
+  salarySlips                  SalarySlip[]
+  payments                     EmployeePayment[]
+  promotions                   EmployeePromotion[]
+
+  @@index([businessProfileId])
+  @@index([businessProfileId, deletedAt])
+  @@map("employees")
+}
+
+/// Salary-change history (scheduled raises). Designation/department not used in POS.
+model EmployeePromotion {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  employeeId        String
+  employee          Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  oldSalary         String?
+  newSalary         String
+  effectiveFrom     String
+  notes             String?
+  appliedToEmployee Boolean         @default(false)
+  promotedAt        DateTime        @default(now())
+  deletedAt         DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([businessProfileId])
+  @@index([employeeId])
+  @@index([employeeId, effectiveFrom])
+  @@map("employee_promotions")
+}
+
+model SalarySlipCounter {
+  businessProfileId String          @id
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  lastNumber        Int             @default(0)
+
+  @@map("salary_slip_counters")
+}
+
+model SalarySlip {
+  id                             String           @id @default(cuid())
+  businessProfileId              String
+  businessProfile                BusinessProfile  @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  voucherNumber                  String           @default("")
+  employeeId                     String
+  employee                       Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  slipDate                       DateTime
+  referenceNumber                String?
+  description                    String?
+  basicPay                       String           @default("0")
+  totalEarnings                  String           @default("0")
+  totalDeductions                String           @default("0")
+  netTotal                       String           @default("0")
+  preparedBySignatureStoragePath String?
+  preparedBySignatureMimeType    String?
+  createdByUserId                String?
+  createdByUser                  User?            @relation("SalarySlipCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  deletedAt                      DateTime?
+  createdAt                      DateTime         @default(now())
+  updatedAt                      DateTime         @updatedAt
+  lines                          SalarySlipLine[]
+
+  @@unique([businessProfileId, voucherNumber])
+  @@index([businessProfileId, deletedAt])
+  @@index([employeeId])
+  @@index([createdByUserId])
+  @@map("salary_slips")
+}
+
+model SalarySlipLine {
+  id                String              @id @default(cuid())
+  salarySlipId      String
+  salarySlip        SalarySlip          @relation(fields: [salarySlipId], references: [id], onDelete: Cascade)
+  payslipCategoryId String?
+  payslipCategory   PayslipCategory?    @relation(fields: [payslipCategoryId], references: [id], onDelete: SetNull)
+  categoryType      PayslipCategoryType
+  description       String              @default("")
+  unit              String              @default("1")
+  unitRate          String              @default("0")
+  total             String              @default("0")
+  sortOrder         Int                 @default(0)
+
+  @@index([salarySlipId])
+  @@map("salary_slip_lines")
+}
+
+enum EmployeePaymentType {
+  salary
+  advance
+  bonus
+}
+
+enum EmployeePaymentMethod {
+  cash
+  bank_transfer
+  cheque
+  other
+}
+
+model EmployeePayment {
+  id                String                @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile       @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  employeeId        String
+  employee          Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  paymentDate       DateTime
+  paymentType       EmployeePaymentType   @default(salary)
+  /// "YYYY-MM" — required for salary, null for advance/bonus.
+  payPeriod         String?
+  amount            String                @default("0")
+  paymentMethod     EmployeePaymentMethod @default(cash)
+  remarks           String?
+  /// Groups two rows created from one overpayment split.
+  splitGroupId      String?
+  deletedAt         DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([businessProfileId, deletedAt])
+  @@index([employeeId])
+  @@index([employeeId, payPeriod])
+  @@map("employee_payments")
+}

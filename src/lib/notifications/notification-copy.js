@@ -1,0 +1,185 @@
+/**
+ * Localized in-app notification copy for Hisabi POS.
+ * Messages use `{var}` placeholders.
+ */
+
+/** @param {string | null | undefined} locale */
+export function normalizeNotificationLocale(locale) {
+  return locale === 'ar' ? 'ar' : 'en'
+}
+
+/** @type {Record<string, { en: { title: string, message: string }, ar: { title: string, message: string } }>} */
+const COPY = {
+  zatca_report_failed: {
+    en: {
+      title: 'ZATCA reporting failed',
+      message: '{detail}',
+    },
+    ar: {
+      title: 'فشل إبلاغ الزكاة',
+      message: '{detail}',
+    },
+  },
+  zatca_report_pending: {
+    en: {
+      title: 'ZATCA deadline approaching',
+      message:
+        '{detail} — about 1 hour left to report within the 24-hour B2C window.',
+    },
+    ar: {
+      title: 'اقتراب مهلة إبلاغ الزكاة',
+      message:
+        '{detail} — تبقت نحو ساعة واحدةلبلاغ ضمن مهلة الـ 24 ساعة للفواتير المبسطة.',
+    },
+  },
+  visa_expiring: {
+    en: {
+      title: 'Visa expiring soon',
+      message: '{name} — visa expires on {expiryDate}.',
+    },
+    ar: {
+      title: 'تأشيرة تنتهي قريبًا',
+      message: '{name} — تنتهي التأشيرة في {expiryDate}.',
+    },
+  },
+  visa_expired: {
+    en: {
+      title: 'Visa expired',
+      message: '{name} — visa expired on {expiryDate}.',
+    },
+    ar: {
+      title: 'تأشيرة منتهية',
+      message: '{name} — انتهت التأشيرة في {expiryDate}.',
+    },
+  },
+  salary_slip_generated: {
+    en: {
+      title: 'Salary slip created',
+      message: '{detail}',
+    },
+    ar: {
+      title: 'تم إنشاء مسير راتب',
+      message: '{detail}',
+    },
+  },
+  advance_paid: {
+    en: {
+      title: 'Advance payment recorded',
+      message: '{detail}',
+    },
+    ar: {
+      title: 'تم تسجيل سلفة',
+      message: '{detail}',
+    },
+  },
+  advance_outstanding: {
+    en: {
+      title: 'Outstanding advances',
+      message: '{detail}',
+    },
+    ar: {
+      title: 'سلف مستحقة',
+      message: '{detail}',
+    },
+  },
+  salary_cap_exceeded: {
+    en: {
+      title: 'Salary cap exceeded',
+      message:
+        'Payments to {name} for {payPeriod} exceeded the monthly salary cap ({cap}). The excess was recorded separately.',
+    },
+    ar: {
+      title: 'تجاوز سقف الراتب',
+      message:
+        'تجاوزت المدفوعات لـ {name} عن فترة {payPeriod} سقف الراتب الشهري ({cap}). تم تسجيل الزيادة بشكل منفصل.',
+    },
+  },
+  salary_cap_reached: {
+    en: {
+      title: 'Salary cap reached',
+      message: 'Payments to {name} for {payPeriod} reached the monthly salary cap ({cap}).',
+    },
+    ar: {
+      title: 'تم بلوغ سقف الراتب',
+      message: 'بلغت المدفوعات لـ {name} عن فترة {payPeriod} سقف الراتب الشهري ({cap}).',
+    },
+  },
+  invoice_voided: {
+    en: {
+      title: 'Invoice voided',
+      message: '{detail}',
+    },
+    ar: {
+      title: 'تم إلغاء فاتورة',
+      message: '{detail}',
+    },
+  },
+  credit_note_created: {
+    en: {
+      title: 'Credit note created',
+      message: '{detail}',
+    },
+    ar: {
+      title: 'تم إنشاء إشعار دائن',
+      message: '{detail}',
+    },
+  },
+  debit_note_created: {
+    en: {
+      title: 'Debit note created',
+      message: '{detail}',
+    },
+    ar: {
+      title: 'تم إنشاء إشعار مدين',
+      message: '{detail}',
+    },
+  },
+  role_changed: {
+    en: {
+      title: 'Roles updated',
+      message: '{detail}',
+    },
+    ar: {
+      title: 'تم تحديث الأدوار',
+      message: '{detail}',
+    },
+  },
+  member_joined: {
+    en: {
+      title: 'New team member',
+      message: '{detail}',
+    },
+    ar: {
+      title: 'انضم عضو جديد',
+      message: '{detail}',
+    },
+  },
+}
+
+/** @param {string} template @param {Record<string, string>} vars */
+function interpolate(template, vars) {
+  return String(template).replace(/\{(\w+)\}/g, (_, key) =>
+    vars[key] != null ? String(vars[key]) : `{${key}}`,
+  )
+}
+
+/**
+ * @param {string} type
+ * @param {string | null | undefined} locale
+ * @param {Record<string, string>} [vars]
+ * @param {{ title?: string, message?: string }} [fallback]
+ */
+export function buildNotificationCopy(type, locale, vars = {}, fallback = {}) {
+  const loc = normalizeNotificationLocale(locale)
+  const entry = COPY[type]?.[loc] ?? COPY[type]?.en
+  if (!entry) {
+    return {
+      title: fallback.title ?? type,
+      message: fallback.message ?? vars.detail ?? '',
+    }
+  }
+  return {
+    title: interpolate(entry.title, vars),
+    message: interpolate(entry.message, vars),
+  }
+}

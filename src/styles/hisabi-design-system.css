@@ -1,0 +1,642 @@
+/**
+ * Hisabi — Guided Prosperity design tokens (YAML → CSS).
+ * Shadcn semantic tokens map to this palette; raw tokens use --hisabi-*.
+ */
+
+/**
+ * Force a unitless number so Firefox accepts `calc(16px * var(--hisabi-ui-scale))`.
+ * Without this, the vw/px formula can type as a length and invalidate all scaled
+ * spacing/padding/type across the app.
+ */
+@property --hisabi-ui-scale {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+
+:root {
+  /* Raw palette */
+  --hisabi-surface: #f8f9ff;
+  --hisabi-surface-dim: #cbdbf5;
+  --hisabi-surface-bright: #f8f9ff;
+  --hisabi-surface-container-lowest: #ffffff;
+  --hisabi-surface-container-low: #eff4ff;
+  --hisabi-surface-container: #e5eeff;
+  --hisabi-surface-container-high: #dce9ff;
+  --hisabi-surface-container-highest: #d3e4fe;
+  --hisabi-on-surface: #0b1c30;
+  --hisabi-on-surface-variant: #3f4945;
+  --hisabi-inverse-surface: #213145;
+  --hisabi-inverse-on-surface: #eaf1ff;
+  --hisabi-outline: #707975;
+  --hisabi-outline-variant: #bfc9c4;
+  --hisabi-surface-tint: #29695b;
+  --hisabi-primary: #00342b;
+  --hisabi-on-primary: #ffffff;
+  --hisabi-primary-container: #004d40;
+  --hisabi-on-primary-container: #7ebdac;
+  --hisabi-inverse-primary: #94d3c1;
+  --hisabi-secondary: #735c00;
+  --hisabi-on-secondary: #ffffff;
+  --hisabi-secondary-container: #fed65b;
+  /* Darker opaque gold for hover on bright gold CTAs (not opacity-based lighten) */
+  --hisabi-secondary-container-hover: var(--hisabi-secondary-fixed-dim);
+  /* Text/icon on bright gold CTA — black for contrast (accent, sidebar gold actions) */
+  --hisabi-on-secondary-container: #000000;
+  --hisabi-tertiary: #0a332c;
+  --hisabi-on-tertiary: #ffffff;
+  --hisabi-tertiary-container: #244a42;
+  --hisabi-on-tertiary-container: #91b9ae;
+  --hisabi-error: #ba1a1a;
+  --hisabi-on-error: #ffffff;
+  --hisabi-error-container: #ffdad6;
+  --hisabi-on-error-container: #93000a;
+  --hisabi-primary-fixed: #afefdd;
+  --hisabi-primary-fixed-dim: #94d3c1;
+  --hisabi-on-primary-fixed: #00201a;
+  --hisabi-on-primary-fixed-variant: #065043;
+  --hisabi-secondary-fixed: #ffe088;
+  --hisabi-secondary-fixed-dim: #e9c349;
+  --hisabi-on-secondary-fixed: #241a00;
+  --hisabi-on-secondary-fixed-variant: #574500;
+  --hisabi-tertiary-fixed: #c2ebe0;
+  --hisabi-tertiary-fixed-dim: #a6cfc4;
+  --hisabi-on-tertiary-fixed: #00201b;
+  --hisabi-on-tertiary-fixed-variant: #274d45;
+  --hisabi-background: #f8f9ff;
+  --hisabi-on-background: #0b1c30;
+  --hisabi-surface-variant: #d3e4fe;
+  /* Sophisticated gold (CTA) — spec value; YAML secondary-container is brighter for fills */
+  --hisabi-gold: #d4af37;
+  --hisabi-gold-hover: #b89422;
+  --hisabi-on-gold: #00342b;
+  /* Elevation (teal-tinted shadow per spec) */
+  --hisabi-shadow-1: 0 1px 2px 0 rgb(0 77 64 / 0.06);
+  --hisabi-shadow-2: 0 4px 24px -4px rgb(0 77 64 / 0.08);
+  --hisabi-ghost-border: #e2e8f0;
+
+  /**
+   * Global UI density scale:
+   * - 1200px → 0.65 (headline-xl = 40px × 0.65 = 26px)
+   * - 1440px+ → 1
+   * - Below 1200 → floors at 0.55
+   * All type / chrome / icons / larger spacing / sidebar multiply by this.
+   * Uses 100svw (with 100vw fallback) for stabler viewport sizing vs scrollbars.
+   */
+  --hisabi-ui-scale: clamp(
+    0.55,
+    calc(0.65 + (0.35 * (100vw - 1200px) / 240px)),
+    1
+  );
+  --hisabi-ui-scale: clamp(
+    0.55,
+    calc(0.65 + (0.35 * (100svw - 1200px) / 240px)),
+    1
+  );
+
+  /* Desktop reference × scale (keeps relative differences between tokens) */
+  --type-headline-xl: calc(2.5rem * var(--hisabi-ui-scale));
+  --type-headline-lg: calc(2rem * var(--hisabi-ui-scale));
+  --type-headline-md: calc(1.5rem * var(--hisabi-ui-scale));
+  --type-body-lg: calc(1.125rem * var(--hisabi-ui-scale));
+  --type-body-md: calc(1rem * var(--hisabi-ui-scale));
+  --type-body-sm: calc(0.875rem * var(--hisabi-ui-scale));
+  --type-label-md: calc(0.875rem * var(--hisabi-ui-scale));
+  --type-label-sm: calc(0.75rem * var(--hisabi-ui-scale));
+
+  /* Icons: 16 / 20 / 24 at scale 1 */
+  --size-hisabi-icon-sm: calc(1rem * var(--hisabi-ui-scale));
+  --size-hisabi-icon-md: calc(1.25rem * var(--hisabi-ui-scale));
+  --size-hisabi-icon-lg: calc(1.5rem * var(--hisabi-ui-scale));
+
+  /* Primary button chrome: 52px / 16px padding at scale 1 */
+  --size-hisabi-btn-min-h: calc(52px * var(--hisabi-ui-scale));
+  --size-hisabi-btn-py: calc(1rem * var(--hisabi-ui-scale));
+  --size-hisabi-btn-min-h-sm: calc(44px * var(--hisabi-ui-scale));
+
+  /* App sidebar: 16rem + 50px at scale 1 (~306px → ~199px at 1200) */
+  --width-hisabi-sidebar: calc((16rem + 50px) * var(--hisabi-ui-scale));
+
+  /* Overlay widths (slide-over sheets & centered modals) × scale.
+   * Mirror Tailwind's max-w reference rems, multiplied by --hisabi-ui-scale so
+   * overlays track the same fluid scaling as the rest of the chrome. */
+  --width-hisabi-overlay-sm: calc(24rem * var(--hisabi-ui-scale));
+  --width-hisabi-overlay-md: calc(28rem * var(--hisabi-ui-scale));
+  --width-hisabi-overlay-lg: calc(32rem * var(--hisabi-ui-scale));
+  --width-hisabi-overlay-xl: calc(36rem * var(--hisabi-ui-scale));
+  --width-hisabi-overlay-2xl: calc(42rem * var(--hisabi-ui-scale));
+  --width-hisabi-overlay-3xl: calc(48rem * var(--hisabi-ui-scale));
+  --width-hisabi-overlay-4xl: calc(56rem * var(--hisabi-ui-scale));
+  --width-hisabi-overlay-5xl: calc(64rem * var(--hisabi-ui-scale));
+
+  /**
+   * Corner radius — from Guided Prosperity login mock (tailwind `theme.extend.borderRadius`):
+   * DEFAULT 0.25rem, lg 0.5rem, xl 0.75rem, full 9999px.
+   */
+  --hisabi-radius-default: 0.25rem;
+  --hisabi-radius-lg: 0.5rem;
+  --hisabi-radius-xl: 0.75rem;
+  --hisabi-radius-full: 9999px;
+
+  /* Shadcn bridge — light / corporate */
+  --background: var(--hisabi-background);
+  --foreground: var(--hisabi-on-background);
+  --card: var(--hisabi-surface-container-lowest);
+  --card-foreground: var(--hisabi-on-surface);
+  --popover: var(--hisabi-surface-container-low);
+  --popover-foreground: var(--hisabi-on-surface);
+  /* Primary actions: deep teal (structural brand); use accent for gold CTA */
+  --primary: var(--hisabi-primary);
+  --primary-foreground: var(--hisabi-on-primary);
+  --secondary: var(--hisabi-surface-container-high);
+  --secondary-foreground: var(--hisabi-primary);
+  --muted: var(--hisabi-surface-container);
+  --muted-foreground: var(--hisabi-on-surface-variant);
+  --accent: var(--hisabi-secondary-container);
+  --accent-hover: var(--hisabi-secondary-container-hover);
+  --accent-foreground: var(--hisabi-on-secondary-container);
+  --destructive: var(--hisabi-error);
+  --destructive-foreground: var(--hisabi-on-error);
+  --border: var(--hisabi-outline-variant);
+  --input: var(--hisabi-outline-variant);
+  --ring: var(--hisabi-surface-tint);
+  /* Shadcn “base” radius — matches mock `lg` (0.5rem) */
+  --radius: var(--hisabi-radius-lg);
+  --chart-1: var(--hisabi-surface-tint);
+  --chart-2: var(--hisabi-primary-container);
+  --chart-3: var(--hisabi-secondary);
+  --chart-4: var(--hisabi-tertiary-container);
+  --chart-5: var(--hisabi-outline);
+  --sidebar: var(--hisabi-primary);
+  --sidebar-foreground: var(--hisabi-inverse-on-surface);
+  --sidebar-primary: var(--hisabi-secondary-container);
+  --sidebar-primary-foreground: var(--hisabi-on-secondary-container);
+  --sidebar-accent: var(--hisabi-primary-container);
+  --sidebar-accent-foreground: var(--hisabi-on-primary-container);
+  --sidebar-border: rgb(255 255 255 / 0.12);
+  --sidebar-ring: var(--hisabi-primary-fixed);
+}
+
+.dark {
+  --background: var(--hisabi-inverse-surface);
+  --foreground: var(--hisabi-inverse-on-surface);
+  --card: #1a2838;
+  --card-foreground: var(--hisabi-inverse-on-surface);
+  --popover: #1a2838;
+  --popover-foreground: var(--hisabi-inverse-on-surface);
+  --primary: var(--hisabi-primary-fixed-dim);
+  --primary-foreground: var(--hisabi-on-primary-fixed);
+  --secondary: #2a3d52;
+  --secondary-foreground: var(--hisabi-inverse-on-surface);
+  --muted: #2a3d52;
+  --muted-foreground: var(--hisabi-outline-variant);
+  --accent: var(--hisabi-secondary-fixed-dim);
+  --accent-hover: color-mix(in srgb, var(--hisabi-secondary-fixed-dim) 88%, #000000);
+  --accent-foreground: var(--hisabi-on-secondary-fixed);
+  --destructive: #ffb4ab;
+  --destructive-foreground: #690005;
+  --border: rgb(255 255 255 / 0.1);
+  --input: rgb(255 255 255 / 0.14);
+  --ring: var(--hisabi-primary-fixed-dim);
+  --sidebar: #152030;
+  --sidebar-foreground: var(--hisabi-inverse-on-surface);
+  --sidebar-primary: var(--hisabi-secondary-container);
+  --sidebar-primary-foreground: var(--hisabi-on-secondary-container);
+  --sidebar-accent: var(--hisabi-primary-container);
+  --sidebar-accent-foreground: var(--hisabi-on-primary-container);
+  --sidebar-border: rgb(255 255 255 / 0.1);
+  --sidebar-ring: var(--hisabi-primary-fixed-dim);
+}
+
+@theme inline {
+  /* Fonts are wired in globals.css @theme (after next/font variables). */
+
+  /* Tailwind: bg-hisabi-teal, text-hisabi-gold, max-w-hisabi-container, etc. */
+  --color-hisabi-background: var(--hisabi-background);
+  --color-hisabi-surface: var(--hisabi-surface);
+  --color-hisabi-surface-dim: var(--hisabi-surface-dim);
+  --color-hisabi-surface-container: var(--hisabi-surface-container);
+  --color-hisabi-surface-container-low: var(--hisabi-surface-container-low);
+  --color-hisabi-surface-container-lowest: var(--hisabi-surface-container-lowest);
+  --color-hisabi-surface-container-high: var(--hisabi-surface-container-high);
+  --color-hisabi-surface-variant: var(--hisabi-surface-variant);
+  --color-hisabi-teal: var(--hisabi-primary);
+  --color-hisabi-teal-container: var(--hisabi-primary-container);
+  /** Deepest brand green — sidebar, structural surfaces */
+  --color-hisabi-primary: var(--hisabi-primary);
+  /* Alias: utilities like bg-hisabi-primary-container (not bg-hisabi-teal-container) */
+  --color-hisabi-primary-container: var(--hisabi-primary-container);
+  --color-hisabi-on-primary-container: var(--hisabi-on-primary-container);
+  --color-hisabi-primary-fixed: var(--hisabi-primary-fixed);
+  --color-hisabi-primary-fixed-dim: var(--hisabi-primary-fixed-dim);
+  --color-hisabi-on-primary-fixed: var(--hisabi-on-primary-fixed);
+  --color-hisabi-on-primary-fixed-variant: var(--hisabi-on-primary-fixed-variant);
+  --color-hisabi-on-primary: var(--hisabi-on-primary);
+  --color-hisabi-tertiary: var(--hisabi-tertiary);
+  --color-hisabi-on-tertiary: var(--hisabi-on-tertiary);
+  --color-hisabi-tertiary-fixed: var(--hisabi-tertiary-fixed);
+  --color-hisabi-on-tertiary-fixed: var(--hisabi-on-tertiary-fixed);
+  --color-hisabi-on-tertiary-container: var(--hisabi-on-tertiary-container);
+  --color-hisabi-inverse-surface: var(--hisabi-inverse-surface);
+  --color-hisabi-inverse-on-surface: var(--hisabi-inverse-on-surface);
+  --color-hisabi-on-surface: var(--hisabi-on-surface);
+  --color-hisabi-on-surface-variant: var(--hisabi-on-surface-variant);
+  --color-hisabi-secondary: var(--hisabi-secondary);
+  --color-hisabi-secondary-fixed: var(--hisabi-secondary-fixed);
+  --color-hisabi-secondary-fixed-dim: var(--hisabi-secondary-fixed-dim);
+  --color-hisabi-on-secondary-fixed: var(--hisabi-on-secondary-fixed);
+  --color-hisabi-on-secondary-container: var(--hisabi-on-secondary-container);
+  --color-hisabi-gold: var(--hisabi-gold);
+  --color-hisabi-gold-muted: var(--hisabi-secondary-container);
+  --color-hisabi-gold-muted-hover: var(--hisabi-secondary-container-hover);
+  --color-hisabi-gold-hover: var(--hisabi-gold-hover);
+  --color-hisabi-on-gold: var(--hisabi-on-gold);
+  --color-hisabi-ink: var(--hisabi-on-background);
+  --color-hisabi-outline: var(--hisabi-outline);
+  --color-hisabi-outline-variant: var(--hisabi-outline-variant);
+  --color-hisabi-error: var(--hisabi-error);
+  --color-hisabi-error-container: var(--hisabi-error-container);
+  --color-hisabi-on-error-container: var(--hisabi-on-error-container);
+
+  /* Spacing rhythm (8px base); lg+ tracks --hisabi-ui-scale */
+  --spacing-hisabi-xs: 4px;
+  --spacing-hisabi-sm: 8px;
+  --spacing-hisabi-md: calc(16px * var(--hisabi-ui-scale));
+  --spacing-hisabi-lg: calc(24px * var(--hisabi-ui-scale));
+  --spacing-hisabi-xl: calc(32px * var(--hisabi-ui-scale));
+  --spacing-hisabi-xxl: calc(48px * var(--hisabi-ui-scale));
+  --spacing-hisabi-gutter: calc(24px * var(--hisabi-ui-scale));
+  --spacing-hisabi-margin-mobile: 16px;
+  --spacing-hisabi-margin-desktop: calc(40px * var(--hisabi-ui-scale));
+  --width-hisabi-container: 1440px;
+  --hisabi-global-search-max-width: clamp(12rem, 42vw, 28rem);
+  --hisabi-global-search-panel-max-height: clamp(14rem, 55vh, 24rem);
+}
+
+/*
+ * U+20C1 (SAUDI RIYAL SIGN) — not yet in Manrope / IBM Plex Sans Arabic.
+ * Self-hosted WOFF2 (SAMA glyph, OFL) scoped to this code point via unicode-range.
+ */
+@font-face {
+  font-family: 'Hisabi Saudi Riyal';
+  src: url('/fonts/saudi-riyal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+20C1;
+}
+
+@font-face {
+  font-family: 'Hisabi Saudi Riyal';
+  src: url('/fonts/saudi-riyal-bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+20C1;
+}
+
+/* Arabic body: IBM Plex Sans Arabic (mandated); Latin body: Manrope */
+body[data-locale='ar'] {
+  font-family:
+    var(--font-ibm-arabic),
+    'Hisabi Saudi Riyal',
+    var(--font-manrope),
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+}
+
+body[data-locale='en'] {
+  font-family:
+    var(--font-manrope),
+    'Hisabi Saudi Riyal',
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+}
+
+/* Headlines & labels: Inter */
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  h1 {
+    font-size: var(--type-headline-xl);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+  }
+
+  h2 {
+    font-size: var(--type-headline-lg);
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  h3 {
+    font-size: var(--type-headline-md);
+    font-weight: 600;
+    line-height: 1.3;
+  }
+}
+
+/* Named type scale (use as utilities: class="type-body-lg") */
+@layer utilities {
+  .type-headline-xl {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--type-headline-xl);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+  }
+
+  .type-headline-lg {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--type-headline-lg);
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .type-headline-md {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--type-headline-md);
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  /** Reference “headline-sm” — same fluid size as headline-md */
+  .type-headline-sm {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--type-headline-md);
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .type-body-lg {
+    font-family: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--type-body-lg);
+    font-weight: 400;
+    line-height: 1.6;
+  }
+
+  .type-body-md {
+    font-family: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--type-body-md);
+    font-weight: 400;
+    line-height: 1.5;
+  }
+
+  .type-body-sm {
+    font-family: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--type-body-sm);
+    font-weight: 400;
+    line-height: 1.5;
+  }
+
+  .type-label-md {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--type-label-md);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.05em;
+  }
+
+  .type-label-sm {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--type-label-sm);
+    font-weight: 500;
+    line-height: 1;
+  }
+
+  /* Fluid button / icon chrome (overrides fixed Tailwind sizes below 1440) */
+  .min-h-hisabi-btn {
+    min-height: var(--size-hisabi-btn-min-h);
+  }
+
+  .min-h-hisabi-btn-sm {
+    min-height: var(--size-hisabi-btn-min-h-sm);
+  }
+
+  .py-hisabi-btn {
+    padding-block: var(--size-hisabi-btn-py);
+  }
+
+  .size-hisabi-icon-sm {
+    width: var(--size-hisabi-icon-sm);
+    height: var(--size-hisabi-icon-sm);
+  }
+
+  .size-hisabi-icon-md {
+    width: var(--size-hisabi-icon-md);
+    height: var(--size-hisabi-icon-md);
+  }
+
+  .size-hisabi-icon-lg {
+    width: var(--size-hisabi-icon-lg);
+    height: var(--size-hisabi-icon-lg);
+  }
+
+  .min-h-\[52px\] {
+    min-height: var(--size-hisabi-btn-min-h);
+  }
+
+  .min-h-\[48px\] {
+    min-height: calc(48px * var(--hisabi-ui-scale));
+  }
+
+  .min-h-\[44px\] {
+    min-height: var(--size-hisabi-btn-min-h-sm);
+  }
+
+  svg.size-3 {
+    width: calc(0.75rem * var(--hisabi-ui-scale));
+    height: calc(0.75rem * var(--hisabi-ui-scale));
+  }
+
+  svg.size-4 {
+    width: var(--size-hisabi-icon-sm);
+    height: var(--size-hisabi-icon-sm);
+  }
+
+  svg.size-5 {
+    width: var(--size-hisabi-icon-md);
+    height: var(--size-hisabi-icon-md);
+  }
+
+  svg.size-6 {
+    width: var(--size-hisabi-icon-lg);
+    height: var(--size-hisabi-icon-lg);
+  }
+
+  svg.size-7 {
+    width: calc(1.75rem * var(--hisabi-ui-scale));
+    height: calc(1.75rem * var(--hisabi-ui-scale));
+  }
+
+  svg.size-8 {
+    width: calc(2rem * var(--hisabi-ui-scale));
+    height: calc(2rem * var(--hisabi-ui-scale));
+  }
+
+  /* Elevation */
+  .shadow-hisabi-1 {
+    box-shadow: var(--hisabi-shadow-1);
+  }
+
+  .shadow-hisabi-2 {
+    box-shadow: var(--hisabi-shadow-2);
+  }
+
+  .border-hisabi-ghost {
+    border: 1px solid var(--hisabi-ghost-border);
+  }
+
+  /* Primary CTA — sophisticated gold (shadcn default is teal; use this for gold buttons) */
+  .bg-hisabi-cta {
+    background-color: var(--hisabi-gold);
+    color: var(--hisabi-on-gold);
+  }
+
+  .bg-hisabi-cta:hover {
+    background-color: var(--hisabi-gold-hover);
+  }
+
+  .max-w-hisabi-container {
+    max-width: var(--width-hisabi-container);
+  }
+
+  /** Subscription Starter/Pro plan cards (pricing, first-company, billing). */
+  .max-w-subscription-plan-card {
+    max-width: 350px;
+  }
+
+  .deals-kanban-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--hisabi-outline-variant) 75%, #94a3b8)
+      transparent;
+  }
+
+  .deals-kanban-scroll::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  .deals-kanban-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .deals-kanban-scroll::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--hisabi-outline-variant) 75%, #94a3b8);
+    border-radius: 10px;
+  }
+
+  /* Login / marketing split-panel (teal + subtle gold grid) */
+  .hisabi-geometric-panel {
+    background-color: var(--hisabi-primary-container);
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23D4AF37' fill-opacity='0.08'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6zM36 4V0h-2v4h-4v2h4v4h2V6h4V4h-4z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  /* Universal header search */
+  .hisabi-global-search {
+    position: relative;
+    width: 100%;
+    max-width: var(--hisabi-global-search-max-width);
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .hisabi-global-search-panel {
+    /* Position/size set inline when portaled (header overflow-hidden). */
+    z-index: 250;
+    min-width: min(18rem, calc(100vw - clamp(1rem, 4vw, 2rem)));
+    max-height: var(--hisabi-global-search-panel-max-height);
+    overflow-y: auto;
+    border: 1px solid color-mix(in srgb, var(--hisabi-outline-variant) 55%, transparent);
+    border-radius: 0.75rem;
+    background: var(--hisabi-surface-container-lowest);
+    box-shadow: var(--hisabi-shadow-2);
+  }
+
+  .hisabi-global-search-group-label {
+    padding: clamp(0.35rem, 0.8vw, 0.5rem) clamp(0.65rem, 1.4vw, 0.85rem);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--hisabi-on-surface-variant);
+    background: var(--hisabi-surface-container-low);
+  }
+
+  .hisabi-global-search-row {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    gap: clamp(0.1rem, 0.3vw, 0.2rem);
+    padding: clamp(0.45rem, 1vw, 0.65rem) clamp(0.65rem, 1.4vw, 0.85rem);
+    text-align: start;
+    transition: background-color 150ms ease;
+  }
+
+  .hisabi-global-search-row:hover,
+  .hisabi-global-search-row:focus-visible {
+    background: var(--hisabi-surface-container-low);
+  }
+}
+
+/* Moyasar Payment Form — give wallet buttons room to paint */
+.hisabi-moyasar-payment-form .hisabi-moyasar-payment-mount {
+  width: 100%;
+}
+
+.hisabi-moyasar-payment-form .mysr-form {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 22rem;
+}
+
+.hisabi-moyasar-payment-form .mysr-form button,
+.hisabi-moyasar-payment-form .mysr-form [role='button'] {
+  min-height: 2.75rem;
+}
+
+/*
+ * Moyasar v2 styles the card Pay button as Tailwind `bg-primary`
+ * (rgb(118 141 255) blue) inside `div#mysr`. Override that only —
+ * Apple Pay uses `bg-black` and stays branded black.
+ */
+.hisabi-moyasar-payment-form div#mysr .bg-primary {
+  background-color: var(--hisabi-secondary-container) !important;
+  background-image: none !important;
+  color: var(--hisabi-on-secondary-container) !important;
+  font-weight: 700 !important;
+  border-radius: 0.75rem !important;
+  box-shadow: var(--hisabi-shadow-1) !important;
+}
+
+.hisabi-moyasar-payment-form div#mysr .bg-primary:hover,
+.hisabi-moyasar-payment-form div#mysr .bg-primary:focus {
+  background-color: var(--hisabi-secondary-container-hover) !important;
+}
+
+/* Pay label is often `text-white` — force dark text on gold */
+.hisabi-moyasar-payment-form div#mysr .bg-primary,
+.hisabi-moyasar-payment-form div#mysr .bg-primary .text-white,
+.hisabi-moyasar-payment-form div#mysr .bg-primary span,
+.hisabi-moyasar-payment-form div#mysr .bg-primary .currency-amount {
+  color: var(--hisabi-on-secondary-container) !important;
+}
+
+/* Currency icon filter assumes white-on-blue; undo for dark-on-gold */
+.hisabi-moyasar-payment-form div#mysr .bg-primary .currency-icon {
+  filter: none !important;
+}
+
+/* Trial (and any custom pay label): hide the "1.00 SAR" chip so only the CTA text shows */
+.hisabi-moyasar-custom-pay-label div#mysr .bg-primary .currency-amount {
+  display: none !important;
+}
