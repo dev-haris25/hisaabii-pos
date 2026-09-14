@@ -49,6 +49,7 @@ import { cn } from '@/lib/utils'
  *   fallbackStaffName?: string
  *   fallbackSellerName?: string
  *   documentLabel?: string | null
+ *   receiptCopy?: 'customer' | 'kitchen'
  *   className?: string
  * }} props
  */
@@ -58,6 +59,7 @@ export function PosThermalReceiptPreview({
   fallbackStaffName = '',
   fallbackSellerName = '',
   documentLabel = null,
+  receiptCopy = 'kitchen',
   className,
 }) {
   const t = useTranslations('Pos')
@@ -140,6 +142,15 @@ export function PosThermalReceiptPreview({
         ) : null}
       </div>
 
+      <div
+        className="my-2 border-t border-dashed border-neutral-400"
+        aria-hidden
+      />
+      <p className="text-center text-[11px] font-bold leading-snug">
+        {receiptCopy === 'customer'
+          ? t('receiptCustomerCopy')
+          : t('receiptKitchenCopy')}
+      </p>
       <div
         className="my-2 border-t border-dashed border-neutral-400"
         aria-hidden

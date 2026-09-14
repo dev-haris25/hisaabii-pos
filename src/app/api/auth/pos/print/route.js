@@ -12,6 +12,10 @@ import { buildReceiptPayloadFromInvoice } from '@/lib/print/build-receipt-from-i
 import { buildReceiptPayloadFromNote } from '@/lib/print/build-receipt-from-note'
 import { loadReceiptLogoPngBase64 } from '@/lib/print/load-receipt-logo'
 import { listConfiguredReceiptPrinters } from '@/lib/print/receipt-printers'
+import {
+  RECEIPT_COPY_KINDS,
+  receiptCopyLabel,
+} from '@/lib/print/receipt-copy-labels'
 import { sendReceiptToPrintBridge } from '@/lib/print/send-receipt-to-print-bridge'
 import { prisma } from '@/lib/prisma'
 
@@ -170,33 +174,54 @@ export async function POST(request) {
 
     const results = await Promise.all(
       printers.map(async (printer) => {
-        try {
-          const result = await sendReceiptToPrintBridge({
-            receipt,
-            printer,
-          })
-          return {
-            ip: printer.ip,
-            ok: true,
-            code: null,
-            dryRun: Boolean(result.dryRun),
-            dryRunPath:
-              typeof result.dryRunPath === 'string' ? result.dryRunPath : null,
-            bytes: typeof result.bytes === 'number' ? result.bytes : null,
+        /** @type {string | null} */
+        let firstDryRunPath = null
+        /** @type {number | null} */
+        let lastBytes = null
+        let allDryRun = true
+        /** @type {string | null} */
+        let failCode = null
+
+        for (const kind of RECEIPT_COPY_KINDS) {
+          try {
+            const result = await sendReceiptToPrintBridge({
+              receipt: {
+                ...receipt,
+                copyLabel: receiptCopyLabel(kind, locale),
+              },
+              printer,
+            })
+            allDryRun = allDryRun && Boolean(result.dryRun)
+            if (!firstDryRunPath && typeof result.dryRunPath === 'string') {
+              firstDryRunPath = result.dryRunPath
+            }
+            if (typeof result.bytes === 'number') lastBytes = result.bytes
+          } catch (e) {
+            failCode =
+              e && typeof e === 'object' && 'code' in e
+                ? String(e.code)
+                : 'PRINT_FAILED'
           }
-        } catch (e) {
-          const code =
-            e && typeof e === 'object' && 'code' in e
-              ? String(e.code)
-              : 'PRINT_FAILED'
+        }
+
+        if (failCode) {
           return {
             ip: printer.ip,
             ok: false,
-            code,
+            code: failCode,
             dryRun: false,
             dryRunPath: null,
             bytes: null,
           }
+        }
+
+        return {
+          ip: printer.ip,
+          ok: true,
+          code: null,
+          dryRun: allDryRun,
+          dryRunPath: firstDryRunPath,
+          bytes: lastBytes,
         }
       }),
     )

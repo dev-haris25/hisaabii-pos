@@ -95,6 +95,13 @@ async function layoutReceipt(p, receipt) {
   }
   if (receipt.vatNumber) p.println(`VAT: ${receipt.vatNumber}`)
   if (receipt.crNumber) p.println(`CR: ${receipt.crNumber}`)
+  const copyLabel =
+    typeof receipt.copyLabel === 'string' ? receipt.copyLabel.trim() : ''
+  if (copyLabel) {
+    p.drawLine()
+    p.alignCenter()
+    p.println(copyLabel)
+  }
   p.drawLine()
   p.alignLeft()
   const documentLabel =
