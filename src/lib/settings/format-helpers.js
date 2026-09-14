@@ -44,9 +44,16 @@ export function formatDocumentNumber(n, prefix, padding = 4) {
   return `${prefix}${String(num).padStart(pad, '0')}`
 }
 
-const SAR_CURRENCY_SYMBOL = 'SAR'
+/**
+ * Official Saudi Riyal Sign (Unicode 17.0, U+20C1).
+ * Distinct from the older Arabic Rial Sign (U+FDFC ﷼).
+ */
+export const SAR_CURRENCY_SYMBOL = '\u20C1'
 
 /**
+ * Format a SAR amount for display: official symbol, then the number
+ * (e.g. "⃁ 99.50").
+ *
  * @param {string | number | null | undefined} amount
  * @param {string | null | undefined} [locale]
  * @param {{ minimumFractionDigits?: number, maximumFractionDigits?: number }} [options]

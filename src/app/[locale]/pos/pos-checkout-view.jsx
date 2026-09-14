@@ -31,6 +31,7 @@ import {
   decimalStringFromNumber,
   parseMoney,
 } from '@/lib/invoices/invoice-compute-totals'
+import { formatSarAmount } from '@/lib/settings/format-helpers'
 import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
 
@@ -483,7 +484,7 @@ export function PosCheckoutView({
                         dir="ltr"
                         className="type-body-sm font-medium text-hisabi-teal"
                       >
-                        {item.price}
+                        {formatSarAmount(item.price, locale)}
                       </span>
                     </div>
                   </button>
@@ -550,7 +551,7 @@ export function PosCheckoutView({
                         {line.name}
                       </p>
                       <p dir="ltr" className="type-body-sm text-hisabi-on-surface-variant">
-                        {line.unitPrice} × {line.quantity}
+                        {formatSarAmount(line.unitPrice, locale)} × {line.quantity}
                       </p>
                       <div className="mt-hisabi-xs flex items-center gap-1">
                         <button
@@ -586,7 +587,7 @@ export function PosCheckoutView({
                         dir="ltr"
                         className="type-label-md font-bold text-hisabi-on-surface"
                       >
-                        {lineTotal}
+                        {formatSarAmount(lineTotal, locale)}
                       </span>
                       <button
                         type="button"
@@ -607,21 +608,21 @@ export function PosCheckoutView({
             <div className="space-y-1">
               <div className="type-body-sm flex justify-between text-hisabi-on-surface-variant">
                 <span>{t('subtotal')}</span>
-                <span dir="ltr">{cartTotals.subtotal}</span>
+                <span dir="ltr">{formatSarAmount(cartTotals.subtotal, locale)}</span>
               </div>
               {parseMoney(cartTotals.totalDiscount) > 0 ? (
                 <div className="type-body-sm flex justify-between text-hisabi-on-surface-variant">
                   <span>{t('discount')}</span>
-                  <span dir="ltr">−{cartTotals.totalDiscount}</span>
+                  <span dir="ltr">−{formatSarAmount(cartTotals.totalDiscount, locale)}</span>
                 </div>
               ) : null}
               <div className="type-body-sm flex justify-between text-hisabi-on-surface-variant">
                 <span>{t('vat')}</span>
-                <span dir="ltr">{cartTotals.totalVat}</span>
+                <span dir="ltr">{formatSarAmount(cartTotals.totalVat, locale)}</span>
               </div>
               <div className="type-label-md flex justify-between font-bold text-hisabi-on-surface">
                 <span>{t('grandTotal')}</span>
-                <span dir="ltr">{cartTotals.grandTotal}</span>
+                <span dir="ltr">{formatSarAmount(cartTotals.grandTotal, locale)}</span>
               </div>
             </div>
 
@@ -694,7 +695,7 @@ export function PosCheckoutView({
                 {changeDisplay != null ? (
                   <p className="type-label-md flex justify-between font-bold text-hisabi-teal">
                     <span>{t('change')}</span>
-                    <span dir="ltr">{changeDisplay}</span>
+                    <span dir="ltr">{formatSarAmount(changeDisplay, locale)}</span>
                   </p>
                 ) : null}
               </div>

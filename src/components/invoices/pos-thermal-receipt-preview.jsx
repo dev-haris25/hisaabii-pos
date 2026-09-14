@@ -8,6 +8,7 @@ import {
   ZatcaQrImage,
 } from '@/components/invoices/zatca-qr-image'
 import { parseMoney } from '@/lib/invoices/invoice-compute-totals'
+import { formatSarAmount } from '@/lib/settings/format-helpers'
 import { cn } from '@/lib/utils'
 
 /**
@@ -197,9 +198,11 @@ export function PosThermalReceiptPreview({
               <p className="font-semibold leading-snug">{name}</p>
               <div className="flex justify-between gap-2" dir="ltr">
                 <span>
-                  {String(line.quantity)} × {String(line.unitPrice)}
+                  {String(line.quantity)} × {formatSarAmount(line.unitPrice, locale)}
                 </span>
-                <span className="font-semibold">{String(line.lineTotal)}</span>
+                <span className="font-semibold">
+                  {formatSarAmount(line.lineTotal, locale)}
+                </span>
               </div>
             </li>
           )
@@ -214,21 +217,21 @@ export function PosThermalReceiptPreview({
       <div className="space-y-0.5 text-[11px]">
         <div className="flex justify-between gap-2">
           <span>{t('subtotal')}</span>
-          <span dir="ltr">{String(invoice.subtotal ?? '')}</span>
+          <span dir="ltr">{formatSarAmount(invoice.subtotal, locale)}</span>
         </div>
         {discountTotal > 0 ? (
           <div className="flex justify-between gap-2">
             <span>{t('discount')}</span>
-            <span dir="ltr">−{discountTotal.toFixed(2)}</span>
+            <span dir="ltr">−{formatSarAmount(discountTotal, locale)}</span>
           </div>
         ) : null}
         <div className="flex justify-between gap-2">
           <span>{t('vat')}</span>
-          <span dir="ltr">{String(invoice.totalVat ?? '')}</span>
+          <span dir="ltr">{formatSarAmount(invoice.totalVat, locale)}</span>
         </div>
         <div className="flex justify-between gap-2 text-sm font-bold">
           <span>{t('grandTotal')}</span>
-          <span dir="ltr">{String(invoice.grandTotal ?? '')}</span>
+          <span dir="ltr">{formatSarAmount(invoice.grandTotal, locale)}</span>
         </div>
         {invoice.paymentMethod ? (
           <>
@@ -244,11 +247,15 @@ export function PosThermalReceiptPreview({
               <>
                 <div className="flex justify-between gap-2">
                   <span>{t('receiptReceived')}</span>
-                  <span dir="ltr">{String(invoice.amountTendered ?? '')}</span>
+                  <span dir="ltr">
+                    {formatSarAmount(invoice.amountTendered, locale)}
+                  </span>
                 </div>
                 <div className="flex justify-between gap-2">
                   <span>{t('receiptChange')}</span>
-                  <span dir="ltr">{String(invoice.changeGiven ?? '')}</span>
+                  <span dir="ltr">
+                    {formatSarAmount(invoice.changeGiven, locale)}
+                  </span>
                 </div>
               </>
             ) : null}
