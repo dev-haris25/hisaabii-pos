@@ -115,9 +115,6 @@ jobs:
           bunx prisma generate || { echo "prisma generate failed"; exit 1; }
           bunx prisma migrate deploy || { echo "prisma migrate deploy failed"; exit 1; }
 
-          # One-off sandbox order seed (remove this block after it runs once)
-          bun scripts/seed-haris-orders.mjs || { echo "seed-haris-orders failed"; exit 1; }
-
           # Clean stale build output before production build
           rm -rf .next
 

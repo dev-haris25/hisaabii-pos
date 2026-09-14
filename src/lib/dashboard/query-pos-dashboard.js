@@ -31,6 +31,9 @@ function dayKey(d) {
 
 /** Minimum completed invoices in the window before peak-hours heatmap is useful. */
 const PEAK_HOURS_MIN_ORDERS = 15
+/** Typical-week heatmap: last 30 days, rolled into Mon–Sun × 2-hour slots. */
+const PEAK_HOURS_LOOKBACK_DAYS = 30
+const PEAK_HOURS_BUCKET_HOURS = 2
 
 /**
  * @param {Date} d
@@ -113,6 +116,7 @@ export async function queryPosDashboard(businessProfileId, ability, meta = {}) {
       cashierInvoices,
       weekCreditNotes,
       weekDebitNotes,
+      heatmapInvoices,
     ] = await Promise.all([
       prisma.invoice.findMany({
         where: {
@@ -269,6 +273,18 @@ export async function queryPosDashboard(businessProfileId, ability, meta = {}) {
         },
         select: { grandTotal: true },
       }),
+      prisma.invoice.findMany({
+        where: {
+          businessProfileId,
+          ...WHERE_NOT_DELETED,
+          status: 'completed',
+          invoiceDate: {
+            gte: startOfDay(addDays(todayStart, -(PEAK_HOURS_LOOKBACK_DAYS - 1))),
+            lte: todayEnd,
+          },
+        },
+        select: { invoiceDate: true },
+      }),
     ])
 
     let salesToday = 0
@@ -321,20 +337,27 @@ export async function queryPosDashboard(businessProfileId, ability, meta = {}) {
       0,
     )
 
-    /** @type {number[]} */
-    const hourCounts = Array.from({ length: 24 }, () => 0)
-    for (const inv of trendInvoices) {
-      const h = localHour(inv.invoiceDate)
-      hourCounts[h] = (hourCounts[h] ?? 0) + 1
+    const bucketCount = Math.floor(24 / PEAK_HOURS_BUCKET_HOURS)
+    /** @type {number[][]} weekday 0=Mon … 6=Sun × 2-hour buckets */
+    const heatmapCells = Array.from({ length: 7 }, () =>
+      Array.from({ length: bucketCount }, () => 0),
+    )
+    for (const inv of heatmapInvoices) {
+      const d = inv.invoiceDate
+      const weekday = (d.getDay() + 6) % 7
+      const bucket = Math.floor(localHour(d) / PEAK_HOURS_BUCKET_HOURS)
+      heatmapCells[weekday][bucket] = (heatmapCells[weekday][bucket] ?? 0) + 1
     }
-    const peakOrdersTotal = trendInvoices.length
+    const peakOrdersTotal = heatmapInvoices.length
     const peakHours =
       peakOrdersTotal < PEAK_HOURS_MIN_ORDERS
-        ? { insufficientVolume: true, minOrders: PEAK_HOURS_MIN_ORDERS, hours: [] }
+        ? { insufficientVolume: true, minOrders: PEAK_HOURS_MIN_ORDERS, cells: [] }
         : {
             insufficientVolume: false,
             minOrders: PEAK_HOURS_MIN_ORDERS,
-            hours: hourCounts.map((orders, hour) => ({ hour, orders })),
+            lookbackDays: PEAK_HOURS_LOOKBACK_DAYS,
+            bucketHours: PEAK_HOURS_BUCKET_HOURS,
+            cells: heatmapCells,
           }
 
     /** @type {Map<string, number>} */

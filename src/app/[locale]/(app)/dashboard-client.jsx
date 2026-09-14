@@ -585,14 +585,19 @@ export function DashboardClient({ hasBusinessProfile = true }) {
       {/* Peak hours heatmap */}
       {showSales ? (
         <Panel title={t('peakHoursTitle')} subtitle={t('peakHoursSubtitle')}>
-          {peakHours?.insufficientVolume || !peakHours?.hours?.length ? (
+          {peakHours?.insufficientVolume || !peakHours?.cells?.length ? (
             <EmptyBlock
               text={t('peakHoursNeedVolume', {
                 count: peakHours?.minOrders ?? 15,
               })}
             />
           ) : (
-            <PeakHoursHeatmap hours={peakHours.hours} locale={locale} t={t} />
+            <PeakHoursHeatmap
+              cells={peakHours.cells}
+              bucketHours={peakHours.bucketHours ?? 2}
+              locale={locale}
+              t={t}
+            />
           )}
         </Panel>
       ) : null}
@@ -844,49 +849,107 @@ function EmptyBlock({ text }) {
 }
 
 /**
+ * @param {number} hour
+ * @param {string} locale
+ */
+function formatHeatmapHour(hour, locale) {
+  const d = new Date()
+  d.setHours(hour, 0, 0, 0)
+  return new Intl.DateTimeFormat(locale === 'ar' ? 'en-US' : locale, {
+    hour: 'numeric',
+    hour12: true,
+  }).format(d)
+}
+
+/**
+ * Monday-first short weekday labels.
+ * @param {string} locale
+ */
+function heatmapWeekdayLabels(locale) {
+  const intl = new Intl.DateTimeFormat(locale === 'ar' ? 'ar-SA' : 'en-US', {
+    weekday: 'short',
+  })
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(Date.UTC(2024, 0, 1 + i))
+    return intl.format(d)
+  })
+}
+
+/**
+ * Day × hour busy-times grid (reference: posting-times heatmap).
+ *
  * @param {{
- *   hours: Array<{ hour: number, orders: number }>
+ *   cells: number[][]
+ *   bucketHours: number
  *   locale: string
  *   t: (key: string, values?: Record<string, unknown>) => string
  * }} props
  */
-function PeakHoursHeatmap({ hours, locale, t }) {
-  const maxOrders = Math.max(...hours.map((h) => h.orders), 0)
-  const displayHours = hours.filter((h) => h.hour >= 6 && h.hour <= 23)
+function PeakHoursHeatmap({ cells, bucketHours, locale, t }) {
+  const dayLabels = heatmapWeekdayLabels(locale)
+  const rowCount = cells[0]?.length ?? 0
+  const maxOrders = Math.max(0, ...cells.flat())
 
   return (
     <div className="space-y-hisabi-md">
-      <div className="grid grid-cols-6 gap-2 sm:grid-cols-9">
-        {displayHours.map((cell) => {
-          const intensity =
-            maxOrders === 0 || cell.orders === 0
-              ? 0
-              : Math.ceil((cell.orders / maxOrders) * 4)
-          return (
-            <div
-              key={cell.hour}
-              className={cn(
-                'flex flex-col items-center justify-center rounded-xl px-1 py-hisabi-sm',
-                intensity === 0 && 'bg-hisabi-surface-container text-hisabi-on-surface-variant',
-                intensity === 1 && 'bg-hisabi-primary-container/20 text-hisabi-primary',
-                intensity === 2 && 'bg-hisabi-primary-container/45 text-hisabi-primary',
-                intensity === 3 && 'bg-hisabi-primary/70 text-white',
-                intensity === 4 && 'bg-hisabi-primary text-hisabi-on-primary',
-              )}
-              title={t('peakHoursCellTitle', {
-                hour: String(cell.hour).padStart(2, '0'),
-                count: cell.orders,
-              })}
-            >
-              <span className="type-label-sm font-bold" dir="ltr">
-                {String(cell.hour).padStart(2, '0')}
+      <div className="-mx-1 overflow-x-auto px-1">
+        <div className="min-w-[32rem]">
+          <div className="mb-hisabi-sm grid grid-cols-[3.75rem_repeat(7,minmax(0,1fr))] items-center gap-1.5">
+            <span aria-hidden />
+            {dayLabels.map((label) => (
+              <span
+                key={label}
+                className="type-label-sm text-hisabi-on-surface-variant text-center font-medium"
+              >
+                {label}
               </span>
-              <span className="type-label-sm opacity-90" dir="ltr">
-                {formatLocalizedNumber(cell.orders, locale)}
-              </span>
-            </div>
-          )
-        })}
+            ))}
+          </div>
+          <div className="space-y-1.5">
+            {Array.from({ length: rowCount }, (_, row) => {
+              const hour = row * bucketHours
+              const hourLabel = formatHeatmapHour(hour, locale)
+              return (
+                <div
+                  key={hour}
+                  className="grid grid-cols-[3.75rem_repeat(7,minmax(0,1fr))] items-center gap-1.5"
+                >
+                  <span
+                    className="type-label-sm text-hisabi-on-surface-variant text-end font-medium tabular-nums"
+                    dir="ltr"
+                  >
+                    {hourLabel}
+                  </span>
+                  {cells.map((dayCells, weekday) => {
+                    const orders = dayCells[row] ?? 0
+                    const intensity =
+                      maxOrders === 0 || orders === 0
+                        ? 0
+                        : Math.ceil((orders / maxOrders) * 4)
+                    return (
+                      <div
+                        key={`${weekday}-${hour}`}
+                        title={t('peakHoursCellTitle', {
+                          day: dayLabels[weekday],
+                          hour: hourLabel,
+                          count: formatLocalizedNumber(orders, locale),
+                        })}
+                        className={cn(
+                          'mx-auto aspect-square w-full max-w-9 rounded-md',
+                          intensity === 0 && 'bg-hisabi-surface-container',
+                          intensity === 1 && 'bg-hisabi-gold/25',
+                          intensity === 2 && 'bg-hisabi-gold/45',
+                          intensity === 3 && 'bg-hisabi-gold/70',
+                          intensity === 4 && 'bg-hisabi-gold',
+                        )}
+                      />
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+        </div>
       </div>
       <p className="type-body-sm text-hisabi-on-surface-variant">{t('peakHoursLegend')}</p>
     </div>
