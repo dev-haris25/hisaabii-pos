@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { AppLoader } from '@/components/app-loader'
@@ -67,6 +67,9 @@ export function PosCheckoutView({
   const router = useRouter()
   const queryClient = useQueryClient()
   const setUser = useAuthStore((s) => s.setUser)
+
+  const cartPanelRef = useRef(/** @type {HTMLElement | null} */ (null))
+  const [cartStickTop, setCartStickTop] = useState(/** @type {string | null} */ (null))
 
   const [categoryId, setCategoryId] = useState(/** @type {string | 'all'} */ ('all'))
   const [itemSearch, setItemSearch] = useState('')
@@ -132,6 +135,32 @@ export function PosCheckoutView({
     if (!amountTendered.trim() || tendered < grand) return null
     return decimalStringFromNumber(tendered - grand)
   }, [paymentMethod, amountTendered, cartTotals.grandTotal])
+
+  useLayoutEffect(() => {
+    const el = cartPanelRef.current
+    if (!el) return
+
+    const update = () => {
+      const desktop = window.matchMedia('(min-width: 1024px)').matches
+      if (!desktop) {
+        setCartStickTop(null)
+        return
+      }
+      const headerPx = embedded ? 16 : 72
+      const gapPx = 16
+      const top = Math.min(headerPx, window.innerHeight - el.offsetHeight - gapPx)
+      setCartStickTop(`${top}px`)
+    }
+
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    window.addEventListener('resize', update)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', update)
+    }
+  }, [embedded, cart, discount, paymentMethod, amountTendered])
 
   const logoutMutation = useMutation({
     mutationFn: () => authPost('/logout'),
@@ -445,7 +474,11 @@ export function PosCheckoutView({
           )}
         </section>
 
-        <aside className="border-hisabi-outline-variant/30 flex w-full shrink-0 flex-col overflow-hidden rounded-xl border bg-hisabi-surface-container-lowest shadow-sm lg:w-[380px] lg:self-start lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100dvh-5.5rem)]">
+        <aside
+          ref={cartPanelRef}
+          style={cartStickTop ? { top: cartStickTop } : undefined}
+          className="border-hisabi-outline-variant/30 flex w-full shrink-0 flex-col rounded-xl border bg-hisabi-surface-container-lowest shadow-sm lg:w-[380px] lg:self-start lg:sticky"
+        >
           <div className="flex items-center justify-between gap-hisabi-sm border-b border-hisabi-outline-variant/20 px-hisabi-lg py-hisabi-md">
             <div className="flex items-center gap-hisabi-sm">
               <ShoppingCart className="size-5 text-hisabi-primary" aria-hidden />
@@ -464,7 +497,7 @@ export function PosCheckoutView({
             ) : null}
           </div>
 
-          <div className="flex-1 space-y-hisabi-sm overflow-y-auto px-hisabi-md py-hisabi-md">
+          <div className="space-y-hisabi-sm px-hisabi-md py-hisabi-md">
             {cart.length === 0 ? (
               <p className="type-body-md text-hisabi-on-surface-variant py-hisabi-xl text-center">
                 {t('emptyCart')}
