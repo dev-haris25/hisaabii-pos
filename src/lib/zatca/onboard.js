@@ -13,6 +13,7 @@ import {
 } from '@/lib/zatca/env'
 import { formatZatcaCsidRejection } from '@/lib/zatca/errors'
 import { buildPostalAddressFromFields } from '@/lib/zatca/postal-address-from-fields'
+import { retryZatcaCall } from '@/lib/zatca/retry-zatca-call'
 import { assertBusinessProfileCompleteForZatca } from '@/lib/zatca/seller-party-validate'
 import { encryptZatcaSecret } from '@/lib/zatca/secrets'
 
@@ -101,11 +102,15 @@ export async function onboardZatca(profile, otp) {
       certificatePem,
       invoiceCounter: i + 1,
     })
-    const result = await client.verifyCompliance(
-      credentials,
-      signed.invoiceHash,
-      signed.uuid,
-      signed.base64SignedXml,
+    const result = await retryZatcaCall(
+      () =>
+        client.verifyCompliance(
+          credentials,
+          signed.invoiceHash,
+          signed.uuid,
+          signed.base64SignedXml,
+        ),
+      { label: `compliance check (${checkType})`, isTransientResult: () => false },
     )
     if (!result.valid) {
       throw new Error(
@@ -118,9 +123,14 @@ export async function onboardZatca(profile, otp) {
     throw new Error('ZATCA did not return a compliance request ID')
   }
 
-  const production = await client.requestProductionCSID(
-    credentials,
-    compliance.requestId,
+  const production = await retryZatcaCall(
+    () => client.requestProductionCSID(credentials, compliance.requestId),
+    {
+      label: 'production CSID request',
+      isTransientResult: (result) =>
+        result?.status === 'REJECTED' &&
+        /^HTTP_(429|5\d\d)$/.test(result?.error?.code ?? ''),
+    },
   )
 
   if (production.status !== 'ACCEPTED' || !production.binarySecurityToken) {

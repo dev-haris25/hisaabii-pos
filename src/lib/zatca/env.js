@@ -95,15 +95,27 @@ export function getZatcaApiEnvironment(envOverride) {
 }
 
 /**
+ * Production Fatoora `/core` can take ~50s. The `@talha7k/zatca` client
+ * defaults to 30s — too tight. Override via `ZATCA_API_TIMEOUT_MS`.
+ */
+const DEFAULT_ZATCA_API_TIMEOUT_MS = 60_000
+
+export function getZatcaApiTimeoutMs() {
+  const raw = Number.parseInt(process.env.ZATCA_API_TIMEOUT_MS ?? '', 10)
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_ZATCA_API_TIMEOUT_MS
+}
+
+/**
  * @param {string | null | undefined} [envOverride]
- * @returns {{ environment: 'sandbox' | 'production', sandboxUrl?: string, productionUrl?: string }}
+ * @returns {{ environment: 'sandbox' | 'production', sandboxUrl?: string, productionUrl?: string, timeout: number }}
  */
 export function getZatcaApiConfig(envOverride) {
   const env = getZatcaEnvironment(envOverride)
+  const timeout = getZatcaApiTimeoutMs()
   if (env === 'sandbox') {
-    return { environment: 'sandbox' }
+    return { environment: 'sandbox', timeout }
   }
-  return { environment: 'production', productionUrl: getZatcaBaseUrl(env) }
+  return { environment: 'production', productionUrl: getZatcaBaseUrl(env), timeout }
 }
 
 /** EGS serial (ZATCA mandatory): 1-Manufacturer|2-Model|3-SerialNumber */
