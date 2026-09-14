@@ -1,6 +1,46 @@
 node_modules
 .next
+out
+dist
+build
+
 .env
 .env.dev
+!.env.example
+!.env.prod
+
 src/generated
 tmp
+.tmp-*
+tmp-*
+*.tmp
+*.log
+*.tsbuildinfo
+coverage
+
+# Local AI / agent / Cursor / step docs (not required to run the app)
+.cursor
+.docx
+*.docx
+*.md
+AGENTS.md
+CLAUDE.md
+AGENT.md
+rules.md
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+
+# Local uploads and QA artifacts
+public/uploads
+/uploads
+/tests
+test-results
+playwright-report
+blob-report
+.playwright-mcp
+playwright-mcp
+*-check-*.png
