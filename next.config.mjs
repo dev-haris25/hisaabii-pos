@@ -10,7 +10,7 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.js')
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ['node-thermal-printer'],
+  serverExternalPackages: ['node-thermal-printer', '@talha7k/zatca', 'effect'],
   images: {
     remotePatterns: [
       {
