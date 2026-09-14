@@ -20,16 +20,16 @@ export function hashOtpCode(code) {
 }
 
 /**
- * Dev-only dummy OTP (`000000`). OTP screens are never skipped.
+ * Dummy OTP (`000000`) when the matching env flag is `"true"`.
+ * OTP screens are never skipped. Real emailed OTPs still work.
  * - register (email verify) → HISABI_DEV_AUTOVERIFY_LOGIN
  * - password_reset → HISABI_DEV_AUTOVERIFY_OTP
- * Ignored when NODE_ENV=production.
  *
  * @param {'register' | 'password_reset'} purpose
  * @param {string} code
  */
 function isDevDummyOtpAllowed(purpose, code) {
-  if (process.env.NODE_ENV === 'production' || code !== DUMMY_OTP) {
+  if (code !== DUMMY_OTP) {
     return false
   }
   if (purpose === 'register') {

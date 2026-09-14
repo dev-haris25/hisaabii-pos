@@ -1,4 +1,4 @@
-/** Dummy OTP accepted when HISABI_DEV_AUTOVERIFY_OTP=true (dev only). */
+/** Dummy OTP accepted when the matching HISABI_DEV_AUTOVERIFY_* env flag is true. */
 export const DUMMY_OTP = '000000'
 
 export const SESSION_COOKIE = 'hisabi_pos_session'
