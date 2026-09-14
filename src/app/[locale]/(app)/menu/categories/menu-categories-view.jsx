@@ -38,6 +38,7 @@ import {
   listTableThClass,
 } from '@/lib/list-views/list-table-styles'
 import { useListRowSelection } from '@/lib/list-views/use-list-row-selection'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { cn } from '@/lib/utils'
 
 const fieldClass =
@@ -64,6 +65,7 @@ export function MenuCategoriesView() {
   const [nameAr, setNameAr] = useState('')
   const [nameEn, setNameEn] = useState('')
   const [formError, setFormError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({ nameAr: '' })
   const [editCategory, setEditCategory] = useState(
     /** @type {Record<string, unknown> | null} */ (null),
   )
@@ -115,6 +117,7 @@ export function MenuCategoriesView() {
       setNameAr('')
       setNameEn('')
       setFormError('')
+      setFieldErrors({ nameAr: '' })
       resetOrigin()
       queryClient.invalidateQueries({ queryKey: ['menu', 'categories'] })
     },
@@ -177,16 +180,18 @@ export function MenuCategoriesView() {
     isSelected,
   } = useListRowSelection(selectableRows)
 
-  const canAdd = Boolean(nameAr.trim()) && !createMutation.isPending
+  const canAdd = !createMutation.isPending
   const actionsBusy =
     activateMutation.isPending || deactivateMutation.isPending
 
   function handleAdd() {
     setFormError('')
     if (!nameAr.trim()) {
-      setFormError(t('validationNameAr'))
+      setFieldErrors({ nameAr: t('validationNameAr') })
+      scrollAfterFieldValidation()
       return
     }
+    setFieldErrors({ nameAr: '' })
     createMutation.mutate()
   }
 
@@ -279,7 +284,7 @@ export function MenuCategoriesView() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault()
-                      if (canAdd) handleAdd()
+                      handleAdd()
                     }
                   }}
                 />
@@ -307,17 +312,37 @@ export function MenuCategoriesView() {
                       otherFieldEmpty: !nameEn.trim(),
                     })
                     setNameAr(next)
+                    setFieldErrors((prev) =>
+                      prev.nameAr ? { ...prev, nameAr: '' } : prev,
+                    )
                   }}
                   placeholder={t('categoryNameArPlaceholder')}
-                  className={fieldClass}
+                  className={cn(
+                    fieldClass,
+                    fieldErrors.nameAr &&
+                      'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                  )}
                   dir="rtl"
+                  aria-invalid={fieldErrors.nameAr ? true : undefined}
+                  aria-describedby={
+                    fieldErrors.nameAr ? 'cat-page-ar-error' : undefined
+                  }
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault()
-                      if (canAdd) handleAdd()
+                      handleAdd()
                     }
                   }}
                 />
+                {fieldErrors.nameAr ? (
+                  <p
+                    id="cat-page-ar-error"
+                    className="type-body-sm text-hisabi-error"
+                    role="alert"
+                  >
+                    {fieldErrors.nameAr}
+                  </p>
+                ) : null}
               </div>
               <AuthSubmitButton
                 type="button"

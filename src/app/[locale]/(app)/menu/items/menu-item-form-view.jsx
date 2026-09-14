@@ -28,6 +28,7 @@ import {
   shouldEnableBilingualTranslate,
   useBilingualFieldOrigin,
 } from '@/lib/i18n/use-bilingual-field-origin'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { cn } from '@/lib/utils'
 
 const LOGO_ACCEPT = COMPANY_LOGO_MIME_TYPES.join(',')
@@ -113,6 +114,7 @@ export function MenuItemFormView({ mode, itemId }) {
   const [sortOrder, setSortOrder] = useState('0')
   const [active, setActive] = useState(true)
   const [formError, setFormError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({ nameAr: '' })
   const [hydrated, setHydrated] = useState(mode === 'create')
   const [nameEnBaseline, setNameEnBaseline] = useState('')
   const [nameArBaseline, setNameArBaseline] = useState('')
@@ -231,9 +233,11 @@ export function MenuItemFormView({ mode, itemId }) {
     e.preventDefault()
     setFormError('')
     if (!nameAr.trim()) {
-      setFormError(t('validationNameAr'))
+      setFieldErrors({ nameAr: t('validationNameAr') })
+      scrollAfterFieldValidation()
       return
     }
+    setFieldErrors({ nameAr: '' })
     if (!/^\d+(\.\d{1,4})?$/.test(price.trim())) {
       setFormError(t('validationPrice'))
       return
@@ -374,12 +378,32 @@ export function MenuItemFormView({ mode, itemId }) {
                       otherFieldEmpty: !nameEn.trim(),
                     })
                     setNameAr(next)
+                    setFieldErrors((prev) =>
+                      prev.nameAr ? { ...prev, nameAr: '' } : prev,
+                    )
                   }}
                   placeholder={t('itemNameArPlaceholder')}
                   required
                   dir="rtl"
-                  className={fieldClass}
+                  className={cn(
+                    fieldClass,
+                    fieldErrors.nameAr &&
+                      'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                  )}
+                  aria-invalid={fieldErrors.nameAr ? true : undefined}
+                  aria-describedby={
+                    fieldErrors.nameAr ? 'item-name-ar-error' : undefined
+                  }
                 />
+                {fieldErrors.nameAr ? (
+                  <p
+                    id="item-name-ar-error"
+                    className="type-body-sm text-hisabi-error"
+                    role="alert"
+                  >
+                    {fieldErrors.nameAr}
+                  </p>
+                ) : null}
               </div>
             </div>
 

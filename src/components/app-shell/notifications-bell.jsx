@@ -191,7 +191,7 @@ export function NotificationsBell({ disabled = false }) {
       >
         <Bell className="size-5" aria-hidden />
         {unreadCount > 0 ? (
-          <span className="bg-hisabi-error text-hisabi-on-error absolute -end-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-4">
+          <span className="bg-hisabi-error absolute -end-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-4 text-white">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         ) : null}

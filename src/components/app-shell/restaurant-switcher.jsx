@@ -146,6 +146,7 @@ export function RestaurantSwitcher({
       queryClient.invalidateQueries({ queryKey: ['auth', 'business-profiles'] })
       queryClient.invalidateQueries({ queryKey: ['auth', 'business-profile'] })
       queryClient.invalidateQueries({ queryKey: ['menu'] })
+      queryClient.invalidateQueries({ queryKey: ['pos'] })
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
       setOpen(false)

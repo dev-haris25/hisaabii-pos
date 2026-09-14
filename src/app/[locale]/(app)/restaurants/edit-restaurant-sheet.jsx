@@ -33,7 +33,7 @@ import {
   MAX_COMPANY_LOGO_BYTES,
 } from '@/lib/auth/company-logo'
 import { cn } from '@/lib/utils'
-import { scrollFirstInvalidFieldIntoView } from '@/lib/ui/scroll-first-invalid-field'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { useAuthStore } from '@/stores/auth-store'
 import { BilingualCompanyFields } from '@/components/business-profile/bilingual-company-fields'
 import { BilingualInvoiceFieldsConfirmModal } from '@/components/business-profile/bilingual-invoice-fields-confirm-modal'
@@ -128,6 +128,7 @@ export function EditRestaurantSheet({
   const tErr = useTranslations('AuthErrors')
   const titleId = useId()
   const panelRef = useRef(/** @type {HTMLDivElement | null} */ (null))
+  const formScrollRef = useRef(/** @type {HTMLDivElement | null} */ (null))
   const logoInputRef = useRef(/** @type {HTMLInputElement | null} */ (null))
   const openedHydrateKeyRef = useRef(/** @type {string | null} */ (null))
   const queryClient = useQueryClient()
@@ -474,7 +475,7 @@ export function EditRestaurantSheet({
     )
     if (!ok) {
       setFieldErrors(errors)
-      scrollFirstInvalidFieldIntoView()
+      scrollAfterFieldValidation(formScrollRef.current)
       return
     }
     setFieldErrors({
@@ -637,7 +638,10 @@ export function EditRestaurantSheet({
               onConfirm={handleConfirmEditSave}
             />
           ) : null}
-          <div className="min-h-0 flex-1 space-y-hisabi-lg overflow-y-auto px-hisabi-md py-hisabi-xl sm:px-hisabi-lg md:px-hisabi-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            ref={formScrollRef}
+            className="min-h-0 flex-1 space-y-hisabi-lg overflow-y-auto px-hisabi-md py-hisabi-xl sm:px-hisabi-lg md:px-hisabi-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             {profileLoading ? (
               <div className="flex min-h-[40vh] items-center justify-center py-hisabi-xxl">
                 <AppLoader />

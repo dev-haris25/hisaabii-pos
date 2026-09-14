@@ -39,6 +39,8 @@ export function mapSalarySlipToJson(row) {
     employeeName: row.employee?.name ?? null,
     employeeEmailOfficial: row.employee?.emailOfficial ?? null,
     employeeEmailPersonal: row.employee?.emailPersonal ?? null,
+    employeeNationality: row.employee?.nationality ?? null,
+    employeePassportNumber: row.employee?.passportNumber ?? null,
     employeeIdNumber: row.employee?.idNumber ?? null,
     employeeJoiningDate: row.employee?.joiningDate ? toIsoDate(row.employee.joiningDate) : null,
     employeeBankAccountName: row.employee?.bankAccountName ?? null,

@@ -179,10 +179,6 @@ export function BilingualCompanyAddressFields({
   const districtArAutofill = useSuppressBrowserAutofillUntilFocus()
   const cityArAutofill = useSuppressBrowserAutofillUntilFocus()
 
-  const invoiceAddressHasError = Boolean(
-    fieldErrors.districtAr || fieldErrors.cityAr || fieldErrors.streetAr,
-  )
-
   function clearAr(/** @type {string} */ key) {
     onClearAddressFieldError?.(key)
   }
@@ -255,7 +251,7 @@ export function BilingualCompanyAddressFields({
             }}
             className={cn(
               fieldClass,
-              invoiceAddressHasError &&
+              fieldErrors.districtAr &&
                 'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
             )}
             dir="rtl"
@@ -338,7 +334,7 @@ export function BilingualCompanyAddressFields({
             }}
             className={cn(
               fieldClass,
-              invoiceAddressHasError &&
+              fieldErrors.cityAr &&
                 'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
             )}
             dir="rtl"
@@ -421,7 +417,7 @@ export function BilingualCompanyAddressFields({
             }}
             className={cn(
               fieldClass,
-              invoiceAddressHasError &&
+              fieldErrors.streetAr &&
                 'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
             )}
             dir="rtl"

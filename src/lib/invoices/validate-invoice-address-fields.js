@@ -64,16 +64,11 @@ export function applyInvoiceAddressValidation(
   t,
   ns,
 ) {
-  if (
-    !fields.composedInvoiceAddressAr.trim() &&
-    !fields.composedInvoiceAddressEn.trim()
-  ) {
-    setArabicInvoiceLineRequiredErrors(nextErrors, t, ns, {
-      districtAr: fields.districtAr,
-      cityAr: fields.cityAr,
-      streetAr: fields.streetAr,
-    })
-  }
+  setArabicInvoiceLineRequiredErrors(nextErrors, t, ns, {
+    districtAr: fields.districtAr,
+    cityAr: fields.cityAr,
+    streetAr: fields.streetAr,
+  })
 
   if (!fields.postalCode.trim()) {
     nextErrors.postalCode =

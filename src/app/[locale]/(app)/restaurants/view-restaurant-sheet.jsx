@@ -129,10 +129,7 @@ export function ViewRestaurantSheet({
     return tBp('taxStandardTitle')
   }
 
-  const zatcaCompleted =
-    typeof profile?.zatcaCompleted === 'boolean'
-      ? profile.zatcaCompleted
-      : !profile?.zatcaOnboardingSkipped
+  const zatcaCompleted = profile?.zatcaCompleted === true
 
   const showFooter = Boolean(profile) && !isPending && !isError
 

@@ -7,10 +7,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { authGet } from '@/lib/api/auth-client'
 import { ANALYTICS_SCOPE_ALL } from '@/lib/auth/analytics-scope-query'
 import { companyDisplayNameForLocale } from '@/lib/business-profile/company-display-name'
-import {
-  labelClass,
-  selectClass,
-} from '@/components/settings/settings-page-shell'
+import { selectClass } from '@/components/settings/settings-page-shell'
 import { useAnalyticsRestaurantScopeStore } from '@/stores/analytics-restaurant-scope-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
@@ -47,12 +44,10 @@ export function OwnerRestaurantScopeSelect() {
 
   return (
     <div className="min-w-[14rem] max-w-xs">
-      <label className={labelClass} htmlFor="owner-restaurant-scope">
-        {t('label')}
-      </label>
       <div className="relative">
         <select
           id="owner-restaurant-scope"
+          aria-label={t('label')}
           className={cn(selectClass, 'min-h-hisabi-btn cursor-pointer rounded-xl')}
           value={selectValue}
           onChange={(e) => {

@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
@@ -15,6 +15,7 @@ import {
   shouldEnableBilingualTranslate,
   useBilingualFieldOrigin,
 } from '@/lib/i18n/use-bilingual-field-origin'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { cn } from '@/lib/utils'
 
 const fieldClass =
@@ -60,7 +61,9 @@ export function MenuCategoryEditModal({
   const [nameAr, setNameAr] = useState('')
   const [nameEn, setNameEn] = useState('')
   const [formError, setFormError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({ nameAr: '' })
   const [nameEnBaseline, setNameEnBaseline] = useState('')
+  const formScrollRef = useRef(/** @type {HTMLDivElement | null} */ (null))
 
   useEffect(() => {
     if (!open) return
@@ -75,6 +78,7 @@ export function MenuCategoryEditModal({
         setNameEnBaseline('')
       }
       setFormError('')
+      setFieldErrors({ nameAr: '' })
       resetOrigin()
     })
     return () => cancelAnimationFrame(id)
@@ -139,7 +143,7 @@ export function MenuCategoryEditModal({
   if (!open) return null
   if (isEdit && !category) return null
 
-  const canSave = Boolean(nameAr.trim()) && !saveMutation.isPending
+  const canSave = !saveMutation.isPending
 
   return (
     <div className="fixed inset-0 z-[130]" role="presentation">
@@ -186,7 +190,10 @@ export function MenuCategoryEditModal({
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-hisabi-md overflow-y-auto px-hisabi-lg py-hisabi-md">
+          <div
+            ref={formScrollRef}
+            className="min-h-0 flex-1 space-y-hisabi-md overflow-y-auto px-hisabi-lg py-hisabi-md"
+          >
             {formError ? (
               <p className="type-body-sm text-hisabi-error" role="alert">
                 {formError}
@@ -247,11 +254,31 @@ export function MenuCategoryEditModal({
                       otherFieldEmpty: !nameEn.trim(),
                     })
                     setNameAr(next)
+                    setFieldErrors((prev) =>
+                      prev.nameAr ? { ...prev, nameAr: '' } : prev,
+                    )
                   }}
                   placeholder={t('categoryNameArPlaceholder')}
-                  className={cn(fieldClass)}
+                  className={cn(
+                    fieldClass,
+                    fieldErrors.nameAr &&
+                      'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                  )}
                   dir="rtl"
+                  aria-invalid={fieldErrors.nameAr ? true : undefined}
+                  aria-describedby={
+                    fieldErrors.nameAr ? 'cat-modal-ar-error' : undefined
+                  }
                 />
+                {fieldErrors.nameAr ? (
+                  <p
+                    id="cat-modal-ar-error"
+                    className="type-body-sm text-hisabi-error"
+                    role="alert"
+                  >
+                    {fieldErrors.nameAr}
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>
@@ -274,9 +301,11 @@ export function MenuCategoryEditModal({
               onClick={() => {
                 setFormError('')
                 if (!nameAr.trim()) {
-                  setFormError(t('validationNameAr'))
+                  setFieldErrors({ nameAr: t('validationNameAr') })
+                  scrollAfterFieldValidation(formScrollRef.current)
                   return
                 }
+                setFieldErrors({ nameAr: '' })
                 saveMutation.mutate()
               }}
             >

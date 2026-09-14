@@ -36,15 +36,19 @@ function toIsoDate(d) {
  *     total: string
  *     payslipCategory?: { name: string } | null
  *   }>
- *   employee?: {
- *     name: string
- *     idNumber?: string | null
- *     joiningDate?: Date | null
- *     bankAccountName?: string | null
- *     bankAccountNumber?: string | null
- *     bankName?: string | null
- *     bankIban?: string | null
- *   } | null
+   *   employee?: {
+   *     name: string
+   *     idNumber?: string | null
+   *     joiningDate?: Date | null
+   *     nationality?: string | null
+   *     passportNumber?: string | null
+   *     emailOfficial?: string | null
+   *     emailPersonal?: string | null
+   *     bankAccountName?: string | null
+   *     bankAccountNumber?: string | null
+   *     bankName?: string | null
+   *     bankIban?: string | null
+   *   } | null
  * }} slip
  * @param {{
  *   id: string
@@ -119,6 +123,10 @@ export function mapSalarySlipToDocumentModel(slip, profile, locale) {
       name: employee?.name?.trim() || '—',
       idNumber: employee?.idNumber?.trim() || null,
       joiningDate: employee?.joiningDate ? toIsoDate(employee.joiningDate) : null,
+      nationality: employee?.nationality?.trim() || null,
+      passportNumber: employee?.passportNumber?.trim() || null,
+      email:
+        employee?.emailOfficial?.trim() || employee?.emailPersonal?.trim() || null,
       bankAccountName: employee?.bankAccountName?.trim() || null,
       bankAccountNumber: employee?.bankAccountNumber?.trim() || null,
       bankName: employee?.bankName?.trim() || null,
@@ -195,6 +203,10 @@ export function mapSalarySlipJsonToDocumentModel(slip, profile, locale) {
         name: slip.employeeName ?? '',
         idNumber: slip.employeeIdNumber ?? null,
         joiningDate: slip.employeeJoiningDate ? new Date(slip.employeeJoiningDate) : null,
+        nationality: slip.employeeNationality ?? null,
+        passportNumber: slip.employeePassportNumber ?? null,
+        emailOfficial: slip.employeeEmailOfficial ?? null,
+        emailPersonal: slip.employeeEmailPersonal ?? null,
         bankAccountName: slip.employeeBankAccountName ?? null,
         bankAccountNumber: slip.employeeBankAccountNumber ?? null,
         bankName: slip.employeeBankName ?? null,

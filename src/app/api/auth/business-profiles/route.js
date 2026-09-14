@@ -161,7 +161,7 @@ export async function GET() {
           onboardingCompleted: Boolean(p.onboardingCompletedAt),
           zatcaOnboardingSkipped,
           zatcaCompleted: hasProductionCsid,
-          zatcaPending: !hasProductionCsid && Boolean(p.onboardingCompletedAt),
+          zatcaPending: !hasProductionCsid,
           updatedAt: p.updatedAt.toISOString(),
           isActive: p.id === activeId,
           isOwner: p.ownerUserId === session.id,

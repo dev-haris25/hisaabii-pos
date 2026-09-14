@@ -44,7 +44,7 @@ import {
 } from '@/lib/business-profile/validate-business-profile-invoice'
 import { useBilingualFieldOrigin } from '@/lib/i18n/use-bilingual-field-origin'
 import { hasFullAccess } from '@/lib/rbac/ability-utils'
-import { scrollFirstInvalidFieldIntoView } from '@/lib/ui/scroll-first-invalid-field'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -377,7 +377,7 @@ export const SettingsRestaurantIdentitySection = forwardRef(
           toast.message(t('zatcaNeedsReonboarding'))
           saveFlowResolveRef.current?.('redirected')
           saveFlowResolveRef.current = null
-          router.push('/zatca-onboarding')
+          router.push('/zatca-onboarding?from=settings')
           return
         }
         saveFlowResolveRef.current?.('saved')
@@ -548,7 +548,7 @@ export const SettingsRestaurantIdentitySection = forwardRef(
         )
         if (!ok) {
           setFieldErrors(errors)
-          scrollFirstInvalidFieldIntoView()
+          scrollAfterFieldValidation()
           resolve('invalid')
           return
         }

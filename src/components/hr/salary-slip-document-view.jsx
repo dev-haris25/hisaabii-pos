@@ -7,17 +7,7 @@ import { formatSarAmount } from '@/lib/settings/format-helpers'
 import { useLocale, useTranslations } from 'next-intl'
 import { useCallback, useState } from 'react'
 
-import {
-  LIST_TABLE_BASE,
-  LIST_TABLE_BODY,
-  LIST_TABLE_HEAD_ROW,
-  LIST_TABLE_ROW,
-  LIST_TABLE_SCROLL_WRAP,
-  listTableTdClass,
-  listTableThClass,
-} from '@/lib/list-views/list-table-styles'
 import { cn } from '@/lib/utils'
-import { PreparedByDisplay } from '@/components/finance/prepared-by-display'
 
 /**
  * @typedef {{
@@ -38,6 +28,9 @@ import { PreparedByDisplay } from '@/components/finance/prepared-by-display'
  *     name: string
  *     idNumber: string | null
  *     joiningDate: string | null
+ *     nationality: string | null
+ *     passportNumber: string | null
+ *     email: string | null
  *     bankAccountName: string | null
  *     bankAccountNumber: string | null
  *     bankName: string | null
@@ -61,133 +54,32 @@ function EmployerBrand({ displayName, logoUrl }) {
   const [logoBroken, setLogoBroken] = useState(false)
   const src = logoUrl && !logoBroken ? logoUrl : null
 
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={displayName}
+        className="mx-auto h-24 w-auto max-w-[16rem] object-contain"
+        onError={() => setLogoBroken(true)}
+      />
+    )
+  }
+
   return (
-    <div className="flex items-center gap-hisabi-md">
-      {src ? (
-        <img
-          src={src}
-          alt=""
-          className="h-16 w-auto max-w-[14rem] shrink-0 object-contain"
-          onError={() => setLogoBroken(true)}
-        />
-      ) : (
-        <div className="min-w-0">
-          <p className="type-headline-md text-hisabi-primary font-bold leading-tight">{displayName}</p>
-        </div>
-      )}
-    </div>
+    <p className="type-headline-lg text-center font-bold text-hisabi-primary">{displayName}</p>
   )
 }
 
 /**
  * @param {{ label: string, value: string, dir?: 'ltr' | 'rtl' }} props
  */
-function MetaItem({ label, value, dir }) {
+function FactLine({ label, value, dir }) {
   return (
-    <div className="min-w-0">
-      <p className="type-label-sm text-hisabi-on-surface-variant mb-0.5 font-semibold uppercase tracking-wide">
-        {label}
-      </p>
-      <p className="type-body-sm text-hisabi-on-surface font-semibold" dir={dir}>
-        {value}
-      </p>
-    </div>
-  )
-}
-
-/**
- * @param {{
- *   title: string
- *   rows: SalarySlipDocumentModel['earnings']
- *   totalLabel: string
- *   total: number
- *   formatMoney: (n: number) => string
- *   emptyLabel: string
- *   accentClass: string
- * }} props
- */
-function PayslipLineTable({ title, rows, totalLabel, total, formatMoney, emptyLabel, accentClass, colItem, colQty, colRate, colAmount }) {
-  return (
-    <div className="min-w-0 flex-1">
-      <div
-        className={cn(
-          'type-label-sm mb-hisabi-sm px-hisabi-md py-2 font-bold uppercase tracking-widest text-white',
-          accentClass,
-        )}
-      >
-        {title}
-      </div>
-      <div className={LIST_TABLE_SCROLL_WRAP}>
-        <table className={cn(LIST_TABLE_BASE, 'min-w-[480px]')}>
-          <thead>
-            <tr className={LIST_TABLE_HEAD_ROW}>
-              <th scope="col" className={listTableThClass('px-hisabi-md py-2.5 font-semibold normal-case', true)}>
-                {colItem}
-              </th>
-              <th scope="col" className={listTableThClass('w-16 px-2 py-2.5 text-end font-semibold normal-case')}>
-                {colQty}
-              </th>
-              <th scope="col" className={listTableThClass('w-24 px-2 py-2.5 text-end font-semibold normal-case')}>
-                {colRate}
-              </th>
-              <th scope="col" className={listTableThClass('w-28 px-hisabi-md py-2.5 text-end font-semibold normal-case')}>
-                {colAmount}
-              </th>
-            </tr>
-          </thead>
-          <tbody className={LIST_TABLE_BODY}>
-            {rows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={4}
-                  className="type-body-sm text-hisabi-on-surface-variant px-hisabi-md py-6 text-center"
-                >
-                  {emptyLabel}
-                </td>
-              </tr>
-            ) : (
-              rows.map((row) => (
-                <tr key={row.id} className={LIST_TABLE_ROW}>
-                  <td className={listTableTdClass('type-body-sm text-hisabi-on-surface px-hisabi-md py-2.5', true)}>
-                    <span className="font-semibold">{row.categoryName || row.description || '—'}</span>
-                    {row.categoryName && row.description ? (
-                      <span className="text-hisabi-on-surface-variant mt-0.5 block text-xs">
-                        {row.description}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className={listTableTdClass('type-body-sm px-2 py-2.5 text-end font-mono')} dir="ltr">
-                    {row.unit}
-                  </td>
-                  <td className={listTableTdClass('type-body-sm px-2 py-2.5 text-end font-mono')} dir="ltr">
-                    {formatMoney(row.unitRate)}
-                  </td>
-                  <td
-                    className={listTableTdClass('type-body-sm px-hisabi-md py-2.5 text-end font-mono font-semibold')}
-                    dir="ltr"
-                  >
-                    {formatMoney(row.total)}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-          <tfoot>
-            <tr className="bg-slate-50">
-              <td
-                colSpan={3}
-                className={listTableTdClass('type-label-sm text-hisabi-on-surface px-hisabi-md py-3 text-end font-bold uppercase', true)}
-              >
-                {totalLabel}
-              </td>
-              <td className={listTableTdClass('type-body-md px-hisabi-md py-3 text-end font-mono font-bold')} dir="ltr">
-                {formatMoney(total)}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
+    <p className="type-body-md text-hisabi-on-surface">
+      <span>{label}</span>
+      <span> : </span>
+      <span dir={dir}>{value}</span>
+    </p>
   )
 }
 
@@ -199,209 +91,189 @@ export function SalarySlipDocumentView({ model, className, printMode = false }) 
   const locale = useLocale()
   const uiLocale = locale === 'ar' ? 'ar-SA' : 'en-US'
 
-  const formatMoney = useCallback((n) => formatSarAmount(n, locale), [])
+  const formatMoney = useCallback((n) => formatSarAmount(n, locale), [locale])
 
-  const formatShortDate = useCallback(
+  const formatLetterDate = useCallback(
     (iso) => {
       if (!iso) return '—'
       const ymd = String(iso).slice(0, 10)
       const d = new Date(`${ymd}T12:00:00`)
       if (Number.isNaN(d.getTime())) return '—'
-      return new Intl.DateTimeFormat(uiLocale, { dateStyle: 'medium' }).format(d)
+      return new Intl.DateTimeFormat(uiLocale, {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }).format(d)
     },
     [uiLocale],
   )
 
-  const formatPayPeriod = useCallback(
-    (yyyyMm) => {
-      const raw = String(yyyyMm ?? '').trim()
-      if (!raw) return '—'
-      const [y, m] = raw.split('-').map(Number)
-      if (!y || !m) return raw
-      return new Intl.DateTimeFormat(uiLocale, { month: 'long', year: 'numeric' }).format(
-        new Date(y, m - 1, 1),
-      )
+  const reference = model.referenceNumber || model.voucherNumber
+  const companyName = model.employer.displayName
+  const currency = t('payslipCurrency')
+
+  /** @type {Array<{ key: string, label: string, amount: number, emphasize?: boolean }>} */
+  const breakdownRows = [
+    { key: 'basic', label: t('fieldBasicPay'), amount: model.basicPay },
+    ...model.earnings.map((row) => ({
+      key: `e-${row.id}`,
+      label: row.categoryName || row.description || t('earningsSection'),
+      amount: row.total,
+    })),
+    {
+      key: 'gross',
+      label: t('payslipGrossSalary'),
+      amount: model.totalEarnings,
+      emphasize: true,
     },
-    [uiLocale],
-  )
+    ...model.deductions.map((row) => ({
+      key: `d-${row.id}`,
+      label: row.categoryName || row.description || t('deductionsSection'),
+      amount: -Math.abs(row.total),
+    })),
+    {
+      key: 'net',
+      label: t('netTotalLabel'),
+      amount: model.netPay,
+      emphasize: true,
+    },
+  ]
 
   return (
     <div
       className={cn(
-        'overflow-hidden bg-white text-slate-800',
+        'bg-white text-slate-900',
         printMode ? 'rounded-none border-0 shadow-none' : 'rounded-xl border border-slate-200 shadow-lg',
         className,
       )}
     >
-      <div className="border-b-4 border-hisabi-primary bg-slate-50 px-hisabi-xl py-hisabi-lg">
-        <div className="flex flex-wrap items-start justify-between gap-hisabi-lg">
+      <div className="px-hisabi-xl py-hisabi-xl sm:px-12 sm:py-14">
+        <div className="mb-hisabi-xxl">
           <EmployerBrand
             displayName={model.employer.displayName}
             logoUrl={model.employer.logoUrl}
           />
-          <div className="text-end">
-            <div className="type-label-sm mb-1 inline-block rounded bg-hisabi-primary px-3 py-1 font-bold uppercase tracking-widest text-white">
-              {t('salarySlipDocumentLabel')}
+        </div>
+
+        <div className="type-body-md mb-hisabi-xl space-y-1">
+          <p>
+            {t('payslipLetterReference')} : {reference}
+          </p>
+          <p>
+            {t('payslipLetterDate')} : {formatLetterDate(model.slipDate)}
+          </p>
+        </div>
+
+        <h1 className="type-headline-md mb-hisabi-xl text-center font-bold underline underline-offset-4">
+          {t('payslipLetterTitle')}
+        </h1>
+
+        <div className="mb-hisabi-lg space-y-1">
+          <FactLine label={t('payslipLetterEmpName')} value={model.employee.name} />
+          {model.employee.nationality ? (
+            <FactLine label={t('fieldNationality')} value={model.employee.nationality} />
+          ) : null}
+          {model.employee.idNumber ? (
+            <FactLine label={t('payslipEmployeeId')} value={model.employee.idNumber} dir="ltr" />
+          ) : null}
+          {model.employee.joiningDate ? (
+            <FactLine
+              label={t('fieldJoiningDate')}
+              value={formatLetterDate(model.employee.joiningDate)}
+            />
+          ) : null}
+          {model.employee.passportNumber ? (
+            <FactLine
+              label={t('fieldPassportNumber')}
+              value={model.employee.passportNumber}
+              dir="ltr"
+            />
+          ) : null}
+          {model.employee.email ? (
+            <FactLine label={t('fieldEmailOfficial')} value={model.employee.email} dir="ltr" />
+          ) : null}
+        </div>
+
+        <table className="mb-hisabi-xl w-full border-collapse border border-black text-start">
+          <thead>
+            <tr className="bg-neutral-200">
+              <th
+                scope="col"
+                className="type-label-md border border-black px-hisabi-md py-2 font-bold"
+              >
+                {t('payslipLetterBreakdown')}
+              </th>
+              <th
+                scope="col"
+                className="type-label-md w-40 border border-black px-hisabi-md py-2 text-end font-bold"
+              >
+                {t('payslipLetterAmount', { currency })}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {breakdownRows.map((row) => (
+              <tr key={row.key} className={row.emphasize ? 'bg-neutral-50' : undefined}>
+                <td
+                  className={cn(
+                    'type-body-md border border-black px-hisabi-md py-2',
+                    row.emphasize && 'font-bold',
+                  )}
+                >
+                  {row.label}
+                </td>
+                <td
+                  className={cn(
+                    'type-body-md border border-black px-hisabi-md py-2 text-end font-mono',
+                    row.emphasize && 'font-bold',
+                  )}
+                  dir="ltr"
+                >
+                  {formatMoney(row.amount)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="type-body-md mb-hisabi-lg space-y-hisabi-md leading-relaxed">
+          <p>{t('payslipLetterIssued', { company: companyName })}</p>
+          <p>
+            {model.description?.trim()
+              ? model.description.trim()
+              : t('payslipLetterPurpose')}
+          </p>
+          <p>{t('payslipLetterRegards')}</p>
+        </div>
+
+        <div className="mb-hisabi-xl mt-hisabi-xxl grid grid-cols-2 gap-hisabi-xl">
+          <div className="text-center">
+            <div className="mb-2 h-16" aria-hidden />
+            <div className="border-t border-black pt-2">
+              <p className="type-label-sm text-hisabi-on-surface">{t('payslipPreparedBy')}</p>
             </div>
-            <p className="type-headline-lg font-bold text-hisabi-primary" dir="ltr">
-              {model.voucherNumber}
-            </p>
-            {model.referenceNumber ? (
-              <p className="type-body-sm text-hisabi-on-surface-variant" dir="ltr">
-                {t('payslipRefLabel')}: {model.referenceNumber}
-              </p>
-            ) : null}
+          </div>
+          <div className="text-center">
+            <div className="mb-2 h-16" aria-hidden />
+            <div className="border-t border-black pt-2">
+              <p className="type-label-sm text-hisabi-on-surface">{t('payslipReceivedBy')}</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-hisabi-md border-b border-slate-200 bg-white px-hisabi-xl py-hisabi-md sm:grid-cols-4">
-        <MetaItem label={t('payslipPayPeriod')} value={formatPayPeriod(model.payPeriod)} />
-        <MetaItem label={t('payslipPaymentDate')} value={formatShortDate(model.slipDate)} />
-        <MetaItem label={t('payslipEmployeeName')} value={model.employee.name} />
-        {model.employee.idNumber ? (
-          <MetaItem label={t('payslipEmployeeId')} value={model.employee.idNumber} dir="ltr" />
-        ) : null}
-        {model.employee.joiningDate ? (
-          <MetaItem label={t('fieldJoiningDate')} value={formatShortDate(model.employee.joiningDate)} />
-        ) : null}
-      </div>
-
-      <div className="flex flex-col gap-hisabi-lg px-hisabi-xl py-hisabi-lg lg:flex-row">
-        <PayslipLineTable
-          title={t('earningsSection')}
-          rows={model.earnings}
-          totalLabel={t('totalEarningsLabel')}
-          total={model.totalEarnings}
-          formatMoney={formatMoney}
-          emptyLabel={t('emptyLines')}
-          accentClass="bg-emerald-600"
-          colItem={t('payslipColItem')}
-          colQty={t('payslipColQty')}
-          colRate={t('payslipColRate')}
-          colAmount={t('payslipColAmount')}
-        />
-        <PayslipLineTable
-          title={t('deductionsSection')}
-          rows={model.deductions}
-          totalLabel={t('totalDeductionsLabel')}
-          total={model.totalDeductions}
-          formatMoney={formatMoney}
-          emptyLabel={t('emptyLines')}
-          accentClass="bg-rose-600"
-          colItem={t('payslipColItem')}
-          colQty={t('payslipColQty')}
-          colRate={t('payslipColRate')}
-          colAmount={t('payslipColAmount')}
-        />
-      </div>
-
-      <div className="mx-hisabi-xl mb-hisabi-lg overflow-hidden rounded-lg border border-slate-200">
-        <div className="grid grid-cols-1 divide-y divide-slate-200 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-          <div className="bg-slate-50 px-hisabi-lg py-hisabi-md text-center">
-            <p className="type-label-sm text-hisabi-on-surface-variant font-semibold uppercase">
-              {t('fieldBasicPay')}
-            </p>
-            <p className="type-headline-md mt-1 font-mono font-bold text-hisabi-primary" dir="ltr">
-              {formatMoney(model.basicPay)}
-            </p>
-          </div>
-          <div className="bg-slate-50 px-hisabi-lg py-hisabi-md text-center">
-            <p className="type-label-sm text-hisabi-on-surface-variant font-semibold uppercase">
-              {t('totalEarningsLabel')}
-            </p>
-            <p className="type-headline-md mt-1 font-mono font-bold text-emerald-700" dir="ltr">
-              {formatMoney(model.totalEarnings)}
-            </p>
-          </div>
-          <div className="bg-slate-50 px-hisabi-lg py-hisabi-md text-center">
-            <p className="type-label-sm text-hisabi-on-surface-variant font-semibold uppercase">
-              {t('totalDeductionsLabel')}
-            </p>
-            <p className="type-headline-md mt-1 font-mono font-bold text-rose-700" dir="ltr">
-              {formatMoney(model.totalDeductions)}
-            </p>
-          </div>
-        </div>
-        <div className="bg-hisabi-primary px-hisabi-xl py-hisabi-lg text-center">
-          <p className="type-label-sm font-semibold uppercase tracking-widest text-white/80">
-            {t('netTotalLabel')}
-          </p>
-          <p className="type-headline-xl mt-1 font-mono font-black text-white" dir="ltr">
-            {formatMoney(model.netPay)}
-          </p>
-        </div>
-      </div>
-
-      {(model.employee.bankName ||
-        model.employee.bankAccountNumber ||
-        model.employee.bankIban) && (
-        <div className="border-t border-slate-200 bg-slate-50 px-hisabi-xl py-hisabi-md">
-          <p className="type-label-sm text-hisabi-on-surface-variant mb-hisabi-sm font-bold uppercase tracking-wide">
-            {t('sectionBankDetails')}
-          </p>
-          <div className="type-body-sm grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {model.employee.bankName ? (
-              <p>
-                <span className="text-hisabi-on-surface-variant">{t('fieldBankName')}: </span>
-                <span className="font-semibold">{model.employee.bankName}</span>
-              </p>
-            ) : null}
-            {model.employee.bankAccountName ? (
-              <p>
-                <span className="text-hisabi-on-surface-variant">{t('fieldBankAccountName')}: </span>
-                <span className="font-semibold">{model.employee.bankAccountName}</span>
-              </p>
-            ) : null}
-            {model.employee.bankAccountNumber ? (
-              <p dir="ltr">
-                <span className="text-hisabi-on-surface-variant">{t('fieldBankAccountNumber')}: </span>
-                <span className="font-semibold">{model.employee.bankAccountNumber}</span>
-              </p>
-            ) : null}
-            {model.employee.bankIban ? (
-              <p dir="ltr">
-                <span className="text-hisabi-on-surface-variant">{t('fieldBankIban')}: </span>
-                <span className="font-semibold">{model.employee.bankIban}</span>
-              </p>
-            ) : null}
-          </div>
-        </div>
-      )}
-
-      <div className="border-t border-slate-200 px-hisabi-xl py-hisabi-md">
-        <p className="type-body-sm text-hisabi-on-surface-variant text-center">{model.employer.address}</p>
-        {model.employer.crNumber || model.employer.vatNumber ? (
-          <p className="type-body-sm text-hisabi-on-surface-variant mt-1 text-center" dir="ltr">
+        {(model.employer.address && model.employer.address !== '—') ||
+        model.employer.crNumber ||
+        model.employer.vatNumber ? (
+          <p className="type-body-sm text-hisabi-on-surface-variant mt-hisabi-xxl">
             {[
-              model.employer.crNumber ? `CR: ${model.employer.crNumber}` : null,
-              model.employer.vatNumber ? `VAT: ${model.employer.vatNumber}` : null,
+              model.employer.address !== '—' ? model.employer.address : null,
+              model.employer.crNumber ? `CR ${model.employer.crNumber}` : null,
+              model.employer.vatNumber ? `VAT ${model.employer.vatNumber}` : null,
             ]
               .filter(Boolean)
               .join(' · ')}
           </p>
         ) : null}
-        {model.description ? (
-          <p className="type-body-sm text-hisabi-on-surface-variant mt-hisabi-md text-center italic">
-            {model.description}
-          </p>
-        ) : null}
-        <div className="mt-hisabi-xl grid grid-cols-2 gap-hisabi-xl pt-hisabi-lg">
-          <div className="border-t border-slate-300 pt-2 text-center">
-            <div className="mb-2 flex h-14 items-center justify-center">
-              <PreparedByDisplay
-                imageUrl={model.preparedByUrl}
-                name={model.preparedByName}
-                className="max-h-12 max-w-full object-contain"
-              />
-            </div>
-            <p className="type-label-sm text-hisabi-on-surface-variant">{t('payslipPreparedBy')}</p>
-          </div>
-          <div className="border-t border-slate-300 pt-2 text-center">
-            <div className="mb-2 h-14" aria-hidden />
-            <p className="type-label-sm text-hisabi-on-surface-variant">{t('payslipReceivedBy')}</p>
-          </div>
-        </div>
       </div>
     </div>
   )

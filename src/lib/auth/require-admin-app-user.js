@@ -25,7 +25,10 @@ export async function requireAdminAppUser() {
     ability.can('update', 'BusinessProfile') ||
     ability.can('create', 'BusinessProfile')
 
-  if (managesBusiness && (user.needsBusinessProfileOnboarding || user.needsZatcaOnboarding)) {
+  // Restaurant list/create must stay reachable while ZATCA is still pending
+  // (add-restaurant flow). First-run ZATCA stays on /zatca-onboarding via
+  // post-auth landing after /business-profile, not this app-shell gate.
+  if (managesBusiness && user.needsBusinessProfileOnboarding) {
     redirect(getPostAuthLandingPath(user))
   }
 
@@ -44,7 +47,7 @@ export async function getAdminAppUserOrNull() {
     hasFullAccess(ability) ||
     ability.can('update', 'BusinessProfile') ||
     ability.can('create', 'BusinessProfile')
-  if (managesBusiness && (user.needsBusinessProfileOnboarding || user.needsZatcaOnboarding)) {
+  if (managesBusiness && user.needsBusinessProfileOnboarding) {
     return null
   }
   return user

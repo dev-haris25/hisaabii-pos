@@ -65,6 +65,7 @@ export function ZatcaOnboardingView({
   const isModal = variant === 'modal'
   const isEmbedded = variant === 'embedded'
   const t = useTranslations('ZatcaOnboarding')
+  const tRestaurants = useTranslations('Restaurants')
   const tErr = useTranslations('AuthErrors')
   const tZatca = useTranslations('ZatcaErrors')
   const router = useRouter()
@@ -75,6 +76,15 @@ export function ZatcaOnboardingView({
       : parseSafeNextPath(searchParams.get('next'))
   const queryClient = useQueryClient()
   const setUser = useAuthStore((s) => s.setUser)
+  const restaurantCount = useAuthStore(
+    (s) => s.user?.accessibleBusinessProfileCount ?? 0,
+  )
+  const fromParam = searchParams.get('from')
+  const standaloneBackToRestaurants =
+    !isModal &&
+    !isEmbedded &&
+    fromParam !== 'settings' &&
+    (fromParam === 'restaurants' || restaurantCount > 1)
   const isRtl = useIsRtl()
   const NextIcon = isRtl ? ArrowLeft : ArrowRight
   const BackIcon = isRtl ? ArrowRight : ArrowLeft
@@ -192,6 +202,16 @@ export function ZatcaOnboardingView({
     }
     if (isEmbedded) {
       onBack?.()
+      return
+    }
+    if (fromParam === 'settings') {
+      router.push('/settings/restaurant')
+      return
+    }
+    // Adding another restaurant (or returning from the list) must not reopen
+    // the first-signup wizard with an empty form.
+    if (fromParam === 'restaurants' || restaurantCount > 1) {
+      router.push('/restaurants')
       return
     }
     router.push('/business-profile?from=zatca')
@@ -387,7 +407,9 @@ export function ZatcaOnboardingView({
                       className={zatcaBackButtonClassName}
                     >
                       <BackIcon className="size-5 shrink-0" aria-hidden />
-                      {t('back')}
+                      {standaloneBackToRestaurants
+                        ? tRestaurants('backToList')
+                        : t('back')}
                     </button>
                   ) : null}
                   <AuthSubmitButton

@@ -145,6 +145,7 @@ function AdminAppShellInner({
   const liveZatcaSkipped = useAuthStore(
     (s) => s.user?.zatcaOnboardingSkippedEffective,
   )
+  const liveNeedsZatca = useAuthStore((s) => s.user?.needsZatcaOnboarding)
   const ability = useOptionalAppAbility()
   const isRtl = useIsRtl()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -197,6 +198,8 @@ function AdminAppShellInner({
     typeof liveZatcaSkipped === 'boolean'
       ? liveZatcaSkipped
       : zatcaOnboardingSkippedEffective
+  const zatcaNotDone =
+    liveNeedsZatca === true || skippedEffective === true
 
   const canManageBusiness =
     hasFullAccess(ability) ||
@@ -204,9 +207,7 @@ function AdminAppShellInner({
     ability.can('create', 'BusinessProfile')
 
   const showZatcaOnboardingReminder =
-    canManageBusiness &&
-    hasBusinessProfile === true &&
-    skippedEffective === true
+    canManageBusiness && hasBusinessProfile === true && zatcaNotDone
 
   const showRestaurantSwitcher =
     hasBusinessProfile &&

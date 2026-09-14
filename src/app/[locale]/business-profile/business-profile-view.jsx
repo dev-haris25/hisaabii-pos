@@ -26,7 +26,7 @@ import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { AuthPageFooter } from '@/components/auth/auth-page-footer'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { useIsRtl } from '@/components/auth/use-is-rtl'
-import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
+import { AuthApiError, authGet, authPatch, authPost } from '@/lib/api/auth-client'
 import { getPostAuthLandingPath } from '@/lib/auth/post-auth-landing-path'
 import Image from 'next/image'
 import {
@@ -35,7 +35,7 @@ import {
   digitsOnlyLimited,
 } from '@/lib/business-registration-ids'
 import { cn } from '@/lib/utils'
-import { scrollFirstInvalidFieldIntoView } from '@/lib/ui/scroll-first-invalid-field'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { parseSafeNextPath } from '@/lib/auth/safe-next-path'
 import { useRouter } from '@/i18n/navigation'
 import { useSearchParams } from 'next/navigation'
@@ -137,8 +137,12 @@ export function BusinessProfileView({ mode = 'onboard', embedded = false }) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const nextPath = parseSafeNextPath(searchParams.get('next'))
+  const fromZatca = searchParams.get('from') === 'zatca'
   const queryClient = useQueryClient()
   const setUser = useAuthStore((s) => s.setUser)
+  const activeBusinessProfileId = useAuthStore(
+    (s) => s.user?.activeBusinessProfileId ?? null,
+  )
   const isRtl = useIsRtl()
   const ContinueIcon = isRtl ? ArrowLeft : ArrowRight
   const logoInputRef = useRef(/** @type {HTMLInputElement | null} */ (null))
@@ -168,6 +172,25 @@ export function BusinessProfileView({ mode = 'onboard', embedded = false }) {
     /** Refetch when returning from create-organization / active profile changes */
     staleTime: 0,
   })
+
+  const {
+    data: fallbackProfile,
+    isLoading: fallbackProfileLoading,
+  } = useQuery({
+    queryKey: ['auth', 'business-profile', activeBusinessProfileId],
+    queryFn: async () => {
+      const d = await authGet(`/business-profiles/${activeBusinessProfileId}`)
+      return d.profile
+    },
+    enabled: Boolean(
+      !isCreateMode && fromZatca && !savedProfile && activeBusinessProfileId,
+    ),
+    staleTime: 0,
+  })
+
+  const profileToHydrate = savedProfile ?? fallbackProfile
+  const hydratingProfile =
+    profileLoading || Boolean(fromZatca && !profileToHydrate && fallbackProfileLoading)
 
   const [submitError, setSubmitError] = useState('')
   const [redirecting, setRedirecting] = useState(false)
@@ -252,9 +275,9 @@ export function BusinessProfileView({ mode = 'onboard', embedded = false }) {
 
   /* eslint-disable react-hooks/set-state-in-effect -- one-time form init when react-query profile resolves */
   useEffect(() => {
-    if (profileLoading) return
+    if (hydratingProfile) return
     if (hydratedRef.current) return
-    const p = savedProfile
+    const p = profileToHydrate
     if (p) {
       setCompanyNameEn(p.companyNameEn ?? '')
       setCompanyNameAr(p.companyNameAr ?? '')
@@ -266,19 +289,28 @@ export function BusinessProfileView({ mode = 'onboard', embedded = false }) {
           ? p.defaultVatPreset
           : 'standard',
       )
+      hydratedRef.current = true
+      return
     }
+    // Back-from-ZATCA must wait for the saved restaurant — do not lock an empty form.
+    if (fromZatca) return
     hydratedRef.current = true
-  }, [profileLoading, savedProfile, hydrateAddressFromProfile])
+  }, [
+    fromZatca,
+    hydratingProfile,
+    profileToHydrate,
+    hydrateAddressFromProfile,
+  ])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const presetsDisabled = false
 
   const showServerLogo =
-    Boolean(savedProfile?.hasLogo) && !logoRemovedByUser && !logoFile
+    Boolean(profileToHydrate?.hasLogo) && !logoRemovedByUser && !logoFile
 
   const serverLogoSrc =
-    savedProfile?.id != null
-      ? `/api/auth/business-profiles/${savedProfile.id}/logo?t=${encodeURIComponent(savedProfile.updatedAt ?? '')}`
+    profileToHydrate?.id != null
+      ? `/api/auth/business-profiles/${profileToHydrate.id}/logo?t=${encodeURIComponent(profileToHydrate.updatedAt ?? '')}`
       : '/api/auth/business-profile/logo'
 
   const saveMutation = useMutation({
@@ -308,40 +340,39 @@ export function BusinessProfileView({ mode = 'onboard', embedded = false }) {
         customVatPercent,
       })
 
+      /** @type {Record<string, unknown>} */
+      let body = { ...payload }
       if (logoFile) {
         const { base64, logoMimeType } = await readFileAsBase64(logoFile)
-        const body = {
+        body = {
           ...payload,
           logoBase64: base64,
           logoMimeType,
           preserveLogo: false,
         }
-        // First-run onboarding updates the draft; create mode adds another restaurant.
-        return authPost(
-          isCreateMode ? '/business-profiles/create' : '/business-profiles',
-          body,
-        )
-      }
-
-      if (savedProfile?.hasLogo && !logoRemovedByUser) {
-        return authPost(
-          isCreateMode ? '/business-profiles/create' : '/business-profiles',
-          {
-            ...payload,
-            preserveLogo: true,
-          },
-        )
-      }
-
-      return authPost(
-        isCreateMode ? '/business-profiles/create' : '/business-profiles',
-        {
+      } else if (
+        (profileToHydrate?.hasLogo || Boolean(draftBusinessProfileId)) &&
+        !logoRemovedByUser
+      ) {
+        body = { ...payload, preserveLogo: true }
+      } else {
+        body = {
           ...payload,
           preserveLogo: false,
           logoBase64: null,
           logoMimeType: null,
-        },
-      )
+        }
+      }
+
+      // Create-another-restaurant: first save POSTs create; back-from-ZATCA
+      // edits PATCH the restaurant already created.
+      if (isCreateMode && draftBusinessProfileId) {
+        return authPatch(`/business-profiles/${draftBusinessProfileId}`, body)
+      }
+      if (isCreateMode) {
+        return authPost('/business-profiles/create', body)
+      }
+      return authPost('/business-profiles', body)
     },
     onSuccess: (data) => {
       const u = data?.user
@@ -432,7 +463,7 @@ export function BusinessProfileView({ mode = 'onboard', embedded = false }) {
     )
     if (!ok) {
       setFieldErrors(errors)
-      scrollFirstInvalidFieldIntoView()
+      scrollAfterFieldValidation()
       return
     }
     setFieldErrors({
@@ -538,7 +569,7 @@ export function BusinessProfileView({ mode = 'onboard', embedded = false }) {
       ) : null}
 
       <main className={mainClass}>
-        {profileLoading ? (
+        {hydratingProfile ? (
           <div className="flex min-h-[50vh] w-full max-w-[772px] items-center justify-center py-hisabi-xxl">
             <AppLoader />
           </div>
@@ -699,16 +730,16 @@ export function BusinessProfileView({ mode = 'onboard', embedded = false }) {
               postalCode={postalCode}
               shortAddress={shortAddress}
               companyNameEnBaseline={
-                savedProfile != null ? (savedProfile.companyNameEn ?? '') : ''
+                profileToHydrate != null ? (profileToHydrate.companyNameEn ?? '') : ''
               }
               streetEnBaseline={
-                savedProfile != null ? (savedProfile.streetEn ?? '') : ''
+                profileToHydrate != null ? (profileToHydrate.streetEn ?? '') : ''
               }
               districtEnBaseline={
-                savedProfile != null ? (savedProfile.districtEn ?? '') : ''
+                profileToHydrate != null ? (profileToHydrate.districtEn ?? '') : ''
               }
               cityEnBaseline={
-                savedProfile != null ? (savedProfile.cityEn ?? '') : ''
+                profileToHydrate != null ? (profileToHydrate.cityEn ?? '') : ''
               }
               onCompanyNameEnChange={setCompanyNameEn}
               onCompanyNameArChange={setCompanyNameAr}

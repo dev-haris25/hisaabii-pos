@@ -25,6 +25,7 @@ import {
   shouldEnableBilingualTranslate,
   useBilingualFieldOrigin,
 } from '@/lib/i18n/use-bilingual-field-origin'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { cn } from '@/lib/utils'
 
 const REASON_PAIR_KEY = 'invoices.edit.reason'
@@ -99,6 +100,7 @@ export function InvoiceEditView({
   const [reasonAr, setReasonAr] = useState('')
   const [reasonEn, setReasonEn] = useState('')
   const [formError, setFormError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({ reasonAr: '' })
   /** @type {[{ documentNature: 'credit' | 'debit', note: Record<string, unknown> } | null, function]} */
   const [createdNote, setCreatedNote] = useState(null)
 
@@ -297,9 +299,11 @@ export function InvoiceEditView({
     e.preventDefault()
     setFormError('')
     if (!isRepair && !reasonAr.trim()) {
-      setFormError(t('editReasonRequired'))
+      setFieldErrors({ reasonAr: t('editReasonRequired') })
+      scrollAfterFieldValidation()
       return
     }
+    setFieldErrors({ reasonAr: '' })
     if (cart.length === 0) {
       setFormError(tErr('VALIDATION_ERROR'))
       return
@@ -324,7 +328,6 @@ export function InvoiceEditView({
       !editMutation.isPending &&
       parseMoney(cartTotals.grandTotal) > 0
     : cart.length > 0 &&
-      reasonAr.trim() &&
       !editMutation.isPending &&
       Math.abs(
         parseMoney(cartTotals.grandTotal) -
@@ -551,12 +554,32 @@ export function InvoiceEditView({
                           otherFieldEmpty: !reasonEn.trim(),
                         })
                         setReasonAr(next)
+                        setFieldErrors((prev) =>
+                          prev.reasonAr ? { ...prev, reasonAr: '' } : prev,
+                        )
                       }}
                       placeholder={t('editReasonArPlaceholder')}
-                      className={fieldClass}
+                      className={cn(
+                        fieldClass,
+                        fieldErrors.reasonAr &&
+                          'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                      )}
                       dir="rtl"
                       required
+                      aria-invalid={fieldErrors.reasonAr ? true : undefined}
+                      aria-describedby={
+                        fieldErrors.reasonAr ? 'edit-reason-ar-error' : undefined
+                      }
                     />
+                    {fieldErrors.reasonAr ? (
+                      <p
+                        id="edit-reason-ar-error"
+                        className="type-body-sm text-hisabi-error"
+                        role="alert"
+                      >
+                        {fieldErrors.reasonAr}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="space-y-hisabi-xs">

@@ -97,6 +97,8 @@ export function RestaurantsListView() {
   const { data, isPending, isFetching, isError, refetch } = useQuery({
     queryKey: ['auth', 'business-profiles'],
     queryFn: () => authGet('/business-profiles'),
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
 
   const listBusy = isPending || isFetching
@@ -148,6 +150,7 @@ export function RestaurantsListView() {
       queryClient.invalidateQueries({ queryKey: ['auth', 'business-profiles'] })
       queryClient.invalidateQueries({ queryKey: ['auth', 'business-profile'] })
       queryClient.invalidateQueries({ queryKey: ['menu'] })
+      queryClient.invalidateQueries({ queryKey: ['pos'] })
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
       toast.success(t('toastRestaurantActivated'))
       router.refresh()
@@ -454,7 +457,7 @@ export function RestaurantsListView() {
                             <span className="type-label-sm inline-flex shrink-0 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-bold whitespace-nowrap text-green-800">
                               {t('zatcaStatusCompleted')}
                             </span>
-                          ) : row.zatcaPending ? (
+                          ) : (
                             <button
                               type="button"
                               onClick={() => openZatcaForRow(row)}
@@ -462,10 +465,6 @@ export function RestaurantsListView() {
                             >
                               {t('completeZatcaSetup')}
                             </button>
-                          ) : (
-                            <span className="type-label-sm text-hisabi-on-surface-variant">
-                              —
-                            </span>
                           )}
                         </div>
                       </td>

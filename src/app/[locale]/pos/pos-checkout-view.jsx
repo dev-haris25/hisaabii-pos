@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { AppLoader } from '@/components/app-loader'
@@ -67,6 +67,9 @@ export function PosCheckoutView({
   const router = useRouter()
   const queryClient = useQueryClient()
   const setUser = useAuthStore((s) => s.setUser)
+  const activeBusinessProfileId = useAuthStore(
+    (s) => s.user?.activeBusinessProfileId ?? s.user?.businessProfileId ?? null,
+  )
 
   const cartPanelRef = useRef(/** @type {HTMLElement | null} */ (null))
   const [cartStickTop, setCartStickTop] = useState(/** @type {string | null} */ (null))
@@ -86,9 +89,25 @@ export function PosCheckoutView({
   )
 
   const menuQuery = useQuery({
-    queryKey: ['pos', 'menu'],
+    queryKey: ['pos', 'menu', activeBusinessProfileId],
     queryFn: () => authGet('/pos/menu'),
+    enabled: Boolean(activeBusinessProfileId),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
   })
+
+  useEffect(() => {
+    setCategoryId('all')
+    setItemSearch('')
+    setCart([])
+    setReceipt(null)
+    setDiscount('')
+    setAmountTendered('')
+    setPaymentMethod('cash')
+    router.refresh()
+    void queryClient.invalidateQueries({ queryKey: ['pos', 'menu'] })
+  }, [activeBusinessProfileId, queryClient, router])
 
   const categories = menuQuery.data?.categories ?? []
   const items = menuQuery.data?.items ?? []

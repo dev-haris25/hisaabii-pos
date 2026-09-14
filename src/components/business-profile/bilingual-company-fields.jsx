@@ -200,6 +200,7 @@ export function BilingualCompanyFields({
                   otherFieldEmpty: !companyNameEn.trim(),
                 })
                 onCompanyNameArChange(e.target.value)
+                onClearAddressFieldError?.('companyNameAr')
               }}
               {...companyNameArAutofill}
               className={cn(

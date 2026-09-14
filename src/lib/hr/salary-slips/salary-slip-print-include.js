@@ -5,6 +5,8 @@ export const salarySlipPrintInclude = {
       name: true,
       emailOfficial: true,
       emailPersonal: true,
+      nationality: true,
+      passportNumber: true,
       idNumber: true,
       joiningDate: true,
       bankAccountName: true,
