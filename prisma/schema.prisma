@@ -85,6 +85,8 @@ model BusinessProfile {
   menuItems         MenuItem[]
   invoices          Invoice[]
   invoiceCounter    InvoiceCounter?
+  kitchenOrders     KitchenOrder[]
+  kitchenOrderCounters KitchenOrderCounter[]
   creditNotes       CreditNote[]
   debitNotes        DebitNote[]
   creditNoteCounter CreditNoteCounter?
@@ -472,9 +474,10 @@ model Invoice {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  lines       InvoiceLine[]
-  creditNotes CreditNote[]
-  debitNotes  DebitNote[]
+  lines        InvoiceLine[]
+  creditNotes  CreditNote[]
+  debitNotes   DebitNote[]
+  kitchenOrder KitchenOrder?
 
   @@unique([businessProfileId, invoiceNumber])
   @@index([businessProfileId, zatcaStatus])
@@ -484,6 +487,56 @@ model Invoice {
   @@index([zatcaStatus, createdAt])
   @@index([zatcaStatus, zatcaDeadlineRetriedAt, createdAt])
   @@map("invoices")
+}
+
+enum KitchenOrderStatus {
+  pending
+  preparing
+  ready
+  completed
+  cancelled
+}
+
+/// Kitchen ticket for a POS invoice — daily # per restaurant (not ZATCA/invoice number).
+model KitchenOrder {
+  id                String              @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile     @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  invoiceId         String              @unique
+  invoice           Invoice             @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  orderNumber Int
+  /// Calendar date in Asia/Riyadh used for the daily counter.
+  orderDate   DateTime @db.Date
+  status      KitchenOrderStatus @default(pending)
+
+  /// Display lines for the kitchen board (refreshed on invoice edit/repair).
+  linesSnapshot  Json
+  itemsUpdatedAt DateTime @default(now())
+  /// Set when the ticket is marked served (`completed`).
+  completedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([businessProfileId, orderDate, orderNumber])
+  @@index([businessProfileId, status])
+  @@index([invoiceId])
+  @@map("kitchen_orders")
+}
+
+model KitchenOrderCounter {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  orderDate         DateTime        @db.Date
+  lastNumber        Int             @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([businessProfileId, orderDate])
+  @@map("kitchen_order_counters")
 }
 
 model InvoiceLine {

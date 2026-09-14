@@ -52,6 +52,7 @@ export function mapInvoiceListItemToJson(row) {
     hasQr: Boolean(row.qrCode?.trim()),
     staffName: row.createdByStaff?.name ?? null,
     staffId: row.createdByStaff?.id ?? null,
+    orderNumber: row.kitchenOrder?.orderNumber ?? null,
     creditNotes: (row.creditNotes ?? []).map((n) => ({
       id: n.id,
       noteNumber: n.creditNoteNumber,
@@ -131,6 +132,8 @@ export function mapInvoiceDetailToJson(invoice) {
     zatcaLastError: invoice.zatcaLastError,
     staffName: invoice.createdByStaff?.name ?? null,
     staffId: invoice.createdByStaff?.id ?? null,
+    orderNumber: invoice.kitchenOrder?.orderNumber ?? null,
+    orderStatus: invoice.kitchenOrder?.status ?? null,
     lines,
     createdAt: invoice.createdAt.toISOString(),
   }

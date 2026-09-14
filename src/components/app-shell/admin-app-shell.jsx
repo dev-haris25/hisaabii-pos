@@ -11,6 +11,8 @@ import {
   LogOut,
   Menu,
   Monitor,
+  CookingPot,
+  Tv,
   Search,
   Settings,
   Users,
@@ -238,6 +240,18 @@ function AdminAppShellInner({
         href: '/pos',
         labelKey: 'navPos',
         icon: Monitor,
+      },
+      {
+        id: 'kitchen',
+        href: '/kitchen',
+        labelKey: 'navKitchenBoard',
+        icon: CookingPot,
+      },
+      {
+        id: 'queue',
+        href: '/queue',
+        labelKey: 'navCustomerQueue',
+        icon: Tv,
       },
       {
         id: 'menu',

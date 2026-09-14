@@ -61,6 +61,10 @@ export default async function InvoicesPage({ params, searchParams }) {
     where.zatcaStatus = zatcaFilter
   }
   if (search) {
+    const orderNum = Number.parseInt(
+      search.replace(/^(#|ord-)/i, ''),
+      10,
+    )
     where.AND = [
       {
         OR: [
@@ -70,6 +74,9 @@ export default async function InvoicesPage({ params, searchParams }) {
               name: { contains: search, mode: 'insensitive' },
             },
           },
+          ...(Number.isFinite(orderNum)
+            ? [{ kitchenOrder: { is: { orderNumber: orderNum } } }]
+            : []),
         ],
       },
     ]
@@ -99,6 +106,7 @@ export default async function InvoicesPage({ params, searchParams }) {
         zatcaLastError: true,
         qrCode: true,
         createdByStaff: { select: { id: true, name: true } },
+        kitchenOrder: { select: { orderNumber: true, status: true } },
         creditNotes: {
           where: { deletedAt: null },
           orderBy: { noteDate: 'asc' },

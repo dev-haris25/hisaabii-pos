@@ -268,6 +268,8 @@
   --spacing-hisabi-gutter: calc(24px * var(--hisabi-ui-scale));
   --spacing-hisabi-margin-mobile: 16px;
   --spacing-hisabi-margin-desktop: calc(40px * var(--hisabi-ui-scale));
+  --radius-hisabi-md: var(--hisabi-radius-lg);
+  --radius-hisabi-xl: var(--hisabi-radius-xl);
   --width-hisabi-container: 1440px;
   --hisabi-global-search-max-width: clamp(12rem, 42vw, 28rem);
   --hisabi-global-search-panel-max-height: clamp(14rem, 55vh, 24rem);

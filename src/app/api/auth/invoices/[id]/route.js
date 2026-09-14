@@ -17,6 +17,10 @@ import {
   buildRepairedDocumentLines,
   CLEARED_ZATCA_ARTIFACTS,
 } from '@/lib/notes/repair-failed-document'
+import {
+  cancelKitchenOrderForInvoice,
+  refreshKitchenOrderAfterEdit,
+} from '@/lib/orders/sync-kitchen-order'
 import { prisma } from '@/lib/prisma'
 
 const repairLineSchema = z.object({
@@ -68,9 +72,12 @@ export async function DELETE(_request, context) {
       )
     }
 
-    await prisma.invoice.update({
-      where: { id },
-      data: { deletedAt: new Date() },
+    await prisma.$transaction(async (tx) => {
+      await tx.invoice.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      })
+      await cancelKitchenOrderForInvoice(tx, id)
     })
     return jsonOk({ deleted: true })
   } catch (err) {
@@ -139,7 +146,7 @@ export async function PATCH(request, context) {
 
     const updated = await prisma.$transaction(async (tx) => {
       await tx.invoiceLine.deleteMany({ where: { invoiceId: id } })
-      return tx.invoice.update({
+      const row = await tx.invoice.update({
         where: { id },
         data: {
           ...built.totals,
@@ -149,8 +156,11 @@ export async function PATCH(request, context) {
         include: {
           lines: { orderBy: { sortOrder: 'asc' } },
           createdByStaff: { select: { id: true, name: true } },
+          kitchenOrder: { select: { orderNumber: true, status: true } },
         },
       })
+      await refreshKitchenOrderAfterEdit(tx, id, row.lines)
+      return row
     }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
 
     return jsonOk({ invoice: mapInvoiceDetailToJson(updated) })

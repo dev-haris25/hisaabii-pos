@@ -24,6 +24,7 @@ import { LookupWithInlineCreate } from '@/components/hr/lookup-with-inline-creat
 import { SearchableEntityPicker } from '@/components/invoices/searchable-entity-picker'
 import { useRouter } from '@/i18n/navigation'
 import { authGet, authPatch, authPost } from '@/lib/api/auth-client'
+import { roleNameMessageKey } from '@/lib/hr/employees/role-name-message-key'
 import { toastAuthApiError } from '@/lib/api/toast-auth-api-error'
 import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { useAuthStore } from '@/stores/auth-store'
@@ -1046,7 +1047,10 @@ export function EmployeeFormPage({ mode, employee, employeeId, hasBusinessProfil
                     />
                     <span className="min-w-0">
                       <span className="type-label-md text-hisabi-on-surface block font-semibold">
-                        {role.name}
+                        {(() => {
+                          const key = roleNameMessageKey(role.name)
+                          return key ? t(key) : role.name
+                        })()}
                       </span>
                       {role.requiresNoLogin ? (
                         <span className="type-body-sm text-hisabi-on-surface-variant">

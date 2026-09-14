@@ -77,6 +77,7 @@ export async function POST(request) {
           include: {
             lines: { orderBy: { sortOrder: 'asc' } },
             createdByStaff: { select: { name: true } },
+            kitchenOrder: { select: { orderNumber: true } },
           },
         })
         if (!invoice) {

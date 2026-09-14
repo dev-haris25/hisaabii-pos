@@ -10,6 +10,8 @@ export const SIDEBAR_HREF_PERMISSIONS = {
   '/restaurants': { subject: 'BusinessProfile', action: 'read' },
   '/restaurants/create': { subject: 'BusinessProfile', action: 'create' },
   '/pos': { subject: 'Pos', action: 'read' },
+  '/kitchen': { subject: 'KitchenBoard', action: 'read' },
+  '/queue': { subject: 'QueueDisplay', action: 'read' },
   '/menu': { subject: 'MenuItem', action: 'read' },
   '/menu/items/new': { subject: 'MenuItem', action: 'create' },
   '/menu/categories': { subject: 'MenuCategory', action: 'read' },
@@ -57,6 +59,9 @@ export function isRestaurantPortfolioHref(href) {
 export function canAccessSidebarHref(ability, href, options = {}) {
   if (isRestaurantPortfolioHref(href) && options.isRestaurantOwner !== true) {
     return false
+  }
+  if (href === '/kitchen' || href === '/queue') {
+    return hasFullAccess(ability) || options.isRestaurantOwner === true
   }
   if (hasFullAccess(ability)) return true
   const rule = SIDEBAR_HREF_PERMISSIONS[href]

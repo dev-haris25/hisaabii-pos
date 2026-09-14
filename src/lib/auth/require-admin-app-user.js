@@ -1,6 +1,9 @@
 import { jsonError } from '@/lib/api/json-response'
 import { getSessionUser } from '@/lib/auth/get-session-user'
-import { getPostAuthLandingPath } from '@/lib/auth/post-auth-landing-path'
+import {
+  getPostAuthLandingPath,
+  isKitchenOrQueueDisplayUser,
+} from '@/lib/auth/post-auth-landing-path'
 import { createMongoAbility } from '@casl/ability'
 import { hasFullAccess } from '@/lib/rbac/ability-utils'
 import { redirect } from 'next/navigation'
@@ -16,6 +19,10 @@ export async function requireAdminAppUser() {
     redirect('/login')
   }
   if (!user.hasBusinessProfile || !user.active) {
+    redirect(getPostAuthLandingPath(user))
+  }
+
+  if (isKitchenOrQueueDisplayUser(user)) {
     redirect(getPostAuthLandingPath(user))
   }
 
@@ -42,6 +49,7 @@ export async function getAdminAppUserOrNull() {
   const user = await getSessionUser()
   if (!user) return null
   if (!user.hasBusinessProfile || !user.active) return null
+  if (isKitchenOrQueueDisplayUser(user)) return null
   const ability = createMongoAbility(user.abilityRules ?? [])
   const managesBusiness =
     hasFullAccess(ability) ||

@@ -5,8 +5,11 @@ import {
   CASHIER_ROLE_NAME,
   HR_REPORT_SUBJECTS,
   HR_ROLE_NAME,
-  KITCHEN_STAFF_ROLE_NAME,
+  KITCHEN_BOARD_MANAGER_ROLE_NAME,
+  LEGACY_KITCHEN_STAFF_ROLE_NAME,
   MANAGER_ROLE_NAME,
+  QUEUE_DISPLAY_ROLE_NAME,
+  STAFF_ROLE_NAME,
   crudFor,
   readFor,
 } from '@/lib/rbac/permission-registry'
@@ -62,7 +65,12 @@ export function predefinedRolePermissionMap() {
       { action: 'delete', subject: 'DebitNote' },
       ...readFor(['MenuItem', 'MenuCategory']),
     ],
-    [KITCHEN_STAFF_ROLE_NAME]: [],
+    [STAFF_ROLE_NAME]: [],
+    [KITCHEN_BOARD_MANAGER_ROLE_NAME]: [
+      { action: 'read', subject: 'KitchenBoard' },
+      { action: 'update', subject: 'KitchenBoard' },
+    ],
+    [QUEUE_DISPLAY_ROLE_NAME]: [{ action: 'read', subject: 'QueueDisplay' }],
   }
 }
 
@@ -72,7 +80,9 @@ export const PREDEFINED_ROLE_NAMES = [
   ACCOUNTANT_ROLE_NAME,
   HR_ROLE_NAME,
   CASHIER_ROLE_NAME,
-  KITCHEN_STAFF_ROLE_NAME,
+  STAFF_ROLE_NAME,
+  KITCHEN_BOARD_MANAGER_ROLE_NAME,
+  QUEUE_DISPLAY_ROLE_NAME,
 ]
 
 /**
@@ -83,6 +93,26 @@ export const PREDEFINED_ROLE_NAMES = [
 export function predefinedRoleId(businessProfileId, roleName) {
   const slug = roleName.toLowerCase().replace(/[^a-z0-9]+/g, '_')
   return `${slug}_${businessProfileId}`
+}
+
+/**
+ * Keep existing Kitchen/Staff row id when renaming to Staff.
+ * @param {import('@/generated/prisma/client').Prisma.TransactionClient | typeof prisma} tx
+ * @param {string} businessProfileId
+ * @param {string} roleName
+ */
+export async function resolvePredefinedRoleId(tx, businessProfileId, roleName) {
+  if (roleName === STAFF_ROLE_NAME) {
+    const existing = await tx.role.findFirst({
+      where: {
+        businessProfileId,
+        name: { in: [STAFF_ROLE_NAME, LEGACY_KITCHEN_STAFF_ROLE_NAME] },
+      },
+      select: { id: true },
+    })
+    if (existing) return existing.id
+  }
+  return predefinedRoleId(businessProfileId, roleName)
 }
 
 /**
@@ -102,7 +132,7 @@ export async function seedPredefinedRolesForRestaurant(
   const permissionMap = predefinedRolePermissionMap()
 
   for (const roleName of PREDEFINED_ROLE_NAMES) {
-    const roleId = predefinedRoleId(businessProfileId, roleName)
+    const roleId = await resolvePredefinedRoleId(tx, businessProfileId, roleName)
     await tx.role.upsert({
       where: { id: roleId },
       create: {
@@ -175,7 +205,7 @@ export async function seedPredefinedRolesForRestaurant(
 export async function ensurePredefinedRolesExist(businessProfileId, tx = prisma) {
   const permissionMap = predefinedRolePermissionMap()
   for (const roleName of PREDEFINED_ROLE_NAMES) {
-    const roleId = predefinedRoleId(businessProfileId, roleName)
+    const roleId = await resolvePredefinedRoleId(tx, businessProfileId, roleName)
     await tx.role.upsert({
       where: { id: roleId },
       create: {
@@ -219,6 +249,7 @@ export function rolesRequireNoLogin(roleNames) {
   const union = new Set()
   for (const name of roleNames) {
     if (name === ADMIN_ROLE_NAME) return false
+    if (name === LEGACY_KITCHEN_STAFF_ROLE_NAME) continue
     for (const p of permissionMap[name] ?? []) {
       union.add(`${p.action}:${p.subject}`)
     }

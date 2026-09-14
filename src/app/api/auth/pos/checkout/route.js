@@ -41,6 +41,7 @@ export async function POST(request) {
           changeGiven: invoice.changeGiven,
           qrCode: invoice.qrCode,
           zatcaStatus: invoice.zatcaStatus,
+          orderNumber: invoice.kitchenOrder?.orderNumber ?? null,
           invoiceDate: invoice.invoiceDate.toISOString(),
           sellerCompanyNameAr: invoice.sellerCompanyNameAr,
           sellerCompanyNameEn: invoice.sellerCompanyNameEn,

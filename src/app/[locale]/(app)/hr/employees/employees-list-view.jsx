@@ -34,6 +34,7 @@ import { useListPageFromUrl, useResetListPageOnChange } from '@/lib/list-views/u
 import { useListStatsQuery } from '@/lib/list-views/use-list-stats-query'
 import { useListRowSelection } from '@/lib/list-views/use-list-row-selection'
 import { useServerPaginatedRows } from '@/lib/list-views/use-server-paginated-rows'
+import { roleNameMessageKey } from '@/lib/hr/employees/role-name-message-key'
 import { formatSarAmount } from '@/lib/settings/format-helpers'
 import {
   LIST_TABLE_BASE,
@@ -58,11 +59,18 @@ function statusBadgeClass(status) {
 }
 
 /** @param {unknown} row */
-function formatEmployeeRoles(row) {
+/** @param {unknown} row */
+function formatEmployeeRoles(row, t) {
   const names = Array.isArray(row?.roleNames)
     ? row.roleNames.map((n) => String(n ?? '').trim()).filter(Boolean)
     : []
-  return names.length > 0 ? names.join(', ') : '—'
+  if (names.length === 0) return '—'
+  return names
+    .map((n) => {
+      const key = roleNameMessageKey(n)
+      return key ? t(key) : n
+    })
+    .join(', ')
 }
 
 function EmployeesListWithoutCompanyProfile() {
@@ -379,7 +387,7 @@ function EmployeesListWithCompanyProfile() {
                       {row.name}
                     </td>
                     <td className={listTableTdClass('type-body-sm text-hisabi-on-surface')}>
-                      {formatEmployeeRoles(row)}
+                      {formatEmployeeRoles(row, t)}
                     </td>
                     <td className={listTableTdClass('type-body-sm text-hisabi-on-surface font-mono')} dir="ltr">
                       {formatSarAmount(row.salary, locale)}

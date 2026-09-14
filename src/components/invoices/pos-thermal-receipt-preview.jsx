@@ -8,6 +8,7 @@ import {
   ZatcaQrImage,
 } from '@/components/invoices/zatca-qr-image'
 import { parseMoney } from '@/lib/invoices/invoice-compute-totals'
+import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
 import { formatSarAmount } from '@/lib/settings/format-helpers'
 import { cn } from '@/lib/utils'
 
@@ -168,6 +169,14 @@ export function PosThermalReceiptPreview({
             {String(invoice.invoiceNumber ?? '')}
           </span>
         </div>
+        {invoice.orderNumber ? (
+          <div className="flex justify-between gap-2">
+            <span>{t('receiptOrder')}</span>
+            <span dir="ltr" className="font-semibold">
+              {formatOrderNumber(invoice.orderNumber)}
+            </span>
+          </div>
+        ) : null}
         {invoice.referenceInvoiceNumber ? (
           <div className="flex justify-between gap-2">
             <span>{t('receiptRefInvoice')}</span>

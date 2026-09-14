@@ -76,6 +76,7 @@ export function buildReceiptPayloadFromInvoice({
     sellerEmail: invoice.sellerEmail ?? null,
     sellerPhone: invoice.sellerPhone ?? null,
     invoiceNumber: invoice.invoiceNumber,
+    orderNumber: invoice.kitchenOrder?.orderNumber ?? null,
     invoiceDate: invoice.invoiceDate.toISOString(),
     staffName: invoice.createdByStaff?.name || null,
     lines,

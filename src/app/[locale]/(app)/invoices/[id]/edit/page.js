@@ -42,6 +42,7 @@ export default async function InvoiceEditPage({ params }) {
     include: {
       lines: { orderBy: { sortOrder: 'asc' } },
       createdByStaff: { select: { id: true, name: true } },
+      kitchenOrder: { select: { orderNumber: true, status: true } },
     },
   })
   const canCorrection = canEditOrCancelInvoice(invoice)

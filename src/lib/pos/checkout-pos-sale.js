@@ -5,6 +5,7 @@ import {
   parseMoney,
   allocateOrderDiscount,
 } from '@/lib/invoices/invoice-compute-totals'
+import { createKitchenOrderInTx } from '@/lib/orders/create-kitchen-order'
 import { prisma } from '@/lib/prisma'
 import { humanizeZatcaError } from '@/lib/zatca/humanize-zatca-error'
 import { runInvoiceZatcaSend } from '@/lib/zatca/run-invoice-zatca-send'
@@ -206,6 +207,11 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
       },
       include: { lines: true },
     })
+    await createKitchenOrderInTx(tx, {
+      businessProfileId: profileId,
+      invoiceId: created.id,
+      lines: created.lines,
+    })
     return created
   }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
 
@@ -256,7 +262,10 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
 
   const fresh = await prisma.invoice.findUnique({
     where: { id: invoice.id },
-    include: { lines: { orderBy: { sortOrder: 'asc' } } },
+    include: {
+      lines: { orderBy: { sortOrder: 'asc' } },
+      kitchenOrder: { select: { orderNumber: true, status: true } },
+    },
   })
   return fresh
 }

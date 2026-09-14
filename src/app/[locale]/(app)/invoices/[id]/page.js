@@ -34,6 +34,7 @@ export default async function InvoiceDetailPage({ params }) {
       include: {
         lines: { orderBy: { sortOrder: 'asc' } },
         createdByStaff: { select: { id: true, name: true } },
+        kitchenOrder: { select: { orderNumber: true, status: true } },
         creditNotes: {
           where: WHERE_NOT_DELETED,
           include: {

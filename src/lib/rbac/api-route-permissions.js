@@ -8,6 +8,18 @@
  */
 const ROUTE_PERMISSIONS = [
   {
+    pattern: /^\/orders\/[^/]+\/status/,
+    methods: {
+      PATCH: { action: 'update', subject: 'KitchenBoard' },
+    },
+  },
+  {
+    pattern: /^\/orders\/board/,
+    methods: {
+      GET: { action: 'read', subject: 'KitchenBoard' },
+    },
+  },
+  {
     pattern: /^\/business-profiles/,
     methods: {
       GET: { action: 'read', subject: 'BusinessProfile' },

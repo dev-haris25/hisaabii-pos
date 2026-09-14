@@ -16,6 +16,7 @@ import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import { canReportInvoiceToZatca } from '@/lib/invoices/map-invoice-json'
+import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
 import {
   canEditOrCancelInvoice,
   canRepairFailedInvoice,
@@ -28,6 +29,7 @@ import { canReportNoteToZatca } from '@/lib/notes/map-note-json'
  *   invoice: {
  *     id: string
  *     invoiceNumber: string
+ *     orderNumber?: number | null
  *     status: string
  *     invoiceDate: string
  *     paymentMethod: string
@@ -151,6 +153,13 @@ export function InvoiceDetailView({ invoice, logoUrl = null }) {
           <h1 className="type-headline-xl text-hisabi-on-surface">
             {t('detailTitle', { number: invoice.invoiceNumber })}
           </h1>
+          {invoice.orderNumber ? (
+            <p className="type-label-md font-bold text-hisabi-teal" dir="ltr">
+              {t('orderNumberLabel', {
+                number: formatOrderNumber(invoice.orderNumber),
+              })}
+            </p>
+          ) : null}
           <div className="flex flex-wrap items-center gap-hisabi-sm">
             <ZatcaStatusBadge
               status={invoice.zatcaStatus}

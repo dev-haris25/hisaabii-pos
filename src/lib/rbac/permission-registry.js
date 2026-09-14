@@ -36,6 +36,16 @@ export const PERMISSION_REGISTRY = {
       Pos: { labelKey: 'navPos' },
     },
   },
+  kitchen: {
+    moduleLabelKey: 'navKitchenBoard',
+    subjects: {
+      KitchenBoard: {
+        labelKey: 'navKitchenBoard',
+        actions: /** @type {const} */ (['read', 'update']),
+      },
+      QueueDisplay: { labelKey: 'navCustomerQueue', actions: READ_ONLY_ACTIONS },
+    },
+  },
   invoices: {
     moduleLabelKey: 'navInvoices',
     subjects: {
@@ -169,12 +179,20 @@ export const MANAGER_ROLE_NAME = 'Manager'
 export const ACCOUNTANT_ROLE_NAME = 'Accountant'
 export const HR_ROLE_NAME = 'HR'
 export const CASHIER_ROLE_NAME = 'Cashier'
-export const KITCHEN_STAFF_ROLE_NAME = 'Kitchen/Staff'
+export const STAFF_ROLE_NAME = 'Staff'
+/** @deprecated Use STAFF_ROLE_NAME */
+export const KITCHEN_STAFF_ROLE_NAME = STAFF_ROLE_NAME
+export const KITCHEN_BOARD_MANAGER_ROLE_NAME = 'Kitchen board manager'
+export const QUEUE_DISPLAY_ROLE_NAME = 'Queue display'
+export const LEGACY_KITCHEN_STAFF_ROLE_NAME = 'Kitchen/Staff'
 
 /**
  * Roles whose effective permission union is empty — no login account is created.
  */
-export const NO_LOGIN_ROLE_NAMES = new Set([KITCHEN_STAFF_ROLE_NAME])
+export const NO_LOGIN_ROLE_NAMES = new Set([
+  STAFF_ROLE_NAME,
+  LEGACY_KITCHEN_STAFF_ROLE_NAME,
+])
 
 /**
  * @param {Array<{ action: string, subject: string }>} permissions

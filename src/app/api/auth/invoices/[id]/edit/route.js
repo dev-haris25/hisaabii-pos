@@ -8,6 +8,7 @@ import {
 } from '@/lib/auth/require-invoice-restaurant'
 import { WHERE_NOT_DELETED } from '@/lib/db/soft-delete-scope'
 import { createNoteFromInvoiceEdit } from '@/lib/notes/create-note-from-invoice-edit'
+import { refreshKitchenOrderAfterEdit } from '@/lib/orders/sync-kitchen-order'
 import {
   mapCreditNoteDetailToJson,
   mapDebitNoteDetailToJson,
@@ -105,6 +106,7 @@ export async function POST(request, context) {
         reasonEn: parsed.data.reasonEn,
         editedLines,
       })
+      await refreshKitchenOrderAfterEdit(prisma, invoice.id, editedLines)
 
       const mapped =
         documentNature === 'credit'

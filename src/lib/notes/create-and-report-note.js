@@ -8,6 +8,7 @@ import {
 import { allocateCreditNoteNumber, allocateDebitNoteNumber } from '@/lib/notes/allocate-note-number'
 import { emitZatcaReportFailed } from '@/lib/notifications/emit-zatca-report-failed'
 import { notifyPosAudience } from '@/lib/notifications/notify-owner-and-actor'
+import { cancelKitchenOrderForInvoice } from '@/lib/orders/sync-kitchen-order'
 import { prisma } from '@/lib/prisma'
 import { humanizeZatcaError } from '@/lib/zatca/humanize-zatca-error'
 import { runNoteZatcaSend } from '@/lib/zatca/run-note-zatca-send'
@@ -280,6 +281,7 @@ export async function createAndReportNote(opts) {
         where: { id: invoice.id },
         data: { status: 'voided' },
       })
+      await cancelKitchenOrderForInvoice(prisma, invoice.id)
       void notifyPosAudience({
         businessProfileId: profileId,
         audience: 'salesOps',

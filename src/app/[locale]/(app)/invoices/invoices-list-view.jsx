@@ -36,6 +36,7 @@ import { usePathname, useRouter, Link } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import { canReportInvoiceToZatca } from '@/lib/invoices/map-invoice-json'
+import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
 import {
   canEditOrCancelInvoice,
   canRepairFailedInvoice,
@@ -78,6 +79,7 @@ const ZATCA_FILTER_KEYS = /** @type {const} */ ([
  *   invoices: Array<{
  *     id: string
  *     invoiceNumber: string
+ *     orderNumber?: number | null
  *     invoiceDate: string
  *     paymentMethod: string
  *     grandTotal: string
@@ -406,6 +408,9 @@ export function InvoicesListView({
                   {t('colInvoice')}
                 </th>
                 <th scope="col" className={listTableThClass()}>
+                  {t('colOrder')}
+                </th>
+                <th scope="col" className={listTableThClass()}>
                   {t('colDate')}
                 </th>
                 <th scope="col" className={listTableThClass()}>
@@ -435,7 +440,7 @@ export function InvoicesListView({
               {invoices.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="type-body-md text-hisabi-on-surface-variant px-hisabi-lg py-12 text-center"
                   >
                     {emptyMessage}
@@ -462,6 +467,13 @@ export function InvoicesListView({
                       >
                         {row.invoiceNumber}
                       </Link>
+                    </td>
+                    <td className={listTableTdClass()}>
+                      {row.orderNumber ? (
+                        <span dir="ltr" className="type-body-md font-bold text-hisabi-teal">
+                          {formatOrderNumber(row.orderNumber)}
+                        </span>
+                      ) : null}
                     </td>
                     <td className={listTableTdClass()}>
                       <span

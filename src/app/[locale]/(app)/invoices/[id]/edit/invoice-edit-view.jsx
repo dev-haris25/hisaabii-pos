@@ -26,6 +26,7 @@ import {
   useBilingualFieldOrigin,
 } from '@/lib/i18n/use-bilingual-field-origin'
 import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
+import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
 import { cn } from '@/lib/utils'
 
 const REASON_PAIR_KEY = 'invoices.edit.reason'
@@ -347,6 +348,13 @@ export function InvoiceEditView({
             ? t('repairTitle', { number: invoice.invoiceNumber })
             : t('editTitle', { number: invoice.invoiceNumber })}
         </h1>
+        {invoice.orderNumber ? (
+          <p className="type-label-md font-bold text-hisabi-teal" dir="ltr">
+            {t('orderNumberLabel', {
+              number: formatOrderNumber(invoice.orderNumber),
+            })}
+          </p>
+        ) : null}
         <p className="type-body-md text-hisabi-on-surface-variant">
           {isRepair ? t('repairSubtitle') : t('editSubtitle')}
         </p>

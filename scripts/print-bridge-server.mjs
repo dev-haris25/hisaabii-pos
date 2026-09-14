@@ -112,6 +112,10 @@ async function layoutReceipt(p, receipt) {
     p.setTextNormal()
   }
   p.println(`${documentLabel ? 'Note' : 'Invoice'}: ${invoiceNumber}`)
+  const orderNumber = Number(receipt.orderNumber)
+  if (Number.isFinite(orderNumber) && orderNumber > 0) {
+    p.println(`Order: ORD-${String(Math.trunc(orderNumber)).padStart(4, '0')}`)
+  }
   if (receipt.referenceInvoiceNumber) {
     p.println(`Ref: ${receipt.referenceInvoiceNumber}`)
   }
