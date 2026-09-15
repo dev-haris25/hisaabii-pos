@@ -94,6 +94,9 @@ export function clientImageStoragePath(businessProfileId, clientId, kind, mime) 
 /** Max decoded product downloadable file (bytes). */
 export const MAX_PRODUCT_FILE_BYTES = 15 * 1024 * 1024
 
+/** Max decoded menu item / product image (bytes). */
+export const MAX_MENU_ITEM_IMAGE_BYTES = 10 * 1024 * 1024
+
 /**
  * Relative key under UPLOADS_DIR for a menu item image.
  * @param {string} businessProfileId

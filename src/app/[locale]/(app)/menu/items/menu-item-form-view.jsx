@@ -26,7 +26,10 @@ import { useGeminiArSuggestion } from '@/hooks/use-gemini-ar-suggestion'
 import { useGeminiEnSuggestion } from '@/hooks/use-gemini-en-suggestion'
 import { useRouter } from '@/i18n/navigation'
 import { AuthApiError, authGet, authPatch, authPost } from '@/lib/api/auth-client'
-import { COMPANY_LOGO_MIME_TYPES } from '@/lib/auth/company-logo'
+import {
+  COMPANY_LOGO_MIME_TYPES,
+  MAX_MENU_ITEM_IMAGE_BYTES,
+} from '@/lib/auth/company-logo'
 import { readLogoFileAsBase64 } from '@/lib/clients/read-logo-file-as-base64'
 import {
   shouldEnableBilingualTranslate,
@@ -748,7 +751,9 @@ export function MenuItemFormView({ mode, itemId }) {
                     e.target.value = ''
                     if (!f) return
                     try {
-                      const { base64, mime } = await readLogoFileAsBase64(f)
+                      const { base64, mime } = await readLogoFileAsBase64(f, {
+                        maxBytes: MAX_MENU_ITEM_IMAGE_BYTES,
+                      })
                       setImageNext({ base64, mime })
                     } catch {
                       toast.error(t('imagePickError'))

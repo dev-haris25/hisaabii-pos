@@ -6,6 +6,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Eye,
   FolderTree,
   Pencil,
   Plus,
@@ -47,6 +48,7 @@ import {
 import { useListRowSelection } from '@/lib/list-views/use-list-row-selection'
 import { useUrlSyncedSearchInput } from '@/lib/list-views/use-url-synced-search-input'
 import { useAppAbility } from '@/components/rbac/ability-provider'
+import { ViewMenuItemSheet } from './view-menu-item-sheet'
 import { cn } from '@/lib/utils'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50]
@@ -71,8 +73,10 @@ export function MenuListView({ items, categories, pagination, filters }) {
   const canCreateItem = ability.can('create', 'MenuItem')
   const canUpdateItem = ability.can('update', 'MenuItem')
   const canDeleteItem = ability.can('delete', 'MenuItem')
-  const showItemActions = canUpdateItem || canDeleteItem
+  const showItemActions = true
   const [isPending, startTransition] = useTransition()
+  const [viewOpen, setViewOpen] = useState(false)
+  const [viewItemId, setViewItemId] = useState(/** @type {string | null} */ (null))
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
   const [bulkDeletePending, setBulkDeletePending] = useState(false)
 
@@ -171,6 +175,11 @@ export function MenuListView({ items, categories, pagination, filters }) {
   )
 
   const listBusy = isPending
+
+  function openView(id) {
+    setViewItemId(id)
+    setViewOpen(true)
+  }
 
   async function handleBulkDelete() {
     setBulkDeletePending(true)
@@ -402,9 +411,13 @@ export function MenuListView({ items, categories, pagination, filters }) {
                               name.slice(0, 2).toUpperCase()
                             )}
                           </div>
-                          <span className="type-body-md font-bold text-hisabi-on-surface">
+                          <button
+                            type="button"
+                            onClick={() => openView(item.id)}
+                            className="type-body-md cursor-pointer text-start font-bold text-hisabi-on-surface hover:text-hisabi-primary hover:underline"
+                          >
                             {name}
-                          </span>
+                          </button>
                         </div>
                       </td>
                       <td
@@ -456,6 +469,13 @@ export function MenuListView({ items, categories, pagination, filters }) {
                       {showItemActions ? (
                         <td className={listTableActionsTdClass()}>
                           <div className={LIST_TABLE_ACTIONS_INNER}>
+                            <ActionIconButton
+                              label={t('view')}
+                              onClick={() => openView(item.id)}
+                              className="hover:text-hisabi-primary"
+                            >
+                              <Eye className="size-5" aria-hidden />
+                            </ActionIconButton>
                             {canUpdateItem ? (
                               <ActionIconLink
                                 label={t('edit')}
@@ -630,6 +650,16 @@ export function MenuListView({ items, categories, pagination, filters }) {
           </div>
         </div>
       </div>
+
+      <ViewMenuItemSheet
+        open={viewOpen}
+        itemId={viewItemId}
+        canEdit={canUpdateItem}
+        onOpenChange={(open) => {
+          setViewOpen(open)
+          if (!open) setViewItemId(null)
+        }}
+      />
 
       <HisabiStatusModal
         open={bulkDeleteModalOpen && selectedCount > 0}

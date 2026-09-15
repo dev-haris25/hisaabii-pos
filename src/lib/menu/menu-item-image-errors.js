@@ -14,7 +14,7 @@ export function menuItemImageUploadErrorResponse(imgErr) {
     return jsonError(400, 'INVALID_IMAGE', 'Invalid image data')
   }
   if (msg === 'IMAGE_TOO_LARGE' || msg === 'LOGO_TOO_LARGE') {
-    return jsonError(400, 'IMAGE_TOO_LARGE', 'Image must be 1MB or smaller')
+    return jsonError(400, 'IMAGE_TOO_LARGE', 'Image must be 10MB or smaller')
   }
   if (msg === 'UPLOADS_DIR is not configured') {
     return jsonError(500, 'UPLOAD_FAILED', 'Uploads directory is not configured')

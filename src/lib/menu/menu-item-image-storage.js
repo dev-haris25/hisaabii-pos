@@ -1,6 +1,6 @@
 import {
   isAllowedCompanyLogoMime,
-  MAX_COMPANY_LOGO_BYTES,
+  MAX_MENU_ITEM_IMAGE_BYTES,
   menuItemImageStoragePath,
 } from '@/lib/auth/company-logo'
 import {
@@ -106,7 +106,7 @@ export async function resolveMenuItemImageAfterUpsert(
     }
     const buf = Buffer.from(b64Img, 'base64')
     if (!buf.length) throw new Error('INVALID_IMAGE')
-    if (buf.length > MAX_COMPANY_LOGO_BYTES) throw new Error('IMAGE_TOO_LARGE')
+    if (buf.length > MAX_MENU_ITEM_IMAGE_BYTES) throw new Error('IMAGE_TOO_LARGE')
     imageUrl = await uploadMenuItemImageToStorage(
       businessProfileId,
       menuItemId,
