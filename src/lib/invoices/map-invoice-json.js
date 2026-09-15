@@ -87,6 +87,7 @@ export function mapInvoiceDetailToJson(invoice) {
       vatPreset: l.vatPreset,
       vatAmount: moneyString(l.vatAmount) ?? '0.00',
       lineTotal: moneyString(l.lineTotal) ?? '0.00',
+      modifiersSnapshot: l.modifiersSnapshot ?? null,
     }))
 
   /** @type {ReturnType<typeof mapNoteSummaryForInvoice>[]} */

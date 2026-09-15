@@ -11,7 +11,7 @@ export const SIDEBAR_HREF_PERMISSIONS = {
   '/restaurants/create': { subject: 'BusinessProfile', action: 'create' },
   '/pos': { subject: 'Pos', action: 'read' },
   '/kitchen': { subject: 'KitchenBoard', action: 'read' },
-  '/queue': { subject: 'QueueDisplay', action: 'read' },
+  '/queue': { subject: 'KitchenBoard', action: 'read' },
   '/menu': { subject: 'MenuItem', action: 'read' },
   '/menu/items/new': { subject: 'MenuItem', action: 'create' },
   '/menu/categories': { subject: 'MenuCategory', action: 'read' },

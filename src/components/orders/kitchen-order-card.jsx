@@ -1,9 +1,10 @@
 'use client'
 
-import { AlertTriangle, ChevronRight, Clock, UtensilsCrossed } from 'lucide-react'
+import { AlertTriangle, Clock, UtensilsCrossed } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 
-import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
+import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
+import { formatLineModifierDetails } from '@/lib/menu/item-modifiers'
 import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
 import {
   formatKitchenWait,
@@ -119,9 +120,27 @@ export function KitchenOrderCard({
                 aria-hidden
               />
               <span className="min-w-0">
-                <span dir="ltr">{line.quantity}</span>
-                {' × '}
-                {name}
+                <span className="block">
+                  <span dir="ltr">{line.quantity}</span>
+                  {' × '}
+                  {name}
+                </span>
+                {formatLineModifierDetails(
+                  line.modifiersSnapshot,
+                  line.lineNote,
+                  locale,
+                  {
+                    withGroupNames: true,
+                    noteLabel: t('lineNote'),
+                  },
+                ).map((detail) => (
+                  <span
+                    key={detail}
+                    className="mt-0.5 block text-hisabi-outline"
+                  >
+                    {detail}
+                  </span>
+                ))}
               </span>
             </li>
           )
@@ -136,17 +155,14 @@ export function KitchenOrderCard({
       ) : null}
 
       {actionLabel && onAction ? (
-        <button
+        <AuthSubmitButton
           type="button"
-          disabled={actionPending}
-          aria-busy={actionPending || undefined}
+          pending={actionPending}
           onClick={onAction}
-          className="type-label-sm mt-hisabi-xs inline-flex cursor-pointer items-center gap-1 font-bold text-hisabi-teal hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-hisabi-xs min-h-hisabi-btn-sm"
         >
-          {actionPending ? <AuthButtonSpinner /> : null}
           {actionLabel}
-          <ChevronRight className="size-4 shrink-0 rtl:rotate-180" aria-hidden />
-        </button>
+        </AuthSubmitButton>
       ) : null}
     </article>
   )

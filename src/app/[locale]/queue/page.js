@@ -1,43 +1,28 @@
-import { createMongoAbility } from '@casl/ability'
-import { getTranslations, setRequestLocale } from 'next-intl/server'
+import { setRequestLocale } from 'next-intl/server'
 
-import { QueueDisplayView } from '@/components/orders/queue-display-view'
-import { requireKitchenQueuePageUser } from '@/lib/auth/require-kitchen-app-user'
+import { redirect } from '@/i18n/navigation'
+import { requireOwnerAdminCustomerQueueShortcut } from '@/lib/auth/require-kitchen-app-user'
+import { normalizeCustomerQueueLocale } from '@/lib/orders/customer-queue-url'
 import { prisma } from '@/lib/prisma'
-import { hasFullAccess } from '@/lib/rbac/ability-utils'
 
-export async function generateMetadata({ params }) {
+export default async function QueueShortcutPage({ params }) {
   const { locale } = await params
   setRequestLocale(locale)
-  const t = await getTranslations('KitchenQueue')
-  return { title: t('queueMetaTitle') }
-}
+  const user = await requireOwnerAdminCustomerQueueShortcut()
 
-export default async function QueuePage({ params }) {
-  const { locale } = await params
-  setRequestLocale(locale)
-  const user = await requireKitchenQueuePageUser('queue')
-  const ability = createMongoAbility(user.abilityRules ?? [])
+  const profile = user.businessProfileId
+    ? await prisma.businessProfile.findUnique({
+        where: { id: user.businessProfileId },
+        select: { slug: true, customerQueueLocale: true },
+      })
+    : null
 
-  let restaurantName = ''
-  if (user.businessProfileId) {
-    const profile = await prisma.businessProfile.findUnique({
-      where: { id: user.businessProfileId },
-      select: { companyNameAr: true, companyNameEn: true },
-    })
-    if (profile) {
-      restaurantName =
-        locale === 'ar'
-          ? profile.companyNameAr
-          : profile.companyNameEn?.trim() || profile.companyNameAr
-    }
+  if (!profile?.slug) {
+    redirect('/')
   }
 
-  return (
-    <QueueDisplayView
-      staffName={user.name}
-      restaurantName={restaurantName}
-      showGoToDashboard={hasFullAccess(ability) || user.isRestaurantOwner === true}
-    />
-  )
+  redirect({
+    href: `/queue/${profile.slug}`,
+    locale: normalizeCustomerQueueLocale(profile.customerQueueLocale),
+  })
 }

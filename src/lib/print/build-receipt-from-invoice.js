@@ -1,3 +1,5 @@
+import { formatLineModifierDetails } from '@/lib/menu/item-modifiers'
+
 /**
  * Build the print-bridge receipt DTO from a stored invoice.
  * Printing is forbidden without a Phase-2 QR (rules.md #20).
@@ -53,11 +55,17 @@ export function buildReceiptPayloadFromInvoice({
   const lines = invoice.lines.map((l) => {
     const d = Number.parseFloat(String(l.discount || '0'))
     if (Number.isFinite(d)) discountTotal += d
+    const details = formatLineModifierDetails(
+      l.modifiersSnapshot,
+      null,
+      locale,
+    )
     return {
       name: isAr ? l.nameAr : l.nameEn?.trim() || l.nameAr,
       quantity: l.quantity,
       unitPrice: l.unitPrice,
       lineTotal: l.lineTotal,
+      details,
     }
   })
 

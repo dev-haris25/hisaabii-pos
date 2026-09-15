@@ -20,8 +20,6 @@ export function roleNameMessageKey(name) {
       return 'roleNameStaff'
     case 'Kitchen board manager':
       return 'roleNameKitchenBoardManager'
-    case 'Queue display':
-      return 'roleNameQueueDisplay'
     default:
       return null
   }

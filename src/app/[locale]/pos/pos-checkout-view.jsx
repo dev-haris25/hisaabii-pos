@@ -21,6 +21,8 @@ import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { PosThermalReceiptPreview } from '@/components/invoices/pos-thermal-receipt-preview'
+import { LineModifierSummary } from '@/components/pos/line-modifier-summary'
+import { PosItemModifiersFlow } from '@/components/pos/pos-item-modifiers-flow'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
@@ -31,18 +33,30 @@ import {
   decimalStringFromNumber,
   parseMoney,
 } from '@/lib/invoices/invoice-compute-totals'
+import {
+  buildModifiersSnapshotFromItem,
+  cartLineKey,
+  menuItemHasCustomizations,
+  menuItemHasVariantGroups,
+} from '@/lib/menu/item-modifiers'
 import { formatSarAmount } from '@/lib/settings/format-helpers'
 import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
 
 /**
  * @typedef {{
+ *   lineKey: string
  *   menuItemId: string
  *   name: string
  *   unitPrice: string
  *   vatPreset: string
  *   quantity: number
  *   imageUrl: string | null
+ *   variantOptionIds: string[]
+ *   customizationIds: string[]
+ *   variantSelection: Record<string, string>
+ *   modifiersSnapshot: unknown
+ *   lineNote: string
  * }} CartLine
  */
 
@@ -88,6 +102,12 @@ export function PosCheckoutView({
   const [receipt, setReceipt] = useState(
     /** @type {Record<string, unknown> | null} */ (null),
   )
+  /** @type {[{ item: Record<string, unknown> | null, mode: 'add' | 'edit', lineKey: string | null, selection?: Record<string, string>, customizationIds?: string[] }, function]} */
+  const [configurator, setConfigurator] = useState({
+    item: /** @type {Record<string, unknown> | null} */ (null),
+    mode: /** @type {'add' | 'edit'} */ ('add'),
+    lineKey: /** @type {string | null} */ (null),
+  })
 
   const menuQuery = useQuery({
     queryKey: ['pos', 'menu', activeBusinessProfileId],
@@ -198,6 +218,9 @@ export function PosCheckoutView({
         lines: cart.map((l) => ({
           menuItemId: l.menuItemId,
           quantity: l.quantity,
+          variantOptionIds: l.variantOptionIds ?? [],
+          customizationIds: l.customizationIds ?? [],
+          lineNote: l.lineNote?.trim() || undefined,
         })),
         paymentMethod,
       }
@@ -235,10 +258,36 @@ export function PosCheckoutView({
       : cat.nameEn?.trim() || cat.nameAr
   }
 
-  function addToCart(item) {
+  function commitCartLine(item, payload, existingKey = null) {
+    const nextKey = cartLineKey(
+      item.id,
+      payload.variantOptionIds,
+      payload.customizationIds,
+    )
+    const snapshot = buildModifiersSnapshotFromItem(
+      item,
+      payload.variantOptionIds,
+      payload.customizationIds,
+    )
     const name = itemDisplayName(item)
     setCart((prev) => {
-      const idx = prev.findIndex((l) => l.menuItemId === item.id)
+      if (existingKey) {
+        return prev.map((line) =>
+          line.lineKey === existingKey
+            ? {
+                ...line,
+                lineKey: nextKey,
+                name,
+                unitPrice: payload.unitPrice,
+                variantOptionIds: payload.variantOptionIds,
+                customizationIds: payload.customizationIds,
+                variantSelection: payload.variantSelection,
+                modifiersSnapshot: snapshot,
+              }
+            : line,
+        )
+      }
+      const idx = prev.findIndex((line) => line.lineKey === nextKey)
       if (idx >= 0) {
         const next = [...prev]
         next[idx] = {
@@ -250,33 +299,87 @@ export function PosCheckoutView({
       return [
         ...prev,
         {
+          lineKey: nextKey,
           menuItemId: item.id,
           name,
-          unitPrice: String(item.price),
+          unitPrice: payload.unitPrice,
           vatPreset: item.vatPreset,
           quantity: 1,
           imageUrl:
             typeof item.imageUrl === 'string' && item.imageUrl
               ? item.imageUrl
               : null,
+          variantOptionIds: payload.variantOptionIds,
+          customizationIds: payload.customizationIds,
+          variantSelection: payload.variantSelection,
+          modifiersSnapshot: snapshot,
+          lineNote: '',
         },
       ]
     })
+    setConfigurator({ item: null, mode: 'add', lineKey: null })
   }
 
-  function setQty(menuItemId, quantity) {
+  function addToCart(item) {
+    const hasV = menuItemHasVariantGroups(item)
+    const hasC = menuItemHasCustomizations(item)
+    if (!hasV && !hasC) {
+      commitCartLine(
+        item,
+        {
+          variantOptionIds: [],
+          customizationIds: [],
+          variantSelection: {},
+          unitPrice: String(item.price),
+        },
+        null,
+      )
+      return
+    }
+    setConfigurator({
+      item,
+      mode: 'add',
+      lineKey: null,
+    })
+  }
+
+  function editCartLine(line) {
+    const item = items.find((row) => row.id === line.menuItemId)
+    if (!item) return
+    if (
+      !menuItemHasVariantGroups(item) &&
+      !menuItemHasCustomizations(item)
+    ) {
+      return
+    }
+    setConfigurator({
+      item,
+      mode: 'edit',
+      lineKey: line.lineKey,
+      selection: line.variantSelection,
+      customizationIds: line.customizationIds,
+    })
+  }
+
+  function setQty(lineKey, quantity) {
     setCart((prev) => {
-      if (quantity <= 0) return prev.filter((l) => l.menuItemId !== menuItemId)
+      if (quantity <= 0) return prev.filter((l) => l.lineKey !== lineKey)
       return prev.map((l) =>
-        l.menuItemId === menuItemId
+        l.lineKey === lineKey
           ? { ...l, quantity: Math.min(999, quantity) }
           : l,
       )
     })
   }
 
-  function removeLine(menuItemId) {
-    setCart((prev) => prev.filter((l) => l.menuItemId !== menuItemId))
+  function setLineNote(lineKey, lineNote) {
+    setCart((prev) =>
+      prev.map((l) => (l.lineKey === lineKey ? { ...l, lineNote } : l)),
+    )
+  }
+
+  function removeLine(lineKey) {
+    setCart((prev) => prev.filter((l) => l.lineKey !== lineKey))
   }
 
   function clearCart() {
@@ -477,7 +580,7 @@ export function PosCheckoutView({
                       )}
                     </div>
                     <div className="flex flex-1 flex-col gap-1 p-hisabi-md">
-                      <span className="type-label-md line-clamp-2 font-bold text-hisabi-on-surface">
+                      <span className="type-body-md line-clamp-2 pb-0.5 font-bold leading-normal text-hisabi-on-surface">
                         {name}
                       </span>
                       <span
@@ -531,7 +634,7 @@ export function PosCheckoutView({
                   )
                 return (
                   <div
-                    key={line.menuItemId}
+                    key={line.lineKey}
                     className="flex items-stretch gap-hisabi-sm rounded-lg bg-hisabi-surface-container-low/60 px-hisabi-sm py-hisabi-sm"
                   >
                     <div className="bg-hisabi-surface-container-high text-hisabi-primary relative flex w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg text-sm font-bold self-stretch min-h-[4.5rem]">
@@ -547,18 +650,39 @@ export function PosCheckoutView({
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="type-label-md truncate font-bold text-hisabi-on-surface">
+                      <button
+                        type="button"
+                        onClick={() => editCartLine(line)}
+                        className="type-label-md truncate text-start font-bold text-hisabi-on-surface hover:underline"
+                      >
                         {line.name}
-                      </p>
+                      </button>
+                      <LineModifierSummary
+                        snapshot={line.modifiersSnapshot}
+                        locale={locale}
+                      />
                       <p dir="ltr" className="type-body-sm text-hisabi-on-surface-variant">
                         {formatSarAmount(line.unitPrice, locale)} × {line.quantity}
                       </p>
+                      <label className="mt-hisabi-xs block">
+                        <span className="sr-only">{t('lineNote')}</span>
+                        <input
+                          type="text"
+                          value={line.lineNote}
+                          maxLength={300}
+                          onChange={(e) =>
+                            setLineNote(line.lineKey, e.target.value.slice(0, 300))
+                          }
+                          placeholder={t('lineNotePlaceholder')}
+                          className="type-body-sm text-hisabi-on-surface w-full rounded-md border border-hisabi-outline-variant/50 bg-white px-2 py-1 outline-none focus:border-hisabi-primary"
+                        />
+                      </label>
                       <div className="mt-hisabi-xs flex items-center gap-1">
                         <button
                           type="button"
                           aria-label={t('qtyDecrease')}
                           onClick={() =>
-                            setQty(line.menuItemId, line.quantity - 1)
+                            setQty(line.lineKey, line.quantity - 1)
                           }
                           className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-hisabi-outline-variant/50 bg-white text-hisabi-on-surface transition-colors hover:bg-hisabi-surface-container"
                         >
@@ -574,7 +698,7 @@ export function PosCheckoutView({
                           type="button"
                           aria-label={t('qtyIncrease')}
                           onClick={() =>
-                            setQty(line.menuItemId, line.quantity + 1)
+                            setQty(line.lineKey, line.quantity + 1)
                           }
                           className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-hisabi-outline-variant/50 bg-white text-hisabi-on-surface transition-colors hover:bg-hisabi-surface-container"
                         >
@@ -592,7 +716,7 @@ export function PosCheckoutView({
                       <button
                         type="button"
                         aria-label={t('removeLine')}
-                        onClick={() => removeLine(line.menuItemId)}
+                        onClick={() => removeLine(line.lineKey)}
                         className="text-hisabi-error hover:bg-hisabi-error/8 flex size-8 cursor-pointer items-center justify-center rounded-lg transition-colors"
                       >
                         <Trash2 className="size-4" aria-hidden />
@@ -712,6 +836,26 @@ export function PosCheckoutView({
           </div>
         </aside>
       </div>
+
+      <PosItemModifiersFlow
+        open={Boolean(configurator.item)}
+        item={configurator.item}
+        locale={locale}
+        mode={configurator.mode}
+        initialSelection={configurator.selection}
+        initialCustomizationIds={configurator.customizationIds}
+        onClose={() =>
+          setConfigurator({ item: null, mode: 'add', lineKey: null })
+        }
+        onConfirm={(payload) => {
+          if (!configurator.item) return
+          commitCartLine(
+            configurator.item,
+            payload,
+            configurator.lineKey,
+          )
+        }}
+      />
 
       {receipt ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-hisabi-md backdrop-blur-sm">

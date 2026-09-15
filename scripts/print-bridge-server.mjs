@@ -132,6 +132,11 @@ async function layoutReceipt(p, receipt) {
     const qty = String(line?.quantity ?? '')
     const total = String(line?.lineTotal ?? '')
     p.println(name)
+    const extras = Array.isArray(line?.details) ? line.details : []
+    for (const extra of extras) {
+      const text = String(extra ?? '').trim()
+      if (text) p.println(`  ${text.slice(0, 30)}`)
+    }
     p.println(`  ${qty} x ${line?.unitPrice ?? ''}  ${total}`)
   }
   p.drawLine()

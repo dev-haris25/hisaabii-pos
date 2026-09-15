@@ -1,8 +1,10 @@
 import { jsonError, jsonOk } from '@/lib/api/json-response'
 import { handleRouteError } from '@/lib/api/route-error'
+import { PRISMA_INTERACTIVE_TRANSACTION_OPTIONS } from '@/lib/db/prisma-interactive-transaction-options'
 import { mapMenuItemToJson, menuItemInclude } from '@/lib/menu/map-menu-json'
 import { menuItemImageUploadErrorResponse } from '@/lib/menu/menu-item-image-errors'
 import { resolveMenuItemImageAfterUpsert } from '@/lib/menu/menu-item-image-storage'
+import { replaceMenuItemModifiers } from '@/lib/menu/replace-menu-item-modifiers'
 import { requireAdminRestaurant } from '@/lib/menu/require-admin-restaurant'
 import { menuItemPatchSchema } from '@/lib/menu/schemas'
 import { prisma } from '@/lib/prisma'
@@ -71,11 +73,22 @@ export async function PATCH(request, context) {
       data.categoryId = categoryId
     }
 
-    let updated = await prisma.menuItem.update({
-      where: { id },
-      data,
-      include: menuItemInclude,
-    })
+    let updated = await prisma.$transaction(async (tx) => {
+      await tx.menuItem.update({
+        where: { id },
+        data,
+      })
+      await replaceMenuItemModifiers(
+        tx,
+        id,
+        d.variantGroups,
+        d.customizations,
+      )
+      return tx.menuItem.findFirstOrThrow({
+        where: { id },
+        include: menuItemInclude,
+      })
+    }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
 
     const wantsImageChange =
       d.clearImage === true || Boolean(d.imageBase64?.trim())

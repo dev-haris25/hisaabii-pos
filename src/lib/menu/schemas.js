@@ -25,6 +25,25 @@ export const menuCategoryBodySchema = z.object({
   active: z.boolean().optional().default(true),
 })
 
+const variantOptionBodySchema = z.object({
+  nameAr: z.string().trim().min(1).max(200),
+  nameEn: z.string().trim().max(200).optional().nullable(),
+  priceChange: moneyString,
+  isDefault: z.boolean().optional().default(false),
+})
+
+const variantGroupBodySchema = z.object({
+  nameAr: z.string().trim().min(1).max(200),
+  nameEn: z.string().trim().max(200).optional().nullable(),
+  options: z.array(variantOptionBodySchema).min(1).max(40),
+})
+
+const customizationBodySchema = z.object({
+  nameAr: z.string().trim().min(1).max(200),
+  nameEn: z.string().trim().max(200).optional().nullable(),
+  priceChange: moneyString,
+})
+
 export const menuItemBodySchema = z.object({
   nameAr: z.string().trim().min(1).max(200),
   nameEn: z.string().trim().max(200).optional().nullable(),
@@ -36,6 +55,8 @@ export const menuItemBodySchema = z.object({
   clearImage: z.coerce.boolean().optional().default(false),
   imageBase64: optionalImageBase64,
   imageMimeType: optionalImageMime,
+  variantGroups: z.array(variantGroupBodySchema).max(20).optional(),
+  customizations: z.array(customizationBodySchema).max(40).optional(),
 })
 
 export const menuItemPatchSchema = menuItemBodySchema.partial()

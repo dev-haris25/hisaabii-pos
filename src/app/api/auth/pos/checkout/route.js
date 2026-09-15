@@ -59,6 +59,7 @@ export async function POST(request) {
             discount: l.discount,
             lineTotal: l.lineTotal,
             vatAmount: l.vatAmount,
+            modifiersSnapshot: l.modifiersSnapshot ?? null,
           })),
         },
       })
@@ -73,6 +74,9 @@ export async function POST(request) {
       }
       if (code === 'INVALID_MENU_ITEM') {
         return jsonError(400, code, 'One or more menu items are invalid')
+      }
+      if (code === 'INVALID_VARIANT' || code === 'INVALID_CUSTOMIZATION') {
+        return jsonError(400, code, 'One or more item options are invalid')
       }
       if (code === 'INSUFFICIENT_TENDER') {
         return jsonError(400, code, 'Amount tendered is less than the total')

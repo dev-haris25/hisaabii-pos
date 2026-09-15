@@ -5,31 +5,50 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
 
 import { AppLoader } from '@/components/app-loader'
-import { KitchenQueueHeader } from '@/components/orders/kitchen-queue-header'
-import { AuthApiError, authGet } from '@/lib/api/auth-client'
+import { AuthApiError } from '@/lib/api/auth-client'
 import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
-import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
 
 const POLL_MS = 4000
 
 /**
- * @param {{ restaurantName: string, staffName: string, showGoToDashboard: boolean }} props
+ * @param {string} slug
  */
-export function QueueDisplayView({
-  restaurantName,
-  staffName,
-  showGoToDashboard,
-}) {
+async function fetchPublicQueue(slug) {
+  const res = await fetch(`/api/public/queue/${encodeURIComponent(slug)}`, {
+    credentials: 'omit',
+  })
+  let data = {}
+  try {
+    data = await res.json()
+  } catch {
+    // ignore
+  }
+  if (!res.ok) {
+    throw new AuthApiError(
+      res.status,
+      typeof data.code === 'string' ? data.code : 'NOT_FOUND',
+      typeof data.message === 'string' ? data.message : undefined,
+    )
+  }
+  return data
+}
+
+/**
+ * @param {{
+ *   slug: string
+ *   restaurantName?: string
+ *   queueLocale?: string
+ * }} props
+ */
+export function QueueDisplayView({ slug, restaurantName = '' }) {
   const t = useTranslations('KitchenQueue')
   const tErr = useTranslations('AuthErrors')
-  const profileId = useAuthStore(
-    (s) => s.user?.activeBusinessProfileId ?? s.user?.businessProfileId ?? null,
-  )
 
   const query = useQuery({
-    queryKey: ['queue-display', profileId],
-    queryFn: () => authGet('/orders/board?view=display'),
+    queryKey: ['public-queue', slug],
+    queryFn: () => fetchPublicQueue(slug),
+    enabled: Boolean(slug),
     refetchInterval: POLL_MS,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
@@ -47,12 +66,11 @@ export function QueueDisplayView({
 
   return (
     <div className="type-body-md text-hisabi-on-surface flex min-h-dvh flex-col bg-hisabi-background">
-      <KitchenQueueHeader
-        staffName={staffName}
-        restaurantName={restaurantName}
-        showGoToDashboard={showGoToDashboard}
-        showStaffName={false}
-      />
+      {restaurantName ? (
+        <p className="type-headline-sm px-hisabi-md pt-hisabi-md text-center font-bold text-hisabi-on-surface md:px-hisabi-xl md:pt-hisabi-lg">
+          {restaurantName}
+        </p>
+      ) : null}
       {showLoader ? (
         <div className="flex flex-1 items-center justify-center">
           <AppLoader />

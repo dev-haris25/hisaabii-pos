@@ -65,8 +65,10 @@ model BusinessProfile {
   printerPort Int     @default(9100)
   receiptPrinters ReceiptPrinter[]
 
-  /// System-generated unique slug (e.g. r-a7k2m9xq) — kept for display/legacy.
+  /// System-generated unique slug (e.g. r-a7k2m9xq) — public customer queue URL.
   slug String @unique
+  /// ar | en — default language for the public customer queue.
+  customerQueueLocale String @default("ar")
 
   /// Owner deferred ZATCA onboarding from the UI.
   zatcaOnboardingSkipped Boolean   @default(false)
@@ -352,11 +354,66 @@ model MenuItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  invoiceLines InvoiceLine[]
+  invoiceLines    InvoiceLine[]
+  variantGroups   MenuItemVariantGroup[]
+  customizations  MenuItemCustomization[]
 
   @@index([businessProfileId, active, sortOrder])
   @@index([categoryId])
   @@map("menu_items")
+}
+
+model MenuItemVariantGroup {
+  id         String   @id @default(cuid())
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  nameAr    String
+  nameEn    String?
+  sortOrder Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  options MenuItemVariantOption[]
+
+  @@index([menuItemId, sortOrder])
+  @@map("menu_item_variant_groups")
+}
+
+model MenuItemVariantOption {
+  id      String               @id @default(cuid())
+  groupId String
+  group   MenuItemVariantGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  nameAr      String
+  nameEn      String?
+  priceChange String  @default("0")
+  isDefault   Boolean @default(false)
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([groupId, sortOrder])
+  @@map("menu_item_variant_options")
+}
+
+model MenuItemCustomization {
+  id         String   @id @default(cuid())
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  nameAr      String
+  nameEn      String?
+  priceChange String  @default("0")
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([menuItemId, sortOrder])
+  @@map("menu_item_customizations")
 }
 
 // ---------------------------------------------------------------------------
@@ -559,6 +616,9 @@ model InvoiceLine {
   vatAmount String
   lineTotal String
   sortOrder Int       @default(0)
+  lineNote  String?
+  /// Chosen variants + customizations at sale time (names + price changes).
+  modifiersSnapshot Json?
 
   @@index([invoiceId])
   @@index([menuItemId])

@@ -10,6 +10,11 @@ import {
   printersForSettingsPayload,
   replaceReceiptPrinters,
 } from '@/lib/print/receipt-printers'
+import {
+  customerQueueAbsoluteUrl,
+  customerQueueOriginFromRequest,
+  normalizeCustomerQueueLocale,
+} from '@/lib/orders/customer-queue-url'
 import { getOrCreateBusinessSettings } from '@/lib/settings/get-or-create-business-settings'
 import { prisma } from '@/lib/prisma'
 
@@ -51,6 +56,7 @@ const settingsPatchBodySchema = z
       )
       .max(MAX_RECEIPT_PRINTERS)
       .optional(),
+    customerQueueLocale: z.enum(['ar', 'en']).optional(),
   })
   .strict()
 
@@ -58,11 +64,15 @@ const settingsPatchBodySchema = z
  * @param {import('@/generated/prisma').BusinessSettings} settings
  * @param {import('@/generated/prisma').BusinessProfile} profile
  * @param {{ ip: string, port: number }[]} printerRows
+ * @param {string} [origin]
  */
-function mapSettingsPayload(settings, profile, printerRows) {
+function mapSettingsPayload(settings, profile, printerRows, origin = '') {
   const defaultVatPreset =
     profile.defaultVatPercent === '0' ? 'zero' : 'standard'
   const printers = printersForSettingsPayload(printerRows, profile)
+  const customerQueueLocale = normalizeCustomerQueueLocale(
+    profile.customerQueueLocale,
+  )
   return {
     invoicePrefix: settings.invoicePrefix,
     creditNotePrefix: settings.creditNotePrefix,
@@ -75,6 +85,14 @@ function mapSettingsPayload(settings, profile, printerRows) {
     defaultVatPreset,
     email: profile.email,
     phone: profile.phone,
+    slug: profile.slug,
+    customerQueueLocale,
+    customerQueueOrigin: origin,
+    customerQueueUrl: customerQueueAbsoluteUrl(
+      origin,
+      customerQueueLocale,
+      profile.slug,
+    ),
     ...printers,
   }
 }
@@ -96,7 +114,12 @@ export async function GET(request) {
     }
 
     return jsonOk({
-      settings: mapSettingsPayload(settings, profileRow, printerRows),
+      settings: mapSettingsPayload(
+        settings,
+        profileRow,
+        printerRows,
+        customerQueueOriginFromRequest(request),
+      ),
     })
   } catch (err) {
     return handleRouteError(err, 'GET /api/auth/settings')
@@ -146,6 +169,9 @@ export async function PATCH(request) {
     }
     if (d.phone !== undefined) {
       profileData.phone = d.phone?.trim() || null
+    }
+    if (d.customerQueueLocale !== undefined) {
+      profileData.customerQueueLocale = d.customerQueueLocale
     }
     if (d.printers === undefined) {
       if (d.printerIp !== undefined) {
@@ -200,7 +226,12 @@ export async function PATCH(request) {
     }
 
     return jsonOk({
-      settings: mapSettingsPayload(settings, profileRow, printerRows),
+      settings: mapSettingsPayload(
+        settings,
+        profileRow,
+        printerRows,
+        customerQueueOriginFromRequest(request),
+      ),
     })
   } catch (err) {
     return handleRouteError(err, 'PATCH /api/auth/settings')

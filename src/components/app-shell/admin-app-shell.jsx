@@ -595,6 +595,8 @@ function AdminAppShellInner({
                 href={item.href}
                 data-tour={tourId}
                 className={navLinkClass(active)}
+                target={item.id === 'queue' ? '_blank' : undefined}
+                rel={item.id === 'queue' ? 'noopener noreferrer' : undefined}
                 onClick={() => setMobileNavOpen(false)}
               >
                 <Icon className="size-5 shrink-0" aria-hidden />

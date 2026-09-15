@@ -8,9 +8,9 @@ import { authorizeBusinessRequest } from '@/lib/rbac/authorize-api-request'
 import { redirect } from 'next/navigation'
 
 /**
- * @param {'kitchen' | 'queue'} view
+ * @param {'kitchen'} [view]
  */
-export async function requireKitchenQueuePageUser(view) {
+export async function requireKitchenQueuePageUser(view = 'kitchen') {
   const user = await getSessionUser()
   if (!user) redirect('/login')
   if (!user.hasBusinessProfile || !user.active) redirect('/login')
@@ -18,17 +18,31 @@ export async function requireKitchenQueuePageUser(view) {
   const ability = createMongoAbility(user.abilityRules ?? [])
   const ok =
     hasFullAccess(ability) ||
-    (view === 'kitchen'
-      ? ability.can('read', 'KitchenBoard')
-      : ability.can('read', 'QueueDisplay'))
+    (view === 'kitchen' && ability.can('read', 'KitchenBoard'))
 
   if (!ok) redirect(getPostAuthLandingPath(user))
   return user
 }
 
 /**
+ * Owner / Admin shortcut to the public customer queue URL.
+ */
+export async function requireOwnerAdminCustomerQueueShortcut() {
+  const user = await getSessionUser()
+  if (!user) redirect('/login')
+  if (!user.hasBusinessProfile || !user.active) {
+    redirect(getPostAuthLandingPath(user))
+  }
+  const ability = createMongoAbility(user.abilityRules ?? [])
+  if (!hasFullAccess(ability) && user.isRestaurantOwner !== true) {
+    redirect(getPostAuthLandingPath(user))
+  }
+  return user
+}
+
+/**
  * @param {import('next/server').NextRequest} request
- * @param {'kitchen' | 'queue' | 'update'} mode
+ * @param {'kitchen' | 'update'} mode
  */
 export async function requireKitchenQueueApi(request, mode) {
   const auth = await authorizeBusinessRequest({
@@ -42,10 +56,7 @@ export async function requireKitchenQueueApi(request, mode) {
     hasFullAccess(ability) ||
     (mode === 'update'
       ? ability.can('update', 'KitchenBoard')
-      : mode === 'kitchen'
-        ? ability.can('read', 'KitchenBoard')
-        : ability.can('read', 'QueueDisplay') ||
-          ability.can('read', 'KitchenBoard'))
+      : ability.can('read', 'KitchenBoard'))
 
   if (!allowed) {
     return { error: jsonError(403, 'FORBIDDEN', 'Not allowed') }

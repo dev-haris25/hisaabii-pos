@@ -89,6 +89,7 @@ export default async function InvoiceEditPage({ params }) {
     quantity: line.quantity,
     unitPrice: String(line.unitPrice),
     vatPreset: line.vatPreset,
+    modifiersSnapshot: line.modifiersSnapshot ?? null,
     imageUrl: line.menuItemId
       ? (imageByMenuItemId.get(line.menuItemId) ?? null)
       : null,

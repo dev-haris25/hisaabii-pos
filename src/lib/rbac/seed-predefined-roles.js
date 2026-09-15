@@ -70,7 +70,6 @@ export function predefinedRolePermissionMap() {
       { action: 'read', subject: 'KitchenBoard' },
       { action: 'update', subject: 'KitchenBoard' },
     ],
-    [QUEUE_DISPLAY_ROLE_NAME]: [{ action: 'read', subject: 'QueueDisplay' }],
   }
 }
 
@@ -82,7 +81,6 @@ export const PREDEFINED_ROLE_NAMES = [
   CASHIER_ROLE_NAME,
   STAFF_ROLE_NAME,
   KITCHEN_BOARD_MANAGER_ROLE_NAME,
-  QUEUE_DISPLAY_ROLE_NAME,
 ]
 
 /**
@@ -192,8 +190,26 @@ export async function seedPredefinedRolesForRestaurant(
   })
 
   await ensureSystemAdvancePayslipCategory(businessProfileId, tx)
+  await deleteLegacyQueueDisplayRoles(tx)
 
   return { membershipId: membership.id, adminRoleId }
+}
+
+/**
+ * Customer queue is public — drop leftover Queue display roles.
+ * @param {import('@/generated/prisma/client').Prisma.TransactionClient | typeof prisma} tx
+ */
+export async function deleteLegacyQueueDisplayRoles(tx = prisma) {
+  const roles = await tx.role.findMany({
+    where: { name: QUEUE_DISPLAY_ROLE_NAME },
+    select: { id: true },
+  })
+  const ids = roles.map((r) => r.id)
+  if (ids.length === 0) return
+  await tx.employeeRole.deleteMany({ where: { roleId: { in: ids } } })
+  await tx.userInvitation.deleteMany({ where: { roleId: { in: ids } } })
+  await tx.rolePermission.deleteMany({ where: { roleId: { in: ids } } })
+  await tx.role.deleteMany({ where: { id: { in: ids } } })
 }
 
 /**
@@ -235,6 +251,7 @@ export async function ensurePredefinedRolesExist(businessProfileId, tx = prisma)
       })
     }
   }
+  await deleteLegacyQueueDisplayRoles(tx)
 }
 
 /**

@@ -7,6 +7,7 @@ import {
   ZATCA_QR_BITMAP_PX,
   ZatcaQrImage,
 } from '@/components/invoices/zatca-qr-image'
+import { formatLineModifierDetails } from '@/lib/menu/item-modifiers'
 import { parseMoney } from '@/lib/invoices/invoice-compute-totals'
 import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
 import { formatSarAmount } from '@/lib/settings/format-helpers'
@@ -216,6 +217,18 @@ export function PosThermalReceiptPreview({
           return (
             <li key={String(line.id ?? `${name}-${line.quantity}`)}>
               <p className="font-semibold leading-snug">{name}</p>
+              {formatLineModifierDetails(
+                line.modifiersSnapshot,
+                null,
+                locale,
+              ).map((detail) => (
+                <p
+                  key={detail}
+                  className="text-[10px] leading-snug text-neutral-600"
+                >
+                  {detail}
+                </p>
+              ))}
               <div className="flex justify-between gap-2" dir="ltr">
                 <span>
                   {String(line.quantity)} × {formatSarAmount(line.unitPrice, locale)}

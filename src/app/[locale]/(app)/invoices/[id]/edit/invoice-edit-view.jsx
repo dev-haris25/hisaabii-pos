@@ -9,6 +9,8 @@ import { toast } from 'sonner'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { HisabiOverlayModal } from '@/components/hisabi-overlay-modal'
 import { PosThermalReceiptPreview } from '@/components/invoices/pos-thermal-receipt-preview'
+import { LineModifierSummary } from '@/components/pos/line-modifier-summary'
+import { PosItemModifiersFlow } from '@/components/pos/pos-item-modifiers-flow'
 import { PageBackButton } from '@/components/shared/page-back-button'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { useGeminiArSuggestion } from '@/hooks/use-gemini-ar-suggestion'
@@ -26,6 +28,12 @@ import {
   useBilingualFieldOrigin,
 } from '@/lib/i18n/use-bilingual-field-origin'
 import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
+import {
+  buildModifiersSnapshotFromItem,
+  cartLineKey,
+  menuItemHasCustomizations,
+  menuItemHasVariantGroups,
+} from '@/lib/menu/item-modifiers'
 import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
 import { cn } from '@/lib/utils'
 
@@ -45,6 +53,8 @@ const fieldClass =
  *   unitPrice: string
  *   vatPreset: string
  *   imageUrl?: string | null
+ *   lineNote?: string | null
+ *   modifiersSnapshot?: unknown
  * }} EditCartLine
  */
 
@@ -104,6 +114,9 @@ export function InvoiceEditView({
   const [fieldErrors, setFieldErrors] = useState({ reasonAr: '' })
   /** @type {[{ documentNature: 'credit' | 'debit', note: Record<string, unknown> } | null, function]} */
   const [createdNote, setCreatedNote] = useState(null)
+  const [configuratorItem, setConfiguratorItem] = useState(
+    /** @type {Record<string, unknown> | null} */ (null),
+  )
 
   const { loading: loadingReasonAr } = useGeminiArSuggestion(
     reasonEn,
@@ -180,6 +193,7 @@ export function InvoiceEditView({
         quantity: l.quantity,
         unitPrice: l.unitPrice,
         vatPreset: l.vatPreset,
+        modifiersSnapshot: l.modifiersSnapshot ?? null,
       }))
       if (isRepair) {
         return authPatch(`/invoices/${invoice.id}`, { lines })
@@ -255,7 +269,52 @@ export function InvoiceEditView({
       : line.nameEn?.trim() || line.nameAr
   }
 
+  function commitNewMenuLine(item, payload) {
+    const key = cartLineKey(
+      item.id,
+      payload.variantOptionIds,
+      payload.customizationIds,
+    )
+    const snapshot = buildModifiersSnapshotFromItem(
+      item,
+      payload.variantOptionIds,
+      payload.customizationIds,
+    )
+    setCart((prev) => {
+      const idx = prev.findIndex((l) => l.key === key)
+      if (idx >= 0) {
+        const next = [...prev]
+        next[idx] = {
+          ...next[idx],
+          quantity: Math.min(999, next[idx].quantity + 1),
+          imageUrl: next[idx].imageUrl || item.imageUrl || null,
+        }
+        return next
+      }
+      return [
+        ...prev,
+        {
+          key,
+          menuItemId: item.id,
+          nameAr: item.nameAr,
+          nameEn: item.nameEn,
+          quantity: 1,
+          unitPrice: payload.unitPrice,
+          vatPreset: item.vatPreset,
+          imageUrl: item.imageUrl,
+          lineNote: null,
+          modifiersSnapshot: snapshot,
+        },
+      ]
+    })
+    setConfiguratorItem(null)
+  }
+
   function addToCart(item) {
+    if (menuItemHasVariantGroups(item) || menuItemHasCustomizations(item)) {
+      setConfiguratorItem(item)
+      return
+    }
     setCart((prev) => {
       const idx = prev.findIndex((l) => l.menuItemId === item.id)
       if (idx >= 0) {
@@ -278,6 +337,8 @@ export function InvoiceEditView({
           unitPrice: String(item.price),
           vatPreset: item.vatPreset,
           imageUrl: item.imageUrl,
+          lineNote: null,
+          modifiersSnapshot: null,
         },
       ]
     })
@@ -420,7 +481,7 @@ export function InvoiceEditView({
                       )}
                     </div>
                     <div className="flex flex-1 flex-col gap-1 p-hisabi-md">
-                      <span className="type-label-md line-clamp-2 font-bold text-hisabi-on-surface">
+                      <span className="type-body-md line-clamp-2 pb-0.5 font-bold leading-normal text-hisabi-on-surface">
                         {name}
                       </span>
                       <span
@@ -483,6 +544,10 @@ export function InvoiceEditView({
                         <p className="type-label-md truncate font-bold text-hisabi-on-surface">
                           {lineDisplayName(line)}
                         </p>
+                        <LineModifierSummary
+                          snapshot={line.modifiersSnapshot}
+                          locale={locale}
+                        />
                         <p
                           dir="ltr"
                           className="type-body-sm text-hisabi-on-surface-variant"
@@ -664,6 +729,18 @@ export function InvoiceEditView({
           </form>
         </aside>
       </div>
+
+      <PosItemModifiersFlow
+        open={Boolean(configuratorItem)}
+        item={configuratorItem}
+        locale={locale}
+        mode="add"
+        onClose={() => setConfiguratorItem(null)}
+        onConfirm={(payload) => {
+          if (!configuratorItem) return
+          commitNewMenuLine(configuratorItem, payload)
+        }}
+      />
 
       {createdNote ? (
         <HisabiOverlayModal

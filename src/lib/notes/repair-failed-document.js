@@ -24,6 +24,8 @@ export const CLEARED_ZATCA_ARTIFACTS = {
  *   vatPreset: string
  *   menuItemId?: string | null
  *   discount?: string
+ *   lineNote?: string | null
+ *   modifiersSnapshot?: unknown
  * }>} lines
  * @param {{ kind?: 'invoice' | 'note' }} [opts]
  */
@@ -70,6 +72,8 @@ export function buildRepairedDocumentLines(lines, opts = {}) {
     if (kind === 'invoice') {
       row.discount = l.discount ?? '0'
       row.menuItemId = l.menuItemId || null
+      row.lineNote = null
+      row.modifiersSnapshot = l.modifiersSnapshot ?? null
     }
     return row
   })

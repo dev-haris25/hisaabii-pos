@@ -3,7 +3,6 @@ import { createMongoAbility } from '@casl/ability'
 import {
   CASHIER_ROLE_NAME,
   KITCHEN_BOARD_MANAGER_ROLE_NAME,
-  QUEUE_DISPLAY_ROLE_NAME,
 } from '@/lib/rbac/permission-registry'
 import { getFirstAccessibleRouteFromAbility } from '@/lib/rbac/sidebar-permissions'
 
@@ -30,31 +29,13 @@ export function isKitchenBoardOnlyUser(user) {
   const names = roleNamesOf(user)
   return (
     names.length > 0 &&
-    names.includes(KITCHEN_BOARD_MANAGER_ROLE_NAME) &&
-    names.every(
-      (n) =>
-        n === KITCHEN_BOARD_MANAGER_ROLE_NAME || n === QUEUE_DISPLAY_ROLE_NAME,
-    ) &&
-    !names.includes(QUEUE_DISPLAY_ROLE_NAME)
+    names.every((n) => n === KITCHEN_BOARD_MANAGER_ROLE_NAME)
   )
 }
 
-export function isQueueDisplayOnlyUser(user) {
-  const names = roleNamesOf(user)
-  return (
-    names.length > 0 &&
-    names.every((n) => n === QUEUE_DISPLAY_ROLE_NAME)
-  )
-}
-
+/** @deprecated Use isKitchenBoardOnlyUser */
 export function isKitchenOrQueueDisplayUser(user) {
-  const names = roleNamesOf(user)
-  if (names.length === 0) return false
-  const allowed = new Set([
-    KITCHEN_BOARD_MANAGER_ROLE_NAME,
-    QUEUE_DISPLAY_ROLE_NAME,
-  ])
-  return names.every((n) => allowed.has(n))
+  return isKitchenBoardOnlyUser(user)
 }
 
 export const NO_MODULE_ACCESS_PATH = '/'
@@ -88,8 +69,7 @@ export function getPostAuthLandingPath(user, nextRaw) {
 
   if (next) return next
 
-  if (isQueueDisplayOnlyUser(user)) return '/queue'
-  if (isKitchenOrQueueDisplayUser(user)) return '/kitchen'
+  if (isKitchenBoardOnlyUser(user)) return '/kitchen'
 
   if (isCashierOnlyUser(user)) return '/pos'
 

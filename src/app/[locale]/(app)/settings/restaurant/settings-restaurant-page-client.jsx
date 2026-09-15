@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown,
   Coins,
+  Copy,
   FileText,
   Loader2,
   Mail,
@@ -11,6 +12,7 @@ import {
   Printer,
   SlidersHorizontal,
   Trash2,
+  Tv,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -31,6 +33,7 @@ import {
 import { RequiredMark } from '@/components/ui/required-mark'
 import { useUnsavedChangesGuard } from '@/hooks/use-unsaved-changes-guard'
 import { AuthApiError, authGet, authPatch } from '@/lib/api/auth-client'
+import { customerQueueAbsoluteUrl } from '@/lib/orders/customer-queue-url'
 import { MAX_RECEIPT_PRINTERS } from '@/lib/print/receipt-printers'
 import { formatDocumentNumber } from '@/lib/settings/format-helpers'
 import { hasFullAccess } from '@/lib/rbac/ability-utils'
@@ -74,6 +77,7 @@ function formStateFromSettings(settings) {
     defaultVatPreset: settings.defaultVatPreset ?? 'standard',
     email: settings.email ?? '',
     phone: settings.phone ?? '',
+    customerQueueLocale: settings.customerQueueLocale === 'en' ? 'en' : 'ar',
     printers: printersFromSettings(settings),
   }
 }
@@ -139,6 +143,17 @@ export function SettingsRestaurantPageClient() {
     () => isSettingsFormDirty(form, settings),
     [form, settings],
   )
+  const customerQueueUrl = useMemo(() => {
+    if (!settings?.slug) return ''
+    const origin =
+      String(settings.customerQueueOrigin ?? '').replace(/\/$/, '') ||
+      (typeof window !== 'undefined' ? window.location.origin : '')
+    return customerQueueAbsoluteUrl(
+      origin,
+      form.customerQueueLocale,
+      String(settings.slug),
+    )
+  }, [form.customerQueueLocale, settings])
   const isDirty = identityDirty || settingsDirty
 
   const discardAllUnsaved = useCallback(() => {
@@ -184,6 +199,7 @@ export function SettingsRestaurantPageClient() {
         defaultVatPreset: form.defaultVatPreset,
         email: String(form.email).trim() || null,
         phone: String(form.phone).trim() || null,
+        customerQueueLocale: form.customerQueueLocale,
         printers,
       })
     },
@@ -403,6 +419,65 @@ export function SettingsRestaurantPageClient() {
             </SettingsField>
           </div>
         </fieldset>
+      </SettingsSection>
+
+      <SettingsSection title={t('sectionCustomerQueue')} icon={Tv}>
+        <p className="type-body-sm text-hisabi-on-surface-variant -mt-hisabi-xs mb-hisabi-sm">
+          {t('customerQueueHint')}
+        </p>
+        <div className="grid gap-hisabi-lg sm:grid-cols-2">
+          <fieldset
+            disabled={!canUpdate || unifiedSaving}
+            className="min-w-0 border-0 p-0"
+          >
+            <SettingsField label={t('fieldCustomerQueueLocale')}>
+              <div className="relative">
+                <select
+                  className={selectClass}
+                  value={form.customerQueueLocale}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      customerQueueLocale: e.target.value === 'en' ? 'en' : 'ar',
+                    }))
+                  }
+                >
+                  <option value="ar">{t('languageAr')}</option>
+                  <option value="en">{t('languageEn')}</option>
+                </select>
+                <ChevronDown
+                  className="pointer-events-none absolute end-3 top-1/2 size-5 -translate-y-1/2 text-hisabi-on-surface-variant"
+                  aria-hidden
+                />
+              </div>
+            </SettingsField>
+          </fieldset>
+          <SettingsField label={t('fieldCustomerQueueUrl')}>
+            <div className="flex gap-hisabi-sm">
+              <input
+                className={fieldClass}
+                dir="ltr"
+                readOnly
+                value={customerQueueUrl}
+              />
+              <button
+                type="button"
+                disabled={!customerQueueUrl}
+                className="inline-flex h-11 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-hisabi-outline-variant/60 bg-white px-3 text-hisabi-on-surface hover:bg-hisabi-surface-container disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => {
+                  if (!customerQueueUrl) return
+                  void navigator.clipboard.writeText(customerQueueUrl).then(
+                    () => toast.success(t('customerQueueCopied')),
+                    () => toast.error(t('customerQueueCopyFailed')),
+                  )
+                }}
+                aria-label={t('customerQueueCopy')}
+              >
+                <Copy className="size-5" aria-hidden />
+              </button>
+            </div>
+          </SettingsField>
+        </div>
       </SettingsSection>
 
       <fieldset

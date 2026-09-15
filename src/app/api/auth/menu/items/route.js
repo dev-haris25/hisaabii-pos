@@ -5,9 +5,11 @@ import {
   parseListPagination,
   shouldPaginateListRequest,
 } from '@/lib/list-views/parse-list-pagination'
+import { PRISMA_INTERACTIVE_TRANSACTION_OPTIONS } from '@/lib/db/prisma-interactive-transaction-options'
 import { mapMenuItemToJson, menuItemInclude } from '@/lib/menu/map-menu-json'
 import { menuItemImageUploadErrorResponse } from '@/lib/menu/menu-item-image-errors'
 import { resolveMenuItemImageAfterUpsert } from '@/lib/menu/menu-item-image-storage'
+import { replaceMenuItemModifiers } from '@/lib/menu/replace-menu-item-modifiers'
 import { requireAdminRestaurant } from '@/lib/menu/require-admin-restaurant'
 import { menuItemBodySchema } from '@/lib/menu/schemas'
 import { prisma } from '@/lib/prisma'
@@ -100,19 +102,30 @@ export async function POST(request) {
       }
     }
 
-    let created = await prisma.menuItem.create({
-      data: {
-        businessProfileId: profileId,
-        categoryId,
-        nameAr: d.nameAr,
-        nameEn: d.nameEn?.trim() || null,
-        price: d.price,
-        vatPreset: d.vatPreset ?? 'standard',
-        sortOrder: d.sortOrder ?? 0,
-        active: d.active ?? true,
-      },
-      include: menuItemInclude,
-    })
+    let created = await prisma.$transaction(async (tx) => {
+      const row = await tx.menuItem.create({
+        data: {
+          businessProfileId: profileId,
+          categoryId,
+          nameAr: d.nameAr,
+          nameEn: d.nameEn?.trim() || null,
+          price: d.price,
+          vatPreset: d.vatPreset ?? 'standard',
+          sortOrder: d.sortOrder ?? 0,
+          active: d.active ?? true,
+        },
+      })
+      await replaceMenuItemModifiers(
+        tx,
+        row.id,
+        d.variantGroups ?? [],
+        d.customizations ?? [],
+      )
+      return tx.menuItem.findFirstOrThrow({
+        where: { id: row.id },
+        include: menuItemInclude,
+      })
+    }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
 
     try {
       const assets = await resolveMenuItemImageAfterUpsert(

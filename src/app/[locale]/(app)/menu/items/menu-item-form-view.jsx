@@ -5,10 +5,14 @@ import {
   ChevronDown,
   ChevronLeft,
   CloudUpload,
+  ListChecks,
   Loader2,
   Package,
+  Plus,
   Save,
+  SlidersHorizontal,
   Tags,
+  Trash2,
 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useEffect, useId, useState } from 'react'
@@ -50,16 +54,239 @@ const categoryAddButtonClass =
 /**
  * @param {{
  *   title: string
- *   icon: 'package' | 'tags'
+ *   icon: 'package' | 'tags' | 'sliders'
  *   children: import('react').ReactNode
  *   alignDoc: string
  * }} props
  */
-function MenuItemFormSection({ title, icon, children, alignDoc }) {
-  const Icon = icon === 'tags' ? Tags : Package
+function newClientId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function emptyOption(isDefault = false) {
+  return {
+    clientId: newClientId(),
+    nameAr: '',
+    nameEn: '',
+    priceChange: '0',
+    isDefault,
+  }
+}
+
+function emptyGroup() {
+  return {
+    clientId: newClientId(),
+    nameAr: '',
+    nameEn: '',
+    options: [emptyOption(true), emptyOption(false)],
+  }
+}
+
+function emptyCustomization() {
+  return {
+    clientId: newClientId(),
+    nameAr: '',
+    nameEn: '',
+    priceChange: '0',
+  }
+}
+
+/**
+ * @param {{
+ *   id: string
+ *   label: string
+ *   required?: boolean
+ *   value: string
+ *   onChange: (value: string) => void
+ *   placeholder: string
+ *   dir?: 'ltr' | 'rtl'
+ *   alignDoc: string
+ * }} props
+ */
+function ModifierTextField({
+  id,
+  label,
+  required = false,
+  value,
+  onChange,
+  placeholder,
+  dir = 'ltr',
+  alignDoc,
+}) {
+  return (
+    <div className="min-w-0 space-y-hisabi-xs">
+      <label
+        className={cn(
+          'type-label-md text-hisabi-on-surface-variant flex items-center gap-2',
+          alignDoc,
+        )}
+        htmlFor={id}
+      >
+        {label}
+        {required ? <RequiredMark /> : null}
+      </label>
+      <input
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        dir={dir}
+        className={fieldClass}
+      />
+    </div>
+  )
+}
+
+/**
+ * Same EN↔AR Gemini pair used on item name / category / company fields.
+ *
+ * @param {{
+ *   pairKey: string
+ *   idPrefix: string
+ *   nameAr: string
+ *   nameEn: string
+ *   nameArBaseline?: string
+ *   nameEnBaseline?: string
+ *   onNameAr: (value: string) => void
+ *   onNameEn: (value: string) => void
+ *   labelAr: string
+ *   labelEn: string
+ *   placeholderAr: string
+ *   placeholderEn: string
+ *   enabled: boolean
+ *   origin: 'en' | 'ar' | null
+ *   reportUserInput: (lang: 'en' | 'ar', pairKey: string, opts?: { otherFieldEmpty?: boolean }) => unknown
+ *   markAutoFilled: (lang: 'en' | 'ar', pairKey: string, value: string) => void
+ *   consumeAutoFillSkip: (pairKey: string, lang: 'en' | 'ar', trimmed: string) => boolean
+ * }} props
+ */
+function BilingualModifierNamePair({
+  pairKey,
+  idPrefix,
+  nameAr,
+  nameEn,
+  nameArBaseline,
+  nameEnBaseline,
+  onNameAr,
+  onNameEn,
+  labelAr,
+  labelEn,
+  placeholderAr,
+  placeholderEn,
+  enabled,
+  origin,
+  reportUserInput,
+  markAutoFilled,
+  consumeAutoFillSkip,
+}) {
+  const tBi = useTranslations('BilingualInvoiceCompany')
+  const { loading: loadingNameAr } = useGeminiArSuggestion(
+    nameEn,
+    (ar) => {
+      markAutoFilled('ar', pairKey, ar)
+      onNameAr(ar.slice(0, 200))
+    },
+    {
+      enabled: enabled && shouldEnableBilingualTranslate(origin, 'en', nameAr),
+      shouldSkip: (trimmed) => consumeAutoFillSkip(pairKey, 'en', trimmed),
+      englishBaseline: nameEnBaseline,
+    },
+  )
+  const { loading: loadingNameEn } = useGeminiEnSuggestion(
+    nameAr,
+    (en) => {
+      markAutoFilled('en', pairKey, en)
+      onNameEn(en.slice(0, 200))
+    },
+    {
+      enabled: enabled && shouldEnableBilingualTranslate(origin, 'ar', nameEn),
+      shouldSkip: (trimmed) => consumeAutoFillSkip(pairKey, 'ar', trimmed),
+      arabicBaseline: nameArBaseline,
+    },
+  )
+
+  return (
+    <div
+      dir="ltr"
+      className="grid grid-cols-1 gap-x-hisabi-lg gap-y-hisabi-md min-[480px]:grid-cols-2"
+    >
+      <div className="min-w-0 space-y-hisabi-xs text-start">
+        <label
+          className="type-label-md text-hisabi-on-surface-variant flex items-center gap-2"
+          htmlFor={`${idPrefix}-en`}
+        >
+          {labelEn}
+          {loadingNameEn ? (
+            <Loader2
+              className="text-hisabi-teal size-4 shrink-0 animate-spin"
+              aria-label={tBi('translating')}
+            />
+          ) : null}
+        </label>
+        <input
+          id={`${idPrefix}-en`}
+          value={nameEn}
+          onChange={(e) => {
+            const next = e.target.value.slice(0, 200)
+            reportUserInput('en', pairKey, {
+              otherFieldEmpty: !nameAr.trim(),
+            })
+            onNameEn(next)
+          }}
+          placeholder={placeholderEn}
+          dir="ltr"
+          className={fieldClass}
+        />
+      </div>
+      <div className="min-w-0 space-y-hisabi-xs text-start">
+        <label
+          className="type-label-md text-hisabi-on-surface-variant flex items-center gap-2"
+          htmlFor={`${idPrefix}-ar`}
+        >
+          {labelAr}
+          <RequiredMark />
+          {loadingNameAr ? (
+            <Loader2
+              className="text-hisabi-teal size-4 shrink-0 animate-spin"
+              aria-label={tBi('translating')}
+            />
+          ) : null}
+        </label>
+        <input
+          id={`${idPrefix}-ar`}
+          value={nameAr}
+          onChange={(e) => {
+            const next = e.target.value.slice(0, 200)
+            reportUserInput('ar', pairKey, {
+              otherFieldEmpty: !nameEn.trim(),
+            })
+            onNameAr(next)
+          }}
+          placeholder={placeholderAr}
+          required
+          dir="rtl"
+          className={fieldClass}
+        />
+      </div>
+    </div>
+  )
+}
+
+function MenuItemFormSection({ title, icon, children, alignDoc, action }) {
+  const Icon =
+    icon === 'tags'
+      ? Tags
+      : icon === 'sliders'
+        ? SlidersHorizontal
+        : icon === 'checks'
+          ? ListChecks
+          : Package
   return (
     <section className="overflow-hidden rounded-xl border border-hisabi-outline-variant/30 bg-hisabi-surface-container-lowest shadow-sm space-y-hisabi-lg">
-      <div className="flex items-center gap-hisabi-md border-b border-hisabi-outline-variant/20 px-hisabi-xl py-hisabi-lg sm:px-hisabi-xxl">
+      <div className="flex flex-wrap items-center gap-hisabi-md border-b border-hisabi-outline-variant/20 px-hisabi-xl py-hisabi-lg sm:px-hisabi-xxl">
         <span
           className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-hisabi-secondary-fixed text-hisabi-primary shadow-hisabi-1"
           aria-hidden
@@ -68,12 +295,13 @@ function MenuItemFormSection({ title, icon, children, alignDoc }) {
         </span>
         <h3
           className={cn(
-            'type-headline-md font-bold text-hisabi-primary',
+            'type-headline-md min-w-0 flex-1 font-bold text-hisabi-primary',
             alignDoc,
           )}
         >
           {title}
         </h3>
+        {action ? <div className="ms-auto shrink-0">{action}</div> : null}
       </div>
       <div className="space-y-hisabi-xl px-hisabi-xl pb-hisabi-xl pt-hisabi-md sm:px-hisabi-xxl sm:pb-hisabi-xxl sm:pt-hisabi-lg">
         {children}
@@ -122,6 +350,16 @@ export function MenuItemFormView({ mode, itemId }) {
   /** @type {[null | 'clear' | { base64: string, mime: string }, Function]} */
   const [imageNext, setImageNext] = useState(
     /** @type {null | 'clear' | { base64: string, mime: string }} */ (null),
+  )
+  const [variantGroups, setVariantGroups] = useState(/** @type {ReturnType<typeof emptyGroup>[]} */ ([]))
+  const [openVariantGroupIds, setOpenVariantGroupIds] = useState(
+    /** @type {string[]} */ ([]),
+  )
+  const [mountedVariantGroupIds, setMountedVariantGroupIds] = useState(
+    /** @type {string[]} */ ([]),
+  )
+  const [customizations, setCustomizations] = useState(
+    /** @type {ReturnType<typeof emptyCustomization>[]} */ ([]),
   )
 
   const { loading: loadingNameAr } = useGeminiArSuggestion(
@@ -186,6 +424,34 @@ export function MenuItemFormView({ mode, itemId }) {
     setSortOrder(String(item.sortOrder ?? 0))
     setActive(item.active !== false)
     setImageNext(null)
+    setVariantGroups(
+      (item.variantGroups ?? []).map((group) => ({
+        clientId: group.id,
+        nameAr: group.nameAr ?? '',
+        nameEn: group.nameEn ?? '',
+        nameArBaseline: group.nameAr ?? '',
+        nameEnBaseline: group.nameEn ?? '',
+        options: (group.options ?? []).map((option) => ({
+          clientId: option.id,
+          nameAr: option.nameAr ?? '',
+          nameEn: option.nameEn ?? '',
+          nameArBaseline: option.nameAr ?? '',
+          nameEnBaseline: option.nameEn ?? '',
+          priceChange: String(option.priceChange ?? '0'),
+          isDefault: Boolean(option.isDefault),
+        })),
+      })),
+    )
+    setCustomizations(
+      (item.customizations ?? []).map((row) => ({
+        clientId: row.id,
+        nameAr: row.nameAr ?? '',
+        nameEn: row.nameEn ?? '',
+        nameArBaseline: row.nameAr ?? '',
+        nameEnBaseline: row.nameEn ?? '',
+        priceChange: String(row.priceChange ?? '0'),
+      })),
+    )
     setHydrated(true)
   }, [itemQuery.data, hydrated])
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -201,6 +467,21 @@ export function MenuItemFormView({ mode, itemId }) {
         categoryId: categoryId || null,
         sortOrder: Number.parseInt(sortOrder, 10) || 0,
         active,
+        variantGroups: variantGroups.map((group) => ({
+          nameAr: group.nameAr.trim(),
+          nameEn: group.nameEn.trim() || null,
+          options: group.options.map((option) => ({
+            nameAr: option.nameAr.trim(),
+            nameEn: option.nameEn.trim() || null,
+            priceChange: option.priceChange.trim() || '0',
+            isDefault: Boolean(option.isDefault),
+          })),
+        })),
+        customizations: customizations.map((row) => ({
+          nameAr: row.nameAr.trim(),
+          nameEn: row.nameEn.trim() || null,
+          priceChange: row.priceChange.trim() || '0',
+        })),
       }
       if (imageNext === 'clear') {
         body.clearImage = true
@@ -241,6 +522,28 @@ export function MenuItemFormView({ mode, itemId }) {
     if (!/^\d+(\.\d{1,4})?$/.test(price.trim())) {
       setFormError(t('validationPrice'))
       return
+    }
+    for (const group of variantGroups) {
+      if (!group.nameAr.trim()) {
+        setFormError(t('validationVariantGroupName'))
+        return
+      }
+      if (group.options.length === 0) {
+        setFormError(t('validationVariantOptions'))
+        return
+      }
+      for (const option of group.options) {
+        if (!option.nameAr.trim() || !/^\d+(\.\d{1,4})?$/.test(option.priceChange.trim())) {
+          setFormError(t('validationVariantOption'))
+          return
+        }
+      }
+    }
+    for (const row of customizations) {
+      if (!row.nameAr.trim() || !/^\d+(\.\d{1,4})?$/.test(row.priceChange.trim())) {
+        setFormError(t('validationCustomization'))
+        return
+      }
     }
     saveMutation.mutate()
   }
@@ -673,6 +976,432 @@ export function MenuItemFormView({ mode, itemId }) {
                 ))}
               </div>
             </fieldset>
+          </MenuItemFormSection>
+
+          <MenuItemFormSection
+            title={t('sectionVariants')}
+            icon="sliders"
+            alignDoc={alignDoc}
+            action={
+              <AuthSubmitButton
+                type="button"
+                variant="gold"
+                onClick={() => {
+                  const group = emptyGroup()
+                  setVariantGroups((prev) => [...prev, group])
+                  setOpenVariantGroupIds((prev) => [...prev, group.clientId])
+                  setMountedVariantGroupIds((prev) => [...prev, group.clientId])
+                }}
+                className="w-auto min-w-0 px-hisabi-lg"
+              >
+                <Plus className="size-4 shrink-0" aria-hidden />
+                {t('addVariantGroup')}
+              </AuthSubmitButton>
+            }
+          >
+            <div className="space-y-hisabi-md">
+              {variantGroups.length === 0 ? (
+                <p className="type-body-sm text-hisabi-on-surface-variant">
+                  {t('noVariantGroups')}
+                </p>
+              ) : (
+                variantGroups.map((group, groupIndex) => {
+                  const isOpen = openVariantGroupIds.includes(group.clientId)
+                  const groupName =
+                    locale === 'ar'
+                      ? group.nameAr.trim() ||
+                        group.nameEn.trim() ||
+                        t('variantGroupUntitled')
+                      : group.nameEn.trim() ||
+                        group.nameAr.trim() ||
+                        t('variantGroupUntitled')
+                  return (
+                  <div key={group.clientId} className="space-y-hisabi-sm">
+                    <div className="flex items-center gap-hisabi-sm">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenVariantGroupIds((prev) =>
+                            prev.includes(group.clientId)
+                              ? prev.filter((id) => id !== group.clientId)
+                              : [...prev, group.clientId],
+                          )
+                          setMountedVariantGroupIds((prev) =>
+                            prev.includes(group.clientId)
+                              ? prev
+                              : [...prev, group.clientId],
+                          )
+                        }}
+                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-hisabi-sm text-start"
+                        aria-expanded={isOpen}
+                        aria-label={
+                          isOpen
+                            ? t('collapseVariantGroup')
+                            : t('expandVariantGroup')
+                        }
+                      >
+                        <ChevronDown
+                          className={cn(
+                            'text-hisabi-outline size-5 shrink-0 transition-transform',
+                            !isOpen && '-rotate-90',
+                          )}
+                          aria-hidden
+                        />
+                        <span className="type-label-md min-w-0 truncate font-bold text-hisabi-on-surface">
+                          {t('variantCardTitle', { n: groupIndex + 1 })}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVariantGroups((prev) =>
+                            prev.filter((g) => g.clientId !== group.clientId),
+                          )
+                          setOpenVariantGroupIds((prev) =>
+                            prev.filter((id) => id !== group.clientId),
+                          )
+                          setMountedVariantGroupIds((prev) =>
+                            prev.filter((id) => id !== group.clientId),
+                          )
+                        }}
+                        className="text-hisabi-error hover:bg-hisabi-error/8 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg"
+                        aria-label={t('removeVariantGroup')}
+                      >
+                        <Trash2 className="size-4" aria-hidden />
+                      </button>
+                    </div>
+                    {mountedVariantGroupIds.includes(group.clientId) ? (
+                    <div
+                      className={cn(
+                        'space-y-hisabi-md rounded-lg border border-hisabi-outline-variant bg-white p-hisabi-md',
+                        !isOpen && 'hidden',
+                      )}
+                    >
+                    <BilingualModifierNamePair
+                      pairKey={`menu-item.variant-group.${group.clientId}`}
+                      idPrefix={`vg-${group.clientId}`}
+                      nameAr={group.nameAr}
+                      nameEn={group.nameEn}
+                      nameArBaseline={group.nameArBaseline}
+                      nameEnBaseline={group.nameEnBaseline}
+                      onNameAr={(next) =>
+                        setVariantGroups((prev) =>
+                          prev.map((g) =>
+                            g.clientId === group.clientId
+                              ? { ...g, nameAr: next }
+                              : g,
+                          ),
+                        )
+                      }
+                      onNameEn={(next) =>
+                        setVariantGroups((prev) =>
+                          prev.map((g) =>
+                            g.clientId === group.clientId
+                              ? { ...g, nameEn: next }
+                              : g,
+                          ),
+                        )
+                      }
+                      labelAr={t('variantGroupNameAr')}
+                      labelEn={t('variantGroupNameEn')}
+                      placeholderAr={t('variantGroupNameArPlaceholder')}
+                      placeholderEn={t('variantGroupNameEnPlaceholder')}
+                      enabled={hydrated && !categoryModalOpen}
+                      origin={origin}
+                      reportUserInput={reportUserInput}
+                      markAutoFilled={markAutoFilled}
+                      consumeAutoFillSkip={consumeAutoFillSkip}
+                    />
+                    {group.options.map((option, optionIndex) => (
+                      <div key={option.clientId} className="space-y-hisabi-xs">
+                        <div className="flex items-center justify-between gap-hisabi-sm">
+                          <p className="type-label-md font-bold text-hisabi-on-surface">
+                            {t('optionCardTitle', { n: optionIndex + 1 })}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setVariantGroups((prev) =>
+                                prev.map((g) =>
+                                  g.clientId !== group.clientId
+                                    ? g
+                                    : {
+                                        ...g,
+                                        options: g.options.filter(
+                                          (o) => o.clientId !== option.clientId,
+                                        ),
+                                      },
+                                ),
+                              )
+                            }
+                            className="text-hisabi-error hover:bg-hisabi-error/8 flex size-8 cursor-pointer items-center justify-center rounded-lg"
+                            aria-label={t('removeOption')}
+                          >
+                            <Trash2 className="size-4" aria-hidden />
+                          </button>
+                        </div>
+                        <div className="space-y-hisabi-md rounded-lg border border-hisabi-outline-variant bg-white p-hisabi-md">
+                        <BilingualModifierNamePair
+                          pairKey={`menu-item.variant-option.${option.clientId}`}
+                          idPrefix={`vo-${option.clientId}`}
+                          nameAr={option.nameAr}
+                          nameEn={option.nameEn}
+                          nameArBaseline={option.nameArBaseline}
+                          nameEnBaseline={option.nameEnBaseline}
+                          onNameAr={(next) =>
+                            setVariantGroups((prev) =>
+                              prev.map((g) =>
+                                g.clientId !== group.clientId
+                                  ? g
+                                  : {
+                                      ...g,
+                                      options: g.options.map((o) =>
+                                        o.clientId === option.clientId
+                                          ? { ...o, nameAr: next }
+                                          : o,
+                                      ),
+                                    },
+                              ),
+                            )
+                          }
+                          onNameEn={(next) =>
+                            setVariantGroups((prev) =>
+                              prev.map((g) =>
+                                g.clientId !== group.clientId
+                                  ? g
+                                  : {
+                                      ...g,
+                                      options: g.options.map((o) =>
+                                        o.clientId === option.clientId
+                                          ? { ...o, nameEn: next }
+                                          : o,
+                                      ),
+                                    },
+                              ),
+                            )
+                          }
+                          labelAr={t('optionNameAr')}
+                          labelEn={t('optionNameEn')}
+                          placeholderAr={t('optionNameArPlaceholder')}
+                          placeholderEn={t('optionNameEnPlaceholder')}
+                          enabled={hydrated && !categoryModalOpen}
+                          origin={origin}
+                          reportUserInput={reportUserInput}
+                          markAutoFilled={markAutoFilled}
+                          consumeAutoFillSkip={consumeAutoFillSkip}
+                        />
+                        <ModifierTextField
+                          id={`vo-price-${option.clientId}`}
+                          label={t('priceChangeLabel')}
+                          value={option.priceChange}
+                          onChange={(next) =>
+                            setVariantGroups((prev) =>
+                              prev.map((g) =>
+                                g.clientId !== group.clientId
+                                  ? g
+                                  : {
+                                      ...g,
+                                      options: g.options.map((o) =>
+                                        o.clientId === option.clientId
+                                          ? { ...o, priceChange: next }
+                                          : o,
+                                      ),
+                                    },
+                              ),
+                            )
+                          }
+                          placeholder={t('priceChangePlaceholder')}
+                          dir="ltr"
+                          alignDoc={alignDoc}
+                        />
+                        <label className="type-body-md text-hisabi-on-surface-variant flex items-center gap-hisabi-sm">
+                          <input
+                            type="radio"
+                            name={`default-${group.clientId}`}
+                            checked={option.isDefault}
+                            onChange={() =>
+                              setVariantGroups((prev) =>
+                                prev.map((g) =>
+                                  g.clientId !== group.clientId
+                                    ? g
+                                    : {
+                                        ...g,
+                                        options: g.options.map((o) => ({
+                                          ...o,
+                                          isDefault:
+                                            o.clientId === option.clientId,
+                                        })),
+                                      },
+                                ),
+                              )
+                            }
+                          />
+                          {t('optionDefault')}
+                        </label>
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVariantGroups((prev) =>
+                          prev.map((g) =>
+                            g.clientId === group.clientId
+                              ? { ...g, options: [...g.options, emptyOption(false)] }
+                              : g,
+                          ),
+                        )
+                      }
+                      className="type-label-sm inline-flex cursor-pointer items-center gap-1 font-semibold text-hisabi-secondary hover:underline"
+                    >
+                      <Plus className="size-4 shrink-0" aria-hidden />
+                      {t('addOption')}
+                    </button>
+                    </div>
+                    ) : null}
+                    <div
+                      className={cn(
+                        'rounded-lg border border-hisabi-outline-variant bg-white px-hisabi-md py-hisabi-sm',
+                        isOpen && 'hidden',
+                      )}
+                    >
+                      <p className="type-label-md truncate font-bold text-hisabi-on-surface">
+                        {groupName}
+                      </p>
+                    </div>
+                  </div>
+                  )
+                })
+              )}
+              {variantGroups.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const group = emptyGroup()
+                    setVariantGroups((prev) => [...prev, group])
+                    setOpenVariantGroupIds((prev) => [...prev, group.clientId])
+                    setMountedVariantGroupIds((prev) => [...prev, group.clientId])
+                  }}
+                  className="type-label-sm inline-flex cursor-pointer items-center gap-1 font-semibold text-hisabi-secondary hover:underline"
+                >
+                  <Plus className="size-4 shrink-0" aria-hidden />
+                  {t('addVariant')}
+                </button>
+              ) : null}
+            </div>
+          </MenuItemFormSection>
+
+          <MenuItemFormSection
+            title={t('sectionCustomizations')}
+            icon="checks"
+            alignDoc={alignDoc}
+            action={
+              <AuthSubmitButton
+                type="button"
+                variant="gold"
+                onClick={() =>
+                  setCustomizations((prev) => [...prev, emptyCustomization()])
+                }
+                className="w-auto min-w-0 px-hisabi-lg"
+              >
+                <Plus className="size-4 shrink-0" aria-hidden />
+                {t('addCustomization')}
+              </AuthSubmitButton>
+            }
+          >
+            <div className="space-y-hisabi-md">
+              {customizations.length === 0 ? (
+                <p className="type-body-sm text-hisabi-on-surface-variant">
+                  {t('noCustomizations')}
+                </p>
+              ) : (
+                customizations.map((row) => (
+                  <div
+                    key={row.clientId}
+                    className="space-y-hisabi-md rounded-lg border border-hisabi-outline-variant bg-white p-hisabi-md"
+                  >
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCustomizations((prev) =>
+                            prev.filter((c) => c.clientId !== row.clientId),
+                          )
+                        }
+                        className="text-hisabi-error hover:bg-hisabi-error/8 flex size-8 cursor-pointer items-center justify-center rounded-lg"
+                        aria-label={t('removeCustomization')}
+                      >
+                        <Trash2 className="size-4" aria-hidden />
+                      </button>
+                    </div>
+                    <BilingualModifierNamePair
+                      pairKey={`menu-item.customization.${row.clientId}`}
+                      idPrefix={`cz-${row.clientId}`}
+                      nameAr={row.nameAr}
+                      nameEn={row.nameEn}
+                      nameArBaseline={row.nameArBaseline}
+                      nameEnBaseline={row.nameEnBaseline}
+                      onNameAr={(next) =>
+                        setCustomizations((prev) =>
+                          prev.map((c) =>
+                            c.clientId === row.clientId
+                              ? { ...c, nameAr: next }
+                              : c,
+                          ),
+                        )
+                      }
+                      onNameEn={(next) =>
+                        setCustomizations((prev) =>
+                          prev.map((c) =>
+                            c.clientId === row.clientId
+                              ? { ...c, nameEn: next }
+                              : c,
+                          ),
+                        )
+                      }
+                      labelAr={t('customizationNameAr')}
+                      labelEn={t('customizationNameEn')}
+                      placeholderAr={t('customizationNameArPlaceholder')}
+                      placeholderEn={t('customizationNameEnPlaceholder')}
+                      enabled={hydrated && !categoryModalOpen}
+                      origin={origin}
+                      reportUserInput={reportUserInput}
+                      markAutoFilled={markAutoFilled}
+                      consumeAutoFillSkip={consumeAutoFillSkip}
+                    />
+                    <ModifierTextField
+                      id={`cz-price-${row.clientId}`}
+                      label={t('priceChangeLabel')}
+                      value={row.priceChange}
+                      onChange={(next) =>
+                        setCustomizations((prev) =>
+                          prev.map((c) =>
+                            c.clientId === row.clientId
+                              ? { ...c, priceChange: next }
+                              : c,
+                          ),
+                        )
+                      }
+                      placeholder={t('priceChangePlaceholder')}
+                      dir="ltr"
+                      alignDoc={alignDoc}
+                    />
+                  </div>
+                ))
+              )}
+              {customizations.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCustomizations((prev) => [...prev, emptyCustomization()])
+                  }
+                  className="type-label-sm inline-flex cursor-pointer items-center gap-1 font-semibold text-hisabi-secondary hover:underline"
+                >
+                  <Plus className="size-4 shrink-0" aria-hidden />
+                  {t('addCustomization')}
+                </button>
+              ) : null}
+            </div>
           </MenuItemFormSection>
         </div>
 

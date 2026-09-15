@@ -5,6 +5,8 @@ import {
   parseMoney,
   allocateOrderDiscount,
 } from '@/lib/invoices/invoice-compute-totals'
+import { menuItemInclude } from '@/lib/menu/map-menu-json'
+import { resolveCheckoutModifiers } from '@/lib/menu/resolve-checkout-modifiers'
 import { createKitchenOrderInTx } from '@/lib/orders/create-kitchen-order'
 import { prisma } from '@/lib/prisma'
 import { humanizeZatcaError } from '@/lib/zatca/humanize-zatca-error'
@@ -22,6 +24,9 @@ const moneyOptionalSchema = z
 const checkoutLineSchema = z.object({
   menuItemId: z.string().trim().min(1),
   quantity: z.number().int().min(1).max(999),
+  variantOptionIds: z.array(z.string().trim().min(1)).max(40).optional().default([]),
+  customizationIds: z.array(z.string().trim().min(1)).max(40).optional().default([]),
+  lineNote: z.string().trim().max(300).optional().nullable(),
 })
 
 export const posCheckoutBodySchema = z.object({
@@ -107,6 +112,7 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
       businessProfileId: profileId,
       active: true,
     },
+    include: menuItemInclude,
   })
   /** @type {Map<string, (typeof menuItems)[number]>} */
   const byId = new Map(menuItems.map((m) => [m.id, m]))
@@ -118,14 +124,26 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
     }
   }
 
-  const baseLines = body.lines.map((l) => {
+  const pricedLines = body.lines.map((l) => {
     const item = byId.get(l.menuItemId)
+    const resolved = resolveCheckoutModifiers(
+      item,
+      l.variantOptionIds,
+      l.customizationIds,
+    )
     return {
       quantity: l.quantity,
-      unitPrice: item.price,
+      unitPrice: resolved.unitPrice,
       vatPreset: item.vatPreset,
+      modifiersSnapshot: resolved.modifiersSnapshot,
+      lineNote: l.lineNote?.trim() || null,
     }
   })
+  const baseLines = pricedLines.map((l) => ({
+    quantity: l.quantity,
+    unitPrice: l.unitPrice,
+    vatPreset: l.vatPreset,
+  }))
   const lineDiscounts = allocateOrderDiscount(baseLines, body.discount ?? '0')
   const computeInput = baseLines.map((l, i) => ({
     ...l,
@@ -189,18 +207,21 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
         lines: {
           create: body.lines.map((l, idx) => {
             const item = byId.get(l.menuItemId)
+            const priced = pricedLines[idx]
             const a = totals.perLine[idx]
             return {
               menuItemId: item.id,
               nameAr: item.nameAr,
               nameEn: item.nameEn,
               quantity: a.quantity,
-              unitPrice: item.price,
+              unitPrice: priced.unitPrice,
               discount: a.discountStr,
               vatPreset: item.vatPreset,
               vatAmount: a.vatAmountStr,
               lineTotal: a.lineTotalStr,
               sortOrder: idx,
+              lineNote: null,
+              modifiersSnapshot: priced.modifiersSnapshot,
             }
           }),
         },
@@ -210,7 +231,17 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
     await createKitchenOrderInTx(tx, {
       businessProfileId: profileId,
       invoiceId: created.id,
-      lines: created.lines,
+      lines: body.lines.map((l, idx) => {
+        const item = byId.get(l.menuItemId)
+        const priced = pricedLines[idx]
+        return {
+          nameAr: item.nameAr,
+          nameEn: item.nameEn,
+          quantity: priced.quantity,
+          lineNote: priced.lineNote,
+          modifiersSnapshot: priced.modifiersSnapshot,
+        }
+      }),
     })
     return created
   }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)

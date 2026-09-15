@@ -9,9 +9,7 @@ const ACTIVE_STATUSES = ['pending', 'preparing', 'ready']
 
 export async function GET(request) {
   try {
-    const url = new URL(request.url)
-    const view = url.searchParams.get('view') === 'display' ? 'display' : 'kitchen'
-    const auth = await requireKitchenQueueApi(request, view)
+    const auth = await requireKitchenQueueApi(request, 'kitchen')
     if (auth.error) return auth.error
 
     const invoiceOk = { ...WHERE_NOT_DELETED, status: { not: 'voided' } }
@@ -25,26 +23,6 @@ export async function GET(request) {
       linesSnapshot: true,
       createdAt: true,
       completedAt: true,
-    }
-
-    if (view === 'display') {
-      const rows = await prisma.kitchenOrder.findMany({
-        where: {
-          businessProfileId: auth.profileId,
-          status: { in: ['preparing', 'ready'] },
-          invoice: invoiceOk,
-        },
-        orderBy: [{ createdAt: 'asc' }],
-        select,
-      })
-      const preparing = []
-      const ready = []
-      for (const row of rows) {
-        const mapped = mapKitchenBoardOrder(row, 'display')
-        if (row.status === 'ready') ready.push(mapped)
-        else preparing.push(mapped)
-      }
-      return jsonOk({ preparing, ready, view })
     }
 
     const [activeRows, completedRows] = await Promise.all([
@@ -94,7 +72,7 @@ export async function GET(request) {
     }
 
     return jsonOk({
-      view,
+      view: 'kitchen',
       pending,
       preparing,
       ready,

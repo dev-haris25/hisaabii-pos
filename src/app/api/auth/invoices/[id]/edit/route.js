@@ -25,6 +25,8 @@ const editLineSchema = z.object({
     .trim()
     .regex(/^\d+(\.\d{1,4})?$/),
   vatPreset: z.enum(['standard', 'zero', 'exempt']),
+  lineNote: z.string().trim().max(300).optional().nullable(),
+  modifiersSnapshot: z.unknown().optional().nullable(),
 })
 
 const editBodySchema = z.object({
