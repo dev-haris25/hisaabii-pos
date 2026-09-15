@@ -1,15 +1,13 @@
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
-
 import { NextResponse } from 'next/server'
 
 import { userCanAccessBusinessProfile } from '@/lib/auth/accessible-business-profiles'
 import { getSessionUser } from '@/lib/auth/get-session-user'
 import { jsonError } from '@/lib/api/json-response'
+import { readBusinessLogoFile } from '@/lib/auth/save-business-logo'
 import { prisma } from '@/lib/prisma'
 
 /**
- * Serve the restaurant logo from public/uploads for a membership-accessible profile.
+ * Serve the restaurant logo from UPLOADS_DIR (or legacy public/uploads).
  */
 export async function GET(_request, context) {
   const session = await getSessionUser()
@@ -31,10 +29,8 @@ export async function GET(_request, context) {
     return jsonError(404, 'NOT_FOUND', 'No logo')
   }
 
-  const rel = profile.logoStoragePath.replace(/^\//, '')
-  const abs = path.join(process.cwd(), 'public', rel)
   try {
-    const buf = await readFile(abs)
+    const buf = await readBusinessLogoFile(profile.logoStoragePath)
     return new NextResponse(buf, {
       headers: {
         'Content-Type': profile.logoMimeType || 'application/octet-stream',

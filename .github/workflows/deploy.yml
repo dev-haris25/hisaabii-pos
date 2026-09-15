@@ -43,6 +43,7 @@ jobs:
             --exclude '.git' \
             --exclude '.github' \
             --exclude '.next' \
+            --exclude 'public/uploads' \
             -e "ssh -i ~/.ssh/id_rsa -p $PORT -o StrictHostKeyChecking=no" . \
             $USERNAME@$HOST:$REMOTE_DIR
 

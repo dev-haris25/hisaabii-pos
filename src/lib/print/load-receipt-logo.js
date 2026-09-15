@@ -1,7 +1,6 @@
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
-
 import sharp from 'sharp'
+
+import { readBusinessLogoFile } from '@/lib/auth/save-business-logo'
 
 /** Typical printable width for 80mm ESC/POS receipts (dots). */
 const RECEIPT_LOGO_MAX_WIDTH = 384
@@ -19,14 +18,8 @@ export async function loadReceiptLogoPngBase64(profile) {
   const storagePath = profile?.logoStoragePath?.trim()
   if (!storagePath) return null
 
-  const abs = path.join(
-    process.cwd(),
-    'public',
-    storagePath.replace(/^\//, ''),
-  )
-
   try {
-    const raw = await readFile(abs)
+    const raw = await readBusinessLogoFile(storagePath)
     const png = await sharp(raw)
       .resize({
         width: RECEIPT_LOGO_MAX_WIDTH,
