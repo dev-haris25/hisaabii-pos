@@ -15,6 +15,7 @@ import {
   computeInvoiceTotals,
   parseMoney,
 } from '@/lib/invoices/invoice-compute-totals'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { cn } from '@/lib/utils'
 
 const fieldClass =
@@ -93,6 +94,7 @@ export function NoteEditView({
   const [reasonAr, setReasonAr] = useState(note.reasonAr || '')
   const [reasonEn, setReasonEn] = useState(note.reasonEn || '')
   const [formError, setFormError] = useState('')
+  const [reasonError, setReasonError] = useState('')
 
   const filteredItems = useMemo(() => {
     if (categoryId === 'all') return menuItems
@@ -197,9 +199,11 @@ export function NoteEditView({
     e.preventDefault()
     setFormError('')
     if (!reasonAr.trim()) {
-      setFormError(tInv('editReasonRequired'))
+      setReasonError(tInv('editReasonRequired'))
+      scrollAfterFieldValidation()
       return
     }
+    setReasonError('')
     if (cart.length === 0 || parseMoney(cartTotals.grandTotal) <= 0) {
       setFormError(tErr('VALIDATION_ERROR'))
       return
@@ -357,10 +361,29 @@ export function NoteEditView({
                   rows={3}
                   maxLength={500}
                   value={reasonAr}
-                  onChange={(e) => setReasonAr(e.target.value)}
-                  className={fieldClass}
-                  required
+                  onChange={(e) => {
+                    setReasonAr(e.target.value)
+                    if (reasonError) setReasonError('')
+                  }}
+                  className={cn(
+                    fieldClass,
+                    reasonError &&
+                      'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                  )}
+                  aria-invalid={reasonError ? true : undefined}
+                  aria-describedby={
+                    reasonError ? 'note-reason-ar-error' : undefined
+                  }
                 />
+                {reasonError ? (
+                  <p
+                    id="note-reason-ar-error"
+                    className="type-body-sm text-hisabi-error"
+                    role="alert"
+                  >
+                    {reasonError}
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-hisabi-xs">
                 <label

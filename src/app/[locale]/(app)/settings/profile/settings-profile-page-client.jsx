@@ -15,11 +15,14 @@ import {
   SettingsPageShell,
   SettingsSection,
   fieldClass,
+  fieldInvalidClass,
 } from '@/components/settings/settings-page-shell'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { useRouter } from '@/i18n/navigation'
 import { AuthApiError, authGet, authPatch, authPost } from '@/lib/api/auth-client'
 import { hasNumberOrSpecial } from '@/lib/auth/password-rules'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
+import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 const PROFILE_QUERY_KEY = ['account', 'profile']
@@ -62,6 +65,12 @@ export function SettingsProfilePageClient() {
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [passwordError, setPasswordError] = useState('')
+  const [nameError, setNameError] = useState('')
+  const [passwordFieldErrors, setPasswordFieldErrors] = useState({
+    current: '',
+    next: '',
+    confirm: '',
+  })
 
   useEffect(() => {
     if (!profile) return
@@ -115,8 +124,30 @@ export function SettingsProfilePageClient() {
   const lengthOk = newPassword.length >= 8
   const complexOk = hasNumberOrSpecial(newPassword)
   const matchOk = newPassword.length > 0 && newPassword === confirmPassword
-  const canChangePassword =
-    currentPassword.length > 0 && lengthOk && complexOk && matchOk
+
+  function handleSaveProfile() {
+    if (!name.trim()) {
+      setNameError(t('validationDisplayName'))
+      scrollAfterFieldValidation()
+      return
+    }
+    setNameError('')
+    saveMutation.mutate()
+  }
+
+  function handleChangePassword() {
+    const next = { current: '', next: '', confirm: '' }
+    if (!currentPassword) next.current = tErr('PASSWORD_REQUIRED')
+    if (!lengthOk || !complexOk) next.next = tErr('WEAK_PASSWORD')
+    if (!matchOk) next.confirm = tErr('PASSWORD_MISMATCH')
+    if (next.current || next.next || next.confirm) {
+      setPasswordFieldErrors(next)
+      scrollAfterFieldValidation()
+      return
+    }
+    setPasswordFieldErrors({ current: '', next: '', confirm: '' })
+    passwordMutation.mutate()
+  }
 
   if (isPending && !profile) {
     return (
@@ -138,12 +169,20 @@ export function SettingsProfilePageClient() {
               <RequiredMark />
             </>
           }
+          error={nameError}
+          errorId="profile-name-error"
         >
           <input
-            className={fieldClass}
+            id="profile-name"
+            className={cn(fieldClass, nameError && fieldInvalidClass)}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value)
+              if (nameError) setNameError('')
+            }}
             placeholder={t('fieldNamePlaceholder')}
+            aria-invalid={nameError ? true : undefined}
+            aria-describedby={nameError ? 'profile-name-error' : undefined}
           />
         </SettingsField>
         <SettingsField label={t('fieldEmail')}>
@@ -163,8 +202,8 @@ export function SettingsProfilePageClient() {
           <AuthSubmitButton
             type="button"
             pending={saveMutation.isPending}
-            disabled={!name.trim() || saveMutation.isPending}
-            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
+            onClick={handleSaveProfile}
           >
             {t('save')}
           </AuthSubmitButton>
@@ -182,12 +221,28 @@ export function SettingsProfilePageClient() {
         >
           <div className="relative">
             <input
-              className={`${fieldClass} pe-12`}
+              id="profile-current-password"
+              className={cn(
+                fieldClass,
+                'pe-12',
+                passwordFieldErrors.current && fieldInvalidClass,
+              )}
               type={showCurrent ? 'text' : 'password'}
               autoComplete="current-password"
               value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
+              onChange={(e) => {
+                setCurrentPassword(e.target.value)
+                if (passwordFieldErrors.current) {
+                  setPasswordFieldErrors((prev) => ({ ...prev, current: '' }))
+                }
+              }}
               placeholder={t('fieldCurrentPasswordPlaceholder')}
+              aria-invalid={passwordFieldErrors.current ? true : undefined}
+              aria-describedby={
+                passwordFieldErrors.current
+                  ? 'profile-current-password-error'
+                  : undefined
+              }
             />
             <button
               type="button"
@@ -198,6 +253,15 @@ export function SettingsProfilePageClient() {
               {showCurrent ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
           </div>
+          {passwordFieldErrors.current ? (
+            <p
+              id="profile-current-password-error"
+              className="type-body-sm text-hisabi-error"
+              role="alert"
+            >
+              {passwordFieldErrors.current}
+            </p>
+          ) : null}
         </SettingsField>
         <SettingsField
           label={
@@ -209,12 +273,28 @@ export function SettingsProfilePageClient() {
         >
           <div className="relative">
             <input
-              className={`${fieldClass} pe-12`}
+              id="profile-new-password"
+              className={cn(
+                fieldClass,
+                'pe-12',
+                passwordFieldErrors.next && fieldInvalidClass,
+              )}
               type={showNew ? 'text' : 'password'}
               autoComplete="new-password"
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              onChange={(e) => {
+                setNewPassword(e.target.value)
+                if (passwordFieldErrors.next) {
+                  setPasswordFieldErrors((prev) => ({ ...prev, next: '' }))
+                }
+              }}
               placeholder={t('fieldNewPasswordPlaceholder')}
+              aria-invalid={passwordFieldErrors.next ? true : undefined}
+              aria-describedby={
+                passwordFieldErrors.next
+                  ? 'profile-new-password-error'
+                  : undefined
+              }
             />
             <button
               type="button"
@@ -225,6 +305,15 @@ export function SettingsProfilePageClient() {
               {showNew ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
           </div>
+          {passwordFieldErrors.next ? (
+            <p
+              id="profile-new-password-error"
+              className="type-body-sm text-hisabi-error"
+              role="alert"
+            >
+              {passwordFieldErrors.next}
+            </p>
+          ) : null}
         </SettingsField>
         <SettingsField
           label={
@@ -236,12 +325,28 @@ export function SettingsProfilePageClient() {
         >
           <div className="relative">
             <input
-              className={`${fieldClass} pe-12`}
+              id="profile-confirm-password"
+              className={cn(
+                fieldClass,
+                'pe-12',
+                passwordFieldErrors.confirm && fieldInvalidClass,
+              )}
               type={showConfirm ? 'text' : 'password'}
               autoComplete="new-password"
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value)
+                if (passwordFieldErrors.confirm) {
+                  setPasswordFieldErrors((prev) => ({ ...prev, confirm: '' }))
+                }
+              }}
               placeholder={t('fieldConfirmPasswordPlaceholder')}
+              aria-invalid={passwordFieldErrors.confirm ? true : undefined}
+              aria-describedby={
+                passwordFieldErrors.confirm
+                  ? 'profile-confirm-password-error'
+                  : undefined
+              }
             />
             <button
               type="button"
@@ -252,6 +357,15 @@ export function SettingsProfilePageClient() {
               {showConfirm ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
           </div>
+          {passwordFieldErrors.confirm ? (
+            <p
+              id="profile-confirm-password-error"
+              className="type-body-sm text-hisabi-error"
+              role="alert"
+            >
+              {passwordFieldErrors.confirm}
+            </p>
+          ) : null}
         </SettingsField>
         {passwordError ? (
           <p className="type-body-sm text-hisabi-error">{passwordError}</p>
@@ -260,8 +374,8 @@ export function SettingsProfilePageClient() {
           <AuthSubmitButton
             type="button"
             pending={passwordMutation.isPending}
-            disabled={!canChangePassword || passwordMutation.isPending}
-            onClick={() => passwordMutation.mutate()}
+            disabled={passwordMutation.isPending}
+            onClick={handleChangePassword}
           >
             {t('changePassword')}
           </AuthSubmitButton>

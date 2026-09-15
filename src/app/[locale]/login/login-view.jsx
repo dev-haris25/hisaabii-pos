@@ -13,7 +13,15 @@ import { AuthApiError, authPost } from '@/lib/api/auth-client'
 import { getPostAuthLandingPath } from '@/lib/auth/post-auth-landing-path'
 import { hrefWithNext } from '@/lib/auth/safe-next-path'
 import { Link, useRouter } from '@/i18n/navigation'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
+import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const authInputClass =
+  'type-body-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container w-full rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest py-3 ps-12 text-hisabi-on-surface outline-none transition-all focus:ring-2 focus:ring-inset'
+const authInputInvalidClass =
+  'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error'
 
 /** @param {{ nextPath?: string | null }} props */
 export function LoginView({ nextPath = null }) {
@@ -30,6 +38,7 @@ export function LoginView({ nextPath = null }) {
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
   const [formError, setFormError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({ email: '', password: '' })
 
   const login = useMutation({
     mutationFn: () => authPost('/login', { email, password, remember }),
@@ -59,6 +68,16 @@ export function LoginView({ nextPath = null }) {
   function handleSubmit(e) {
     e.preventDefault()
     setFormError('')
+    const next = { email: '', password: '' }
+    if (!email.trim()) next.email = tErr('EMAIL_REQUIRED')
+    else if (!EMAIL_RE.test(email.trim())) next.email = tErr('VALIDATION_ERROR')
+    if (!password) next.password = tErr('PASSWORD_REQUIRED')
+    if (next.email || next.password) {
+      setFieldErrors(next)
+      scrollAfterFieldValidation()
+      return
+    }
+    setFieldErrors({ email: '', password: '' })
     login.mutate()
   }
 
@@ -71,7 +90,7 @@ export function LoginView({ nextPath = null }) {
           </p>
         ) : null}
 
-        <form className="space-y-hisabi-lg" onSubmit={handleSubmit}>
+        <form className="space-y-hisabi-lg" onSubmit={handleSubmit} noValidate>
           <div className="space-y-hisabi-xs">
             <label
               className="type-label-md text-hisabi-on-surface-variant block"
@@ -92,11 +111,32 @@ export function LoginView({ nextPath = null }) {
                 autoComplete="email"
                 placeholder={t('emailPlaceholder')}
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="type-body-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container w-full rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest py-3 ps-12 pe-4 text-hisabi-on-surface outline-none transition-all focus:ring-2 focus:ring-inset"
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  if (fieldErrors.email) {
+                    setFieldErrors((prev) => ({ ...prev, email: '' }))
+                  }
+                }}
+                className={cn(
+                  authInputClass,
+                  'pe-4',
+                  fieldErrors.email && authInputInvalidClass,
+                )}
+                aria-invalid={fieldErrors.email ? true : undefined}
+                aria-describedby={
+                  fieldErrors.email ? 'login-email-error' : undefined
+                }
               />
             </div>
+            {fieldErrors.email ? (
+              <p
+                id="login-email-error"
+                className="type-body-sm text-hisabi-error"
+                role="alert"
+              >
+                {fieldErrors.email}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-hisabi-xs">
@@ -127,9 +167,21 @@ export function LoginView({ nextPath = null }) {
                 autoComplete="current-password"
                 placeholder={t('passwordPlaceholder')}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="type-body-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container w-full rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest py-3 ps-12 pe-12 text-hisabi-on-surface outline-none transition-all focus:ring-2 focus:ring-inset"
+                onChange={(e) => {
+                  setPassword(e.target.value)
+                  if (fieldErrors.password) {
+                    setFieldErrors((prev) => ({ ...prev, password: '' }))
+                  }
+                }}
+                className={cn(
+                  authInputClass,
+                  'pe-12',
+                  fieldErrors.password && authInputInvalidClass,
+                )}
+                aria-invalid={fieldErrors.password ? true : undefined}
+                aria-describedby={
+                  fieldErrors.password ? 'login-password-error' : undefined
+                }
               />
               <button
                 type="button"
@@ -146,6 +198,15 @@ export function LoginView({ nextPath = null }) {
                 )}
               </button>
             </div>
+            {fieldErrors.password ? (
+              <p
+                id="login-password-error"
+                className="type-body-sm text-hisabi-error"
+                role="alert"
+              >
+                {fieldErrors.password}
+              </p>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-hisabi-sm">

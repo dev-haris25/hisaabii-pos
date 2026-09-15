@@ -11,6 +11,10 @@ import { useIsRtl } from '@/components/auth/use-is-rtl'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
 import { setForgotPasswordPendingEmail } from '@/lib/auth/forgot-password-flow-storage'
 import { Link, useRouter } from '@/i18n/navigation'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
+import { cn } from '@/lib/utils'
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function ForgotPasswordView() {
   const t = useTranslations('ResetPassword')
@@ -20,6 +24,7 @@ export function ForgotPasswordView() {
   const BackIcon = isRtl ? ArrowRight : ArrowLeft
   const [email, setEmail] = useState('')
   const [formError, setFormError] = useState('')
+  const [emailError, setEmailError] = useState('')
 
   const forgotMutation = useMutation({
     mutationFn: () => authPost('/forgot-password', { email }),
@@ -37,13 +42,24 @@ export function ForgotPasswordView() {
   function handleSubmit(e) {
     e.preventDefault()
     setFormError('')
+    if (!email.trim()) {
+      setEmailError(tErr('EMAIL_REQUIRED'))
+      scrollAfterFieldValidation()
+      return
+    }
+    if (!EMAIL_RE.test(email.trim())) {
+      setEmailError(tErr('VALIDATION_ERROR'))
+      scrollAfterFieldValidation()
+      return
+    }
+    setEmailError('')
     forgotMutation.mutate()
   }
 
   return (
     <AuthSplitShell namespace="ResetPassword" showHeaderWordmark={false}>
       <>
-        <form className="space-y-hisabi-lg" onSubmit={handleSubmit}>
+        <form className="space-y-hisabi-lg" onSubmit={handleSubmit} noValidate>
           {formError ? (
             <p className="type-body-md text-hisabi-error mb-hisabi-md" role="alert">
               {formError}
@@ -69,11 +85,28 @@ export function ForgotPasswordView() {
                 autoComplete="email"
                 placeholder={t('emailPlaceholder')}
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="type-body-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container w-full rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest py-3 ps-12 pe-4 text-hisabi-on-surface outline-none transition-all focus:ring-2 focus:ring-inset"
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  if (emailError) setEmailError('')
+                }}
+                className={cn(
+                  'type-body-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container w-full rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest py-3 ps-12 pe-4 text-hisabi-on-surface outline-none transition-all focus:ring-2 focus:ring-inset',
+                  emailError &&
+                    'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error',
+                )}
+                aria-invalid={emailError ? true : undefined}
+                aria-describedby={emailError ? 'reset-email-error' : undefined}
               />
             </div>
+            {emailError ? (
+              <p
+                id="reset-email-error"
+                className="type-body-sm text-hisabi-error"
+                role="alert"
+              >
+                {emailError}
+              </p>
+            ) : null}
           </div>
 
           <AuthSubmitButton pending={forgotMutation.isPending}>

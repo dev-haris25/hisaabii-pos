@@ -85,19 +85,38 @@ export function SettingsPageShell({ title, subtitle, children }) {
 export const fieldClass =
   'type-body-md text-hisabi-on-surface placeholder:text-hisabi-outline/70 w-full rounded-lg border border-hisabi-outline-variant bg-hisabi-surface-container-lowest px-hisabi-md py-3 outline-none transition-shadow focus:border-hisabi-primary focus:ring-1 focus:ring-hisabi-primary/15'
 
+export const fieldInvalidClass =
+  'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25'
+
 export const selectClass =
   'type-body-md text-hisabi-on-surface w-full appearance-none rounded-lg border border-hisabi-outline-variant bg-hisabi-surface-container-lowest px-hisabi-md py-3 pe-10 outline-none transition-shadow focus:border-hisabi-primary focus:ring-1 focus:ring-hisabi-primary/15'
 
 export const labelClass = 'type-label-md text-hisabi-on-surface-variant mb-hisabi-xs block'
 
 /**
- * @param {{ label: string, hint?: string, children: import('react').ReactNode, className?: string }} props
+ * @param {{
+ *   label: import('react').ReactNode
+ *   hint?: string
+ *   error?: string
+ *   errorId?: string
+ *   children: import('react').ReactNode
+ *   className?: string
+ * }} props
  */
-export function SettingsField({ label, hint, children, className }) {
+export function SettingsField({ label, hint, error, errorId, children, className }) {
   return (
     <div className={cn('space-y-hisabi-xs', className)}>
       <label className={labelClass}>{label}</label>
       {children}
+      {error ? (
+        <p
+          id={errorId}
+          className="type-body-sm text-hisabi-error"
+          role="alert"
+        >
+          {error}
+        </p>
+      ) : null}
       {hint ? (
         <p className="type-body-sm text-hisabi-on-surface-variant">{hint}</p>
       ) : null}

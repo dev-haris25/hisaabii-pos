@@ -43,6 +43,8 @@ const PAIR_KEY = 'menu-item-name'
 
 const fieldClass =
   'type-body-md text-hisabi-on-surface placeholder:text-hisabi-outline/70 w-full rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none transition-shadow focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10'
+const fieldInvalidClass =
+  'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25'
 
 /** Hisabi product-form: select + inline Add in one shell. */
 const categorySelectAddShell =
@@ -107,6 +109,7 @@ function emptyCustomization() {
  *   placeholder: string
  *   dir?: 'ltr' | 'rtl'
  *   alignDoc: string
+ *   error?: string
  * }} props
  */
 function ModifierTextField({
@@ -118,7 +121,9 @@ function ModifierTextField({
   placeholder,
   dir = 'ltr',
   alignDoc,
+  error = '',
 }) {
+  const errorId = `${id}-error`
   return (
     <div className="min-w-0 space-y-hisabi-xs">
       <label
@@ -137,8 +142,15 @@ function ModifierTextField({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         dir={dir}
-        className={fieldClass}
+        className={cn(fieldClass, error && fieldInvalidClass)}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
       />
+      {error ? (
+        <p id={errorId} className="type-body-sm text-hisabi-error" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -164,6 +176,7 @@ function ModifierTextField({
  *   reportUserInput: (lang: 'en' | 'ar', pairKey: string, opts?: { otherFieldEmpty?: boolean }) => unknown
  *   markAutoFilled: (lang: 'en' | 'ar', pairKey: string, value: string) => void
  *   consumeAutoFillSkip: (pairKey: string, lang: 'en' | 'ar', trimmed: string) => boolean
+ *   errorAr?: string
  * }} props
  */
 function BilingualModifierNamePair({
@@ -184,6 +197,7 @@ function BilingualModifierNamePair({
   reportUserInput,
   markAutoFilled,
   consumeAutoFillSkip,
+  errorAr = '',
 }) {
   const tBi = useTranslations('BilingualInvoiceCompany')
   const { loading: loadingNameAr } = useGeminiArSuggestion(
@@ -271,8 +285,19 @@ function BilingualModifierNamePair({
           placeholder={placeholderAr}
           required
           dir="rtl"
-          className={fieldClass}
+          className={cn(fieldClass, errorAr && fieldInvalidClass)}
+          aria-invalid={errorAr ? true : undefined}
+          aria-describedby={errorAr ? `${idPrefix}-ar-error` : undefined}
         />
+        {errorAr ? (
+          <p
+            id={`${idPrefix}-ar-error`}
+            className="type-body-sm text-hisabi-error"
+            role="alert"
+          >
+            {errorAr}
+          </p>
+        ) : null}
       </div>
     </div>
   )
@@ -345,7 +370,9 @@ export function MenuItemFormView({ mode, itemId }) {
   const [sortOrder, setSortOrder] = useState('0')
   const [active, setActive] = useState(true)
   const [formError, setFormError] = useState('')
-  const [fieldErrors, setFieldErrors] = useState({ nameAr: '' })
+  const [fieldErrors, setFieldErrors] = useState(
+    /** @type {Record<string, string>} */ ({}),
+  )
   const [hydrated, setHydrated] = useState(mode === 'create')
   const [nameEnBaseline, setNameEnBaseline] = useState('')
   const [nameArBaseline, setNameArBaseline] = useState('')
@@ -513,41 +540,65 @@ export function MenuItemFormView({ mode, itemId }) {
     router.push('/menu')
   }
 
+  function clearFieldError(key) {
+    setFieldErrors((prev) => (prev[key] ? { ...prev, [key]: '' } : prev))
+  }
+
   function handleSubmit(e) {
     e.preventDefault()
     setFormError('')
-    if (!nameAr.trim()) {
-      setFieldErrors({ nameAr: t('validationNameAr') })
+    /** @type {Record<string, string>} */
+    const errors = {}
+    const groupsToOpen = []
+    if (!nameAr.trim()) errors.nameAr = t('validationNameAr')
+    if (!/^\d+(\.\d{1,4})?$/.test(price.trim())) {
+      errors.price = t('validationPrice')
+    }
+    for (const group of variantGroups) {
+      let groupInvalid = false
+      if (!group.nameAr.trim()) {
+        errors[`vg-${group.clientId}`] = t('validationVariantGroupName')
+        groupInvalid = true
+      }
+      if (group.options.length === 0) {
+        errors[`vg-${group.clientId}`] =
+          errors[`vg-${group.clientId}`] || t('validationVariantOptions')
+        groupInvalid = true
+      }
+      for (const option of group.options) {
+        if (!option.nameAr.trim()) {
+          errors[`vo-${option.clientId}`] = t('validationVariantOption')
+          groupInvalid = true
+        }
+        if (!/^\d+(\.\d{1,4})?$/.test(option.priceChange.trim())) {
+          errors[`vo-price-${option.clientId}`] = t('validationPrice')
+          groupInvalid = true
+        }
+      }
+      if (groupInvalid) groupsToOpen.push(group.clientId)
+    }
+    for (const row of customizations) {
+      if (!row.nameAr.trim()) {
+        errors[`cz-${row.clientId}`] = t('validationCustomization')
+      }
+      if (!/^\d+(\.\d{1,4})?$/.test(row.priceChange.trim())) {
+        errors[`cz-price-${row.clientId}`] = t('validationPrice')
+      }
+    }
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      if (groupsToOpen.length > 0) {
+        setOpenVariantGroupIds((prev) => [
+          ...new Set([...prev, ...groupsToOpen]),
+        ])
+        setMountedVariantGroupIds((prev) => [
+          ...new Set([...prev, ...groupsToOpen]),
+        ])
+      }
       scrollAfterFieldValidation()
       return
     }
-    setFieldErrors({ nameAr: '' })
-    if (!/^\d+(\.\d{1,4})?$/.test(price.trim())) {
-      setFormError(t('validationPrice'))
-      return
-    }
-    for (const group of variantGroups) {
-      if (!group.nameAr.trim()) {
-        setFormError(t('validationVariantGroupName'))
-        return
-      }
-      if (group.options.length === 0) {
-        setFormError(t('validationVariantOptions'))
-        return
-      }
-      for (const option of group.options) {
-        if (!option.nameAr.trim() || !/^\d+(\.\d{1,4})?$/.test(option.priceChange.trim())) {
-          setFormError(t('validationVariantOption'))
-          return
-        }
-      }
-    }
-    for (const row of customizations) {
-      if (!row.nameAr.trim() || !/^\d+(\.\d{1,4})?$/.test(row.priceChange.trim())) {
-        setFormError(t('validationCustomization'))
-        return
-      }
-    }
+    setFieldErrors({})
     saveMutation.mutate()
   }
 
@@ -831,12 +882,31 @@ export function MenuItemFormView({ mode, itemId }) {
                 id="item-price"
                 inputMode="decimal"
                 value={price}
-                onChange={(e) => setPrice(e.target.value)}
+                onChange={(e) => {
+                  setPrice(e.target.value)
+                  clearFieldError('price')
+                }}
                 placeholder={t('pricePlaceholder')}
                 required
                 dir="ltr"
-                className={fieldClass}
+                className={cn(
+                  fieldClass,
+                  fieldErrors.price && fieldInvalidClass,
+                )}
+                aria-invalid={fieldErrors.price ? true : undefined}
+                aria-describedby={
+                  fieldErrors.price ? 'item-price-error' : undefined
+                }
               />
+              {fieldErrors.price ? (
+                <p
+                  id="item-price-error"
+                  className="type-body-sm text-hisabi-error"
+                  role="alert"
+                >
+                  {fieldErrors.price}
+                </p>
+              ) : null}
             </div>
 
             <div className="space-y-hisabi-xs">
@@ -1089,7 +1159,8 @@ export function MenuItemFormView({ mode, itemId }) {
                       nameEn={group.nameEn}
                       nameArBaseline={group.nameArBaseline}
                       nameEnBaseline={group.nameEnBaseline}
-                      onNameAr={(next) =>
+                      errorAr={fieldErrors[`vg-${group.clientId}`] ?? ''}
+                      onNameAr={(next) => {
                         setVariantGroups((prev) =>
                           prev.map((g) =>
                             g.clientId === group.clientId
@@ -1097,7 +1168,8 @@ export function MenuItemFormView({ mode, itemId }) {
                               : g,
                           ),
                         )
-                      }
+                        clearFieldError(`vg-${group.clientId}`)
+                      }}
                       onNameEn={(next) =>
                         setVariantGroups((prev) =>
                           prev.map((g) =>
@@ -1153,7 +1225,8 @@ export function MenuItemFormView({ mode, itemId }) {
                           nameEn={option.nameEn}
                           nameArBaseline={option.nameArBaseline}
                           nameEnBaseline={option.nameEnBaseline}
-                          onNameAr={(next) =>
+                          errorAr={fieldErrors[`vo-${option.clientId}`] ?? ''}
+                          onNameAr={(next) => {
                             setVariantGroups((prev) =>
                               prev.map((g) =>
                                 g.clientId !== group.clientId
@@ -1168,7 +1241,8 @@ export function MenuItemFormView({ mode, itemId }) {
                                     },
                               ),
                             )
-                          }
+                            clearFieldError(`vo-${option.clientId}`)
+                          }}
                           onNameEn={(next) =>
                             setVariantGroups((prev) =>
                               prev.map((g) =>
@@ -1198,8 +1272,9 @@ export function MenuItemFormView({ mode, itemId }) {
                         <ModifierTextField
                           id={`vo-price-${option.clientId}`}
                           label={t('priceChangeLabel')}
+                          error={fieldErrors[`vo-price-${option.clientId}`] ?? ''}
                           value={option.priceChange}
-                          onChange={(next) =>
+                          onChange={(next) => {
                             setVariantGroups((prev) =>
                               prev.map((g) =>
                                 g.clientId !== group.clientId
@@ -1214,7 +1289,8 @@ export function MenuItemFormView({ mode, itemId }) {
                                     },
                               ),
                             )
-                          }
+                            clearFieldError(`vo-price-${option.clientId}`)
+                          }}
                           placeholder={t('priceChangePlaceholder')}
                           dir="ltr"
                           alignDoc={alignDoc}
@@ -1346,7 +1422,8 @@ export function MenuItemFormView({ mode, itemId }) {
                       nameEn={row.nameEn}
                       nameArBaseline={row.nameArBaseline}
                       nameEnBaseline={row.nameEnBaseline}
-                      onNameAr={(next) =>
+                      errorAr={fieldErrors[`cz-${row.clientId}`] ?? ''}
+                      onNameAr={(next) => {
                         setCustomizations((prev) =>
                           prev.map((c) =>
                             c.clientId === row.clientId
@@ -1354,7 +1431,8 @@ export function MenuItemFormView({ mode, itemId }) {
                               : c,
                           ),
                         )
-                      }
+                        clearFieldError(`cz-${row.clientId}`)
+                      }}
                       onNameEn={(next) =>
                         setCustomizations((prev) =>
                           prev.map((c) =>
@@ -1377,8 +1455,9 @@ export function MenuItemFormView({ mode, itemId }) {
                     <ModifierTextField
                       id={`cz-price-${row.clientId}`}
                       label={t('priceChangeLabel')}
+                      error={fieldErrors[`cz-price-${row.clientId}`] ?? ''}
                       value={row.priceChange}
-                      onChange={(next) =>
+                      onChange={(next) => {
                         setCustomizations((prev) =>
                           prev.map((c) =>
                             c.clientId === row.clientId
@@ -1386,7 +1465,8 @@ export function MenuItemFormView({ mode, itemId }) {
                               : c,
                           ),
                         )
-                      }
+                        clearFieldError(`cz-price-${row.clientId}`)
+                      }}
                       placeholder={t('priceChangePlaceholder')}
                       dir="ltr"
                       alignDoc={alignDoc}

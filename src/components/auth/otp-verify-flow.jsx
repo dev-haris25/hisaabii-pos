@@ -12,6 +12,8 @@ import { useIsRtl } from '@/components/auth/use-is-rtl'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
 import { getPostAuthLandingPath } from '@/lib/auth/post-auth-landing-path'
 import { Link, useRouter } from '@/i18n/navigation'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
+import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 const OTP_LEN = 6
@@ -39,6 +41,7 @@ export function OtpVerifyFlow({ mode, namespace, searchEmail, nextPath = null })
   const [digits, setDigits] = useState(() => Array(OTP_LEN).fill(''))
   const [secondsLeft, setSecondsLeft] = useState(119)
   const [formError, setFormError] = useState('')
+  const [otpError, setOtpError] = useState('')
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -61,6 +64,7 @@ export function OtpVerifyFlow({ mode, namespace, searchEmail, nextPath = null })
     const next = [...digits]
     next[i] = digit
     setDigits(next)
+    if (otpError) setOtpError('')
     if (digit && i < OTP_LEN - 1) focusIndex(i + 1)
   }
 
@@ -80,6 +84,7 @@ export function OtpVerifyFlow({ mode, namespace, searchEmail, nextPath = null })
     const next = [...digits]
     for (let j = 0; j < text.length; j += 1) next[j] = text[j]
     setDigits(next)
+    if (otpError) setOtpError('')
     focusIndex(Math.min(text.length, OTP_LEN - 1))
   }
 
@@ -141,6 +146,12 @@ export function OtpVerifyFlow({ mode, namespace, searchEmail, nextPath = null })
       setFormError(tErr('MISSING_EMAIL'))
       return
     }
+    if (digits.join('').length !== OTP_LEN) {
+      setOtpError(tErr('OTP_INCOMPLETE'))
+      scrollAfterFieldValidation()
+      return
+    }
+    setOtpError('')
     verifyMutation.mutate()
   }
 
@@ -159,7 +170,7 @@ export function OtpVerifyFlow({ mode, namespace, searchEmail, nextPath = null })
           </p>
         ) : null}
 
-        <form className="space-y-hisabi-lg" onSubmit={handleSubmit}>
+        <form className="space-y-hisabi-lg" onSubmit={handleSubmit} noValidate>
           <div
             className="flex justify-center gap-hisabi-sm md:gap-hisabi-md"
             dir="ltr"
@@ -177,10 +188,20 @@ export function OtpVerifyFlow({ mode, namespace, searchEmail, nextPath = null })
                 onKeyDown={(e) => handleKeyDown(i, e)}
                 onPaste={i === 0 ? handlePaste : undefined}
                 aria-label={t('otpDigitLabel', { n: i + 1 })}
-                className="type-headline-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container h-14 w-12 rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest text-center font-bold text-hisabi-teal outline-none transition-all focus:ring-2 focus:ring-inset md:h-16 md:w-14"
+                aria-invalid={otpError ? true : undefined}
+                className={cn(
+                  'type-headline-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container h-14 w-12 rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest text-center font-bold text-hisabi-teal outline-none transition-all focus:ring-2 focus:ring-inset md:h-16 md:w-14',
+                  otpError &&
+                    'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error',
+                )}
               />
             ))}
           </div>
+          {otpError ? (
+            <p className="type-body-sm text-hisabi-error text-center" role="alert">
+              {otpError}
+            </p>
+          ) : null}
 
           <div className="flex flex-col items-center gap-hisabi-sm">
             <p className="type-body-sm text-hisabi-outline">{t('didntReceive')}</p>

@@ -28,6 +28,7 @@ import {
   SettingsPageShell,
   SettingsSection,
   fieldClass,
+  fieldInvalidClass,
   selectClass,
 } from '@/components/settings/settings-page-shell'
 import { RequiredMark } from '@/components/ui/required-mark'
@@ -37,6 +38,8 @@ import { customerQueueAbsoluteUrl } from '@/lib/orders/customer-queue-url'
 import { MAX_RECEIPT_PRINTERS } from '@/lib/print/receipt-printers'
 import { formatDocumentNumber } from '@/lib/settings/format-helpers'
 import { hasFullAccess } from '@/lib/rbac/ability-utils'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
+import { cn } from '@/lib/utils'
 
 const SETTINGS_QUERY_KEY = ['business-settings']
 
@@ -78,6 +81,10 @@ function formStateFromSettings(settings) {
     email: settings.email ?? '',
     phone: settings.phone ?? '',
     customerQueueLocale: settings.customerQueueLocale === 'en' ? 'en' : 'ar',
+    discountCap:
+      settings.discountCap != null && String(settings.discountCap).trim() !== ''
+        ? String(settings.discountCap)
+        : '',
     printers: printersFromSettings(settings),
   }
 }
@@ -122,6 +129,12 @@ export function SettingsRestaurantPageClient() {
   const [unifiedSaving, setUnifiedSaving] = useState(false)
   const [identityDirty, setIdentityDirty] = useState(false)
   const [leaveModalOpen, setLeaveModalOpen] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState({
+    email: '',
+    discountCap: '',
+    /** @type {Record<number, string>} */
+    printerPorts: {},
+  })
   /** @type {React.MutableRefObject<null | { kind: 'href', href: string } | { kind: 'back' }>} */
   const pendingLeaveRef = useRef(null)
   const leaveModalOpenRef = useRef(false)
@@ -173,21 +186,32 @@ export function SettingsRestaurantPageClient() {
   const noCompany =
     isError && error instanceof AuthApiError && error.code === 'NO_COMPANY'
 
-  const emailValid =
-    String(form.email).trim() === '' || EMAIL_RE.test(String(form.email).trim())
+  function collectSettingsFieldErrors() {
+    /** @type {{ email: string, discountCap: string, printerPorts: Record<number, string> }} */
+    const errors = { email: '', discountCap: '', printerPorts: {} }
+    const email = String(form.email).trim()
+    if (email && !EMAIL_RE.test(email)) {
+      errors.email = t('invalidCompanyEmail')
+    }
+    const cap = form.discountCap.trim()
+    if (cap && !/^\d+(\.\d{1,4})?$/.test(cap)) {
+      errors.discountCap = t('invalidDiscountCap')
+    }
+    form.printers.forEach((p, index) => {
+      const port = Number.parseInt(String(p.port), 10)
+      if (!Number.isFinite(port) || port < 1 || port > 65535) {
+        errors.printerPorts[index] = t('invalidPrinterPort')
+      }
+    })
+    return errors
+  }
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const printers = form.printers.map((p) => {
-        const port = Number.parseInt(String(p.port), 10)
-        if (!Number.isFinite(port) || port < 1 || port > 65535) {
-          throw new AuthApiError(400, 'VALIDATION_ERROR', 'Invalid port')
-        }
-        return { ip: String(p.ip).trim(), port }
-      })
-      if (!emailValid) {
-        throw new AuthApiError(400, 'VALIDATION_ERROR', 'Invalid email')
-      }
+      const printers = form.printers.map((p) => ({
+        ip: String(p.ip).trim(),
+        port: Number.parseInt(String(p.port), 10),
+      }))
       return authPatch('/settings', {
         invoicePrefix: form.invoicePrefix.trim() || 'INV-',
         creditNotePrefix: form.creditNotePrefix.trim() || 'CN-',
@@ -200,6 +224,7 @@ export function SettingsRestaurantPageClient() {
         email: String(form.email).trim() || null,
         phone: String(form.phone).trim() || null,
         customerQueueLocale: form.customerQueueLocale,
+        discountCap: form.discountCap.trim(),
         printers,
       })
     },
@@ -214,10 +239,17 @@ export function SettingsRestaurantPageClient() {
    * @returns {Promise<'ok' | 'invalid' | 'cancelled' | 'tax_cancelled' | 'error' | 'redirected'>}
    */
   async function runUnifiedSave() {
-    if (!emailValid) {
-      toast.error(t('invalidCompanyEmail'))
+    const settingsErrors = collectSettingsFieldErrors()
+    if (
+      settingsErrors.email ||
+      settingsErrors.discountCap ||
+      Object.keys(settingsErrors.printerPorts).length > 0
+    ) {
+      setFieldErrors(settingsErrors)
+      scrollAfterFieldValidation()
       return 'invalid'
     }
+    setFieldErrors({ email: '', discountCap: '', printerPorts: {} })
 
     let identityResult = 'skipped'
     if (identityApiRef.current) {
@@ -390,21 +422,30 @@ export function SettingsRestaurantPageClient() {
           className="min-w-0 space-y-hisabi-md border-0 p-0"
         >
           <div className="grid gap-hisabi-lg sm:grid-cols-2">
-            <SettingsField label={t('fieldCompanyEmail')}>
+            <SettingsField
+              label={t('fieldCompanyEmail')}
+              error={fieldErrors.email}
+              errorId="settings-company-email-error"
+            >
               <input
-                className={fieldClass}
+                id="settings-company-email"
+                className={cn(fieldClass, fieldErrors.email && fieldInvalidClass)}
                 type="email"
                 dir="ltr"
                 value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, email: e.target.value }))
+                  if (fieldErrors.email) {
+                    setFieldErrors((prev) => ({ ...prev, email: '' }))
+                  }
+                }}
                 placeholder={t('fieldCompanyEmailPlaceholder')}
                 autoComplete="off"
+                aria-invalid={fieldErrors.email ? true : undefined}
+                aria-describedby={
+                  fieldErrors.email ? 'settings-company-email-error' : undefined
+                }
               />
-              {!emailValid ? (
-                <p className="type-body-sm text-hisabi-error mt-1">
-                  {t('invalidCompanyEmail')}
-                </p>
-              ) : null}
             </SettingsField>
             <SettingsField label={t('fieldCompanyPhone')}>
               <input
@@ -520,9 +561,15 @@ export function SettingsRestaurantPageClient() {
                       <RequiredMark />
                     </>
                   }
+                  error={fieldErrors.printerPorts[index]}
+                  errorId={`settings-printer-port-${index}-error`}
                 >
                   <input
-                    className={fieldClass}
+                    id={`settings-printer-port-${index}`}
+                    className={cn(
+                      fieldClass,
+                      fieldErrors.printerPorts[index] && fieldInvalidClass,
+                    )}
                     dir="ltr"
                     value={printer.port}
                     onChange={(e) => {
@@ -533,7 +580,22 @@ export function SettingsRestaurantPageClient() {
                           i === index ? { ...row, port } : row,
                         ),
                       }))
+                      if (fieldErrors.printerPorts[index]) {
+                        setFieldErrors((prev) => {
+                          const next = { ...prev.printerPorts }
+                          delete next[index]
+                          return { ...prev, printerPorts: next }
+                        })
+                      }
                     }}
+                    aria-invalid={
+                      fieldErrors.printerPorts[index] ? true : undefined
+                    }
+                    aria-describedby={
+                      fieldErrors.printerPorts[index]
+                        ? `settings-printer-port-${index}-error`
+                        : undefined
+                    }
                   />
                 </SettingsField>
                 {form.printers.length > 1 ? (
@@ -625,6 +687,36 @@ export function SettingsRestaurantPageClient() {
                 {t('currencyZatcaHint')}
               </p>
             </SettingsField>
+            <SettingsField
+              label={t('fieldDiscountCap')}
+              hint={t('fieldDiscountCapHint')}
+              error={fieldErrors.discountCap}
+              errorId="settings-discount-cap-error"
+            >
+              <input
+                id="settings-discount-cap"
+                className={cn(
+                  fieldClass,
+                  fieldErrors.discountCap && fieldInvalidClass,
+                )}
+                dir="ltr"
+                inputMode="decimal"
+                value={form.discountCap}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, discountCap: e.target.value }))
+                  if (fieldErrors.discountCap) {
+                    setFieldErrors((prev) => ({ ...prev, discountCap: '' }))
+                  }
+                }}
+                placeholder={t('fieldDiscountCapPlaceholder')}
+                aria-invalid={fieldErrors.discountCap ? true : undefined}
+                aria-describedby={
+                  fieldErrors.discountCap
+                    ? 'settings-discount-cap-error'
+                    : undefined
+                }
+              />
+            </SettingsField>
             <SettingsField label={t('fieldDefaultVatPreset')}>
               <div className="relative">
                 <select
@@ -694,7 +786,7 @@ export function SettingsRestaurantPageClient() {
           <AuthSubmitButton
             type="button"
             pending={saving}
-            disabled={!emailValid || saving}
+            disabled={saving}
             onClick={() => void handleUnifiedSave()}
           >
             {t('save')}

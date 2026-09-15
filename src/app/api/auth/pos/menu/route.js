@@ -11,7 +11,7 @@ export async function GET() {
     if (auth.error) return auth.error
     const { profileId } = auth
 
-    const [categories, items] = await Promise.all([
+    const [categories, items, settings] = await Promise.all([
       prisma.menuCategory.findMany({
         where: { businessProfileId: profileId, active: true },
         orderBy: [{ sortOrder: 'asc' }, { nameAr: 'asc' }],
@@ -21,11 +21,16 @@ export async function GET() {
         orderBy: [{ sortOrder: 'asc' }, { nameAr: 'asc' }],
         include: menuItemInclude,
       }),
+      prisma.businessSettings.findUnique({
+        where: { businessProfileId: profileId },
+        select: { discountCap: true },
+      }),
     ])
 
     return jsonOk({
       categories: categories.map((c) => mapMenuCategoryToJson(c)),
       items: items.map(mapMenuItemToJson),
+      discountCap: settings?.discountCap ?? null,
     })
   } catch (err) {
     return handleRouteError(err, 'GET /api/auth/pos/menu')

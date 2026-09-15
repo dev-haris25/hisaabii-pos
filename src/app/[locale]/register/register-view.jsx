@@ -28,6 +28,14 @@ import {
 } from '@/lib/legal/legal-section-ids'
 import { hrefWithNext } from '@/lib/auth/safe-next-path'
 import { Link, useRouter } from '@/i18n/navigation'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
+import { cn } from '@/lib/utils'
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const authInputClass =
+  'type-body-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container w-full rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest py-3 ps-12 text-hisabi-on-surface outline-none transition-all focus:ring-2 focus:ring-inset'
+const authInputInvalidClass =
+  'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error'
 
 /**
  * @param {{ nextPath?: string | null }} [props]
@@ -51,14 +59,19 @@ export function RegisterView({ nextPath = null }) {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [formError, setFormError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({
+    name: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    terms: '',
+  })
 
   const lengthOk = password.length >= 8
   const complexOk = hasNumberOrSpecial(password)
   const matchOk = password.length > 0 && password === confirmPassword
   const showMismatch =
     confirmPassword.length > 0 && password !== confirmPassword
-  const passwordOk = lengthOk && complexOk && matchOk
-
   const registerMutation = useMutation({
     mutationFn: () =>
       authPost('/register', {
@@ -87,11 +100,31 @@ export function RegisterView({ nextPath = null }) {
   function handleSubmit(e) {
     e.preventDefault()
     setFormError('')
-    if (!termsAccepted) {
-      setFormError(tErr('TERMS_REQUIRED'))
+    const next = {
+      name: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+      terms: '',
+    }
+    if (!name.trim()) next.name = tErr('NAME_REQUIRED')
+    if (!email.trim()) next.email = tErr('EMAIL_REQUIRED')
+    else if (!EMAIL_RE.test(email.trim())) next.email = tErr('VALIDATION_ERROR')
+    if (!lengthOk || !complexOk) next.password = tErr('WEAK_PASSWORD')
+    if (!matchOk) next.confirmPassword = tErr('PASSWORD_MISMATCH')
+    if (!termsAccepted) next.terms = tErr('TERMS_REQUIRED')
+    if (Object.values(next).some(Boolean)) {
+      setFieldErrors(next)
+      scrollAfterFieldValidation()
       return
     }
-    if (!passwordOk) return
+    setFieldErrors({
+      name: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+      terms: '',
+    })
     registerMutation.mutate()
   }
 
@@ -105,7 +138,7 @@ export function RegisterView({ nextPath = null }) {
           </p>
         ) : null}
 
-        <form className="space-y-hisabi-lg" onSubmit={handleSubmit}>
+        <form className="space-y-hisabi-lg" onSubmit={handleSubmit} noValidate>
           <div className="space-y-hisabi-xs">
             <label
               className="type-label-md text-hisabi-on-surface-variant block"
@@ -126,11 +159,32 @@ export function RegisterView({ nextPath = null }) {
                 autoComplete="name"
                 placeholder={t('fullNamePlaceholder')}
                 value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                className="type-body-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container w-full rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest py-3 ps-12 pe-4 text-hisabi-on-surface outline-none transition-all focus:ring-2 focus:ring-inset"
+                onChange={(e) => {
+                  setName(e.target.value)
+                  if (fieldErrors.name) {
+                    setFieldErrors((prev) => ({ ...prev, name: '' }))
+                  }
+                }}
+                className={cn(
+                  authInputClass,
+                  'pe-4',
+                  fieldErrors.name && authInputInvalidClass,
+                )}
+                aria-invalid={fieldErrors.name ? true : undefined}
+                aria-describedby={
+                  fieldErrors.name ? 'register-name-error' : undefined
+                }
               />
             </div>
+            {fieldErrors.name ? (
+              <p
+                id="register-name-error"
+                className="type-body-sm text-hisabi-error"
+                role="alert"
+              >
+                {fieldErrors.name}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-hisabi-xs">
@@ -153,11 +207,32 @@ export function RegisterView({ nextPath = null }) {
                 autoComplete="email"
                 placeholder={t('emailPlaceholder')}
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="type-body-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container w-full rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest py-3 ps-12 pe-4 text-hisabi-on-surface outline-none transition-all focus:ring-2 focus:ring-inset"
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  if (fieldErrors.email) {
+                    setFieldErrors((prev) => ({ ...prev, email: '' }))
+                  }
+                }}
+                className={cn(
+                  authInputClass,
+                  'pe-4',
+                  fieldErrors.email && authInputInvalidClass,
+                )}
+                aria-invalid={fieldErrors.email ? true : undefined}
+                aria-describedby={
+                  fieldErrors.email ? 'register-email-error' : undefined
+                }
               />
             </div>
+            {fieldErrors.email ? (
+              <p
+                id="register-email-error"
+                className="type-body-sm text-hisabi-error"
+                role="alert"
+              >
+                {fieldErrors.email}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-hisabi-xs">
@@ -180,9 +255,21 @@ export function RegisterView({ nextPath = null }) {
                 autoComplete="new-password"
                 placeholder={t('passwordPlaceholder')}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="type-body-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container w-full rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest py-3 ps-12 pe-12 text-hisabi-on-surface outline-none transition-all focus:ring-2 focus:ring-inset"
+                onChange={(e) => {
+                  setPassword(e.target.value)
+                  if (fieldErrors.password) {
+                    setFieldErrors((prev) => ({ ...prev, password: '' }))
+                  }
+                }}
+                className={cn(
+                  authInputClass,
+                  'pe-12',
+                  fieldErrors.password && authInputInvalidClass,
+                )}
+                aria-invalid={fieldErrors.password ? true : undefined}
+                aria-describedby={
+                  fieldErrors.password ? 'register-password-error' : undefined
+                }
               />
               <button
                 type="button"
@@ -199,6 +286,15 @@ export function RegisterView({ nextPath = null }) {
                 )}
               </button>
             </div>
+            {fieldErrors.password ? (
+              <p
+                id="register-password-error"
+                className="type-body-sm text-hisabi-error"
+                role="alert"
+              >
+                {fieldErrors.password}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-hisabi-xs">
@@ -221,15 +317,29 @@ export function RegisterView({ nextPath = null }) {
                 autoComplete="new-password"
                 placeholder={t('confirmPasswordPlaceholder')}
                 value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                aria-invalid={showMismatch}
-                aria-describedby={showMismatch ? 'confirmPassword-error' : undefined}
-                className={
-                  showMismatch
-                    ? 'type-body-md focus:border-hisabi-error focus:ring-hisabi-error w-full rounded-xl border border-hisabi-error bg-hisabi-surface-container-lowest py-3 ps-12 pe-12 text-hisabi-on-surface outline-none transition-all focus:ring-2 focus:ring-inset'
-                    : 'type-body-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container w-full rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest py-3 ps-12 pe-12 text-hisabi-on-surface outline-none transition-all focus:ring-2 focus:ring-inset'
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value)
+                  if (fieldErrors.confirmPassword) {
+                    setFieldErrors((prev) => ({
+                      ...prev,
+                      confirmPassword: '',
+                    }))
+                  }
+                }}
+                aria-invalid={
+                  showMismatch || fieldErrors.confirmPassword ? true : undefined
                 }
+                aria-describedby={
+                  showMismatch || fieldErrors.confirmPassword
+                    ? 'confirmPassword-error'
+                    : undefined
+                }
+                className={cn(
+                  authInputClass,
+                  'pe-12',
+                  (showMismatch || fieldErrors.confirmPassword) &&
+                    authInputInvalidClass,
+                )}
               />
               <button
                 type="button"
@@ -246,13 +356,13 @@ export function RegisterView({ nextPath = null }) {
                 )}
               </button>
             </div>
-            {showMismatch ? (
+            {showMismatch || fieldErrors.confirmPassword ? (
               <p
                 id="confirmPassword-error"
                 className="type-body-sm text-hisabi-error"
                 role="alert"
               >
-                {tErr('PASSWORD_MISMATCH')}
+                {fieldErrors.confirmPassword || tErr('PASSWORD_MISMATCH')}
               </p>
             ) : null}
           </div>
@@ -338,8 +448,17 @@ export function RegisterView({ nextPath = null }) {
               name="terms"
               type="checkbox"
               checked={termsAccepted}
-              onChange={(e) => setTermsAccepted(e.target.checked)}
-              className="accent-hisabi-gold-muted size-5 cursor-pointer rounded border border-hisabi-outline-variant outline-none ring-0 transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+              onChange={(e) => {
+                setTermsAccepted(e.target.checked)
+                if (fieldErrors.terms) {
+                  setFieldErrors((prev) => ({ ...prev, terms: '' }))
+                }
+              }}
+              aria-invalid={fieldErrors.terms ? true : undefined}
+              className={cn(
+                'accent-hisabi-gold-muted size-5 cursor-pointer rounded border border-hisabi-outline-variant outline-none ring-0 transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0',
+                fieldErrors.terms && 'border-hisabi-error',
+              )}
             />
             <label
               htmlFor="terms"
@@ -375,10 +494,14 @@ export function RegisterView({ nextPath = null }) {
               })}
             </label>
           </div>
+          {fieldErrors.terms ? (
+            <p className="type-body-sm text-hisabi-error" role="alert">
+              {fieldErrors.terms}
+            </p>
+          ) : null}
 
           <AuthSubmitButton
             pending={registerMutation.isPending}
-            disabled={!passwordOk}
             className="mt-hisabi-xl"
           >
             <>

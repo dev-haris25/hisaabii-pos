@@ -8,6 +8,7 @@ import {
 import { menuItemInclude } from '@/lib/menu/map-menu-json'
 import { resolveCheckoutModifiers } from '@/lib/menu/resolve-checkout-modifiers'
 import { createKitchenOrderInTx } from '@/lib/orders/create-kitchen-order'
+import { isDiscountWithinCap } from '@/lib/pos/discount-cap'
 import { prisma } from '@/lib/prisma'
 import { humanizeZatcaError } from '@/lib/zatca/humanize-zatca-error'
 import { runInvoiceZatcaSend } from '@/lib/zatca/run-invoice-zatca-send'
@@ -144,6 +145,16 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
     unitPrice: l.unitPrice,
     vatPreset: l.vatPreset,
   }))
+  const settings = await prisma.businessSettings.findUnique({
+    where: { businessProfileId: profileId },
+    select: { discountCap: true },
+  })
+  if (!isDiscountWithinCap(body.discount ?? '0', settings?.discountCap)) {
+    throw Object.assign(new Error('Discount exceeds restaurant cap'), {
+      code: 'DISCOUNT_EXCEEDS_CAP',
+    })
+  }
+
   const lineDiscounts = allocateOrderDiscount(baseLines, body.discount ?? '0')
   const computeInput = baseLines.map((l, i) => ({
     ...l,

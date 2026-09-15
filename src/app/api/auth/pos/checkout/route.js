@@ -81,6 +81,9 @@ export async function POST(request) {
       if (code === 'INSUFFICIENT_TENDER') {
         return jsonError(400, code, 'Amount tendered is less than the total')
       }
+      if (code === 'DISCOUNT_EXCEEDS_CAP') {
+        return jsonError(400, code, 'Discount is above the restaurant cap')
+      }
       if (code === 'ZATCA_ERROR') {
         const raw = e instanceof Error ? e.message : String(e)
         console.error('[pos/checkout] ZATCA_ERROR:', raw)

@@ -25,6 +25,8 @@ import {
   setForgotPasswordPendingEmail,
 } from '@/lib/auth/forgot-password-flow-storage'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
+import { cn } from '@/lib/utils'
 
 export function ResetPasswordFormView() {
   const t = useTranslations('PasswordReset')
@@ -42,12 +44,11 @@ export function ResetPasswordFormView() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [formError, setFormError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({ password: '', confirm: '' })
 
   const lengthOk = password.length >= 8
   const complexOk = hasNumberOrSpecial(password)
   const matchOk = password.length > 0 && password === confirm
-  const canSubmit = lengthOk && complexOk && matchOk && Boolean(email)
-
   const fieldClassName =
     'type-body-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container w-full rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest py-3 pe-12 ps-4 text-hisabi-on-surface outline-none transition-all placeholder:text-hisabi-on-surface-variant/40 focus:ring-2 focus:ring-inset'
 
@@ -85,7 +86,15 @@ export function ResetPasswordFormView() {
       setFormError(tErr('MISSING_EMAIL'))
       return
     }
-    if (!canSubmit) return
+    const next = { password: '', confirm: '' }
+    if (!lengthOk || !complexOk) next.password = tErr('WEAK_PASSWORD')
+    if (!matchOk) next.confirm = tErr('PASSWORD_MISMATCH')
+    if (next.password || next.confirm) {
+      setFieldErrors(next)
+      scrollAfterFieldValidation()
+      return
+    }
+    setFieldErrors({ password: '', confirm: '' })
     resetMutation.mutate()
   }
 
@@ -112,7 +121,7 @@ export function ResetPasswordFormView() {
           </p>
         ) : null}
 
-        <form className="space-y-hisabi-lg" onSubmit={handleSubmit}>
+        <form className="space-y-hisabi-lg" onSubmit={handleSubmit} noValidate>
           <div className="space-y-hisabi-xs">
             <label
               className="type-label-md text-hisabi-on-surface-variant block"
@@ -128,8 +137,21 @@ export function ResetPasswordFormView() {
                 autoComplete="new-password"
                 placeholder={t('newPasswordPlaceholder')}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className={fieldClassName}
+                onChange={(e) => {
+                  setPassword(e.target.value)
+                  if (fieldErrors.password) {
+                    setFieldErrors((prev) => ({ ...prev, password: '' }))
+                  }
+                }}
+                className={cn(
+                  fieldClassName,
+                  fieldErrors.password &&
+                    'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error',
+                )}
+                aria-invalid={fieldErrors.password ? true : undefined}
+                aria-describedby={
+                  fieldErrors.password ? 'new-password-error' : undefined
+                }
               />
               <button
                 type="button"
@@ -146,6 +168,15 @@ export function ResetPasswordFormView() {
                 )}
               </button>
             </div>
+            {fieldErrors.password ? (
+              <p
+                id="new-password-error"
+                className="type-body-sm text-hisabi-error"
+                role="alert"
+              >
+                {fieldErrors.password}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-hisabi-xs">
@@ -163,8 +194,21 @@ export function ResetPasswordFormView() {
                 autoComplete="new-password"
                 placeholder={t('confirmPasswordPlaceholder')}
                 value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                className={fieldClassName}
+                onChange={(e) => {
+                  setConfirm(e.target.value)
+                  if (fieldErrors.confirm) {
+                    setFieldErrors((prev) => ({ ...prev, confirm: '' }))
+                  }
+                }}
+                className={cn(
+                  fieldClassName,
+                  fieldErrors.confirm &&
+                    'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error',
+                )}
+                aria-invalid={fieldErrors.confirm ? true : undefined}
+                aria-describedby={
+                  fieldErrors.confirm ? 'confirm-password-error' : undefined
+                }
               />
               <button
                 type="button"
@@ -181,6 +225,15 @@ export function ResetPasswordFormView() {
                 )}
               </button>
             </div>
+            {fieldErrors.confirm ? (
+              <p
+                id="confirm-password-error"
+                className="type-body-sm text-hisabi-error"
+                role="alert"
+              >
+                {fieldErrors.confirm}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-hisabi-sm py-hisabi-sm">
@@ -232,7 +285,7 @@ export function ResetPasswordFormView() {
 
           <AuthSubmitButton
             pending={resetMutation.isPending}
-            disabled={!canSubmit}
+            disabled={!email}
           >
             {t('submit')}
           </AuthSubmitButton>

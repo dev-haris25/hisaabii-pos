@@ -14,6 +14,8 @@ import { authGet, authPost } from '@/lib/api/auth-client'
 import { getPostAuthLandingPath } from '@/lib/auth/post-auth-landing-path'
 import { toastAuthApiError } from '@/lib/api/toast-auth-api-error'
 import { useAuthStore } from '@/stores/auth-store'
+import { hasNumberOrSpecial } from '@/lib/auth/password-rules'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { cn } from '@/lib/utils'
 
 const fieldClass =
@@ -32,6 +34,7 @@ export function InviteAcceptPageClient() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [formError, setFormError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({ name: '', password: '' })
 
   const { data, isPending, isError } = useQuery({
     queryKey: ['invite-accept', token],
@@ -115,43 +118,100 @@ export function InviteAcceptPageClient() {
         {data.requiresSignup ? (
           <form
             className="space-y-hisabi-md"
+            noValidate
             onSubmit={(e) => {
               e.preventDefault()
               setFormError('')
+              const next = { name: '', password: '' }
+              if (data.requiresName && !name.trim()) {
+                next.name = tErr('NAME_REQUIRED')
+              }
+              if (
+                !password ||
+                password.length < 8 ||
+                !hasNumberOrSpecial(password)
+              ) {
+                next.password = tErr('WEAK_PASSWORD')
+              }
+              if (next.name || next.password) {
+                setFieldErrors(next)
+                scrollAfterFieldValidation()
+                return
+              }
+              setFieldErrors({ name: '', password: '' })
               acceptMutation.mutate()
             }}
           >
             {data.requiresName ? (
               <div>
-                <label className="type-label-md text-hisabi-on-surface-variant mb-hisabi-xs block">
+                <label
+                  className="type-label-md text-hisabi-on-surface-variant mb-hisabi-xs block"
+                  htmlFor="invite-name"
+                >
                   {t('nameLabel')}
                   <RequiredMark />
                 </label>
                 <input
+                  id="invite-name"
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className={fieldClass}
+                  onChange={(e) => {
+                    setName(e.target.value)
+                    if (fieldErrors.name) {
+                      setFieldErrors((prev) => ({ ...prev, name: '' }))
+                    }
+                  }}
+                  className={cn(
+                    fieldClass,
+                    fieldErrors.name && 'border-hisabi-error',
+                  )}
                   placeholder={t('namePlaceholder')}
-                  required
+                  aria-invalid={fieldErrors.name ? true : undefined}
+                  aria-describedby={
+                    fieldErrors.name ? 'invite-name-error' : undefined
+                  }
                 />
+                {fieldErrors.name ? (
+                  <p
+                    id="invite-name-error"
+                    className="type-body-sm text-hisabi-error mt-1"
+                    role="alert"
+                  >
+                    {fieldErrors.name}
+                  </p>
+                ) : null}
               </div>
             ) : null}
             <div>
-              <label className="type-label-md text-hisabi-on-surface-variant mb-hisabi-xs block">
+              <label
+                className="type-label-md text-hisabi-on-surface-variant mb-hisabi-xs block"
+                htmlFor="invite-password"
+              >
                 {t('passwordLabel')}
                 <RequiredMark />
               </label>
               <div className="relative">
                 <input
+                  id="invite-password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className={cn(fieldClass, 'pe-12')}
+                  onChange={(e) => {
+                    setPassword(e.target.value)
+                    if (fieldErrors.password) {
+                      setFieldErrors((prev) => ({ ...prev, password: '' }))
+                    }
+                  }}
+                  className={cn(
+                    fieldClass,
+                    'pe-12',
+                    fieldErrors.password && 'border-hisabi-error',
+                  )}
                   placeholder={t('passwordPlaceholder')}
-                  required
-                  minLength={8}
                   autoComplete="new-password"
+                  aria-invalid={fieldErrors.password ? true : undefined}
+                  aria-describedby={
+                    fieldErrors.password ? 'invite-password-error' : undefined
+                  }
                 />
                 <button
                   type="button"
@@ -168,6 +228,15 @@ export function InviteAcceptPageClient() {
                   )}
                 </button>
               </div>
+              {fieldErrors.password ? (
+                <p
+                  id="invite-password-error"
+                  className="type-body-sm text-hisabi-error mt-1"
+                  role="alert"
+                >
+                  {fieldErrors.password}
+                </p>
+              ) : null}
             </div>
             <AuthSubmitButton type="submit" pending={acceptMutation.isPending}>
               {t('acceptInviteCta')}

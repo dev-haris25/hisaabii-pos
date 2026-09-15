@@ -27,6 +27,7 @@ import {
   formatHumanizedZatcaErrorText,
   isZatcaErrorMessage,
 } from '@/lib/zatca/humanize-zatca-error'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { cn } from '@/lib/utils'
 import { useRouter } from '@/i18n/navigation'
 import { useAuthStore } from '@/stores/auth-store'
@@ -93,6 +94,7 @@ export function ZatcaOnboardingView({
 
   const [otp, setOtp] = useState('')
   const [submitError, setSubmitError] = useState('')
+  const [otpError, setOtpError] = useState('')
   const [onboardDone, setOnboardDone] = useState(false)
 
   useEffect(() => {
@@ -100,6 +102,7 @@ export function ZatcaOnboardingView({
     setOtp('')
     setOnboardDone(false)
     setSubmitError('')
+    setOtpError('')
   }, [isModal, open])
 
   function resolveTargetProfileId() {
@@ -183,15 +186,18 @@ export function ZatcaOnboardingView({
   function handleOtpChange(e) {
     const v = e.target.value.replace(/\D/g, '').slice(0, OTP_LEN)
     setOtp(v)
+    if (otpError) setOtpError('')
   }
 
   function handleOtpSubmit(e) {
     e.preventDefault()
     setSubmitError('')
     if (otp.length !== OTP_LEN) {
-      setSubmitError(tErr('VALIDATION_ERROR'))
+      setOtpError(tErr('OTP_INCOMPLETE'))
+      scrollAfterFieldValidation()
       return
     }
+    setOtpError('')
     onboardMutation.mutate()
   }
 
@@ -374,12 +380,25 @@ export function ZatcaOnboardingView({
                     value={otp}
                     onChange={handleOtpChange}
                     disabled={onboardPending}
+                    aria-invalid={otpError ? true : undefined}
+                    aria-describedby={otpError ? `${otpFieldId}-error` : undefined}
                     className={cn(
                       'type-headline-md focus:border-hisabi-teal-container focus:ring-hisabi-teal-container w-full rounded-xl border border-hisabi-outline-variant bg-hisabi-surface-container-lowest px-hisabi-lg py-4 text-center tracking-[0.35em] text-hisabi-on-surface outline-none transition-all focus:ring-2 focus:ring-inset',
                       'placeholder:text-hisabi-outline-variant/50',
                       onboardPending && 'opacity-60',
+                      otpError &&
+                        'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error',
                     )}
                   />
+                  {otpError ? (
+                    <p
+                      id={`${otpFieldId}-error`}
+                      className="type-body-sm text-hisabi-error text-center"
+                      role="alert"
+                    >
+                      {otpError}
+                    </p>
+                  ) : null}
                   <div className="flex flex-col items-center gap-hisabi-sm pt-hisabi-xs">
                     <ZatcaOtpHelpLink />
                     {whatsappLink ? (

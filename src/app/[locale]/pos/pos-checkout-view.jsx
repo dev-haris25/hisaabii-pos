@@ -39,9 +39,13 @@ import {
   menuItemHasCustomizations,
   menuItemHasVariantGroups,
 } from '@/lib/menu/item-modifiers'
+import { isDiscountWithinCap, parseDiscountCap } from '@/lib/pos/discount-cap'
 import { formatSarAmount } from '@/lib/settings/format-helpers'
+import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
+
+const MONEY_RE = /^\d+(\.\d{1,4})?$/
 
 /**
  * @typedef {{
@@ -98,6 +102,7 @@ export function PosCheckoutView({
   )
   const [amountTendered, setAmountTendered] = useState('')
   const [discount, setDiscount] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({ discount: '', tendered: '' })
   /** @type {[Record<string, unknown> | null, function]} */
   const [receipt, setReceipt] = useState(
     /** @type {Record<string, unknown> | null} */ (null),
@@ -132,6 +137,8 @@ export function PosCheckoutView({
 
   const categories = menuQuery.data?.categories ?? []
   const items = menuQuery.data?.items ?? []
+  const discountCap = menuQuery.data?.discountCap ?? null
+  const discountCapLimit = parseDiscountCap(discountCap)
 
   const filteredItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase()
@@ -239,9 +246,18 @@ export function PosCheckoutView({
       setAmountTendered('')
       setDiscount('')
       setPaymentMethod('cash')
+      setFieldErrors({ discount: '', tendered: '' })
     },
     onError: (err) => {
       const code = err instanceof AuthApiError ? err.code : undefined
+      if (code === 'DISCOUNT_EXCEEDS_CAP') {
+        setFieldErrors((prev) => ({
+          ...prev,
+          discount: t('validationDiscountCap'),
+        }))
+        scrollAfterFieldValidation()
+        return
+      }
       toast.error(code ? tErr(code) : tErr('generic'))
     },
   })
@@ -410,12 +426,34 @@ export function PosCheckoutView({
     setReceipt(null)
   }
 
-  const canCheckout =
-    cart.length > 0 &&
-    !checkoutMutation.isPending &&
-    (paymentMethod === 'card' ||
-      (amountTendered.trim() &&
-        parseMoney(amountTendered) >= parseMoney(cartTotals.grandTotal)))
+  const canCheckout = cart.length > 0 && !checkoutMutation.isPending
+
+  function handleCheckout() {
+    const nextErrors = { discount: '', tendered: '' }
+    const disc = discount.trim()
+    if (disc) {
+      if (!MONEY_RE.test(disc)) {
+        nextErrors.discount = t('validationDiscount')
+      } else if (!isDiscountWithinCap(disc, discountCap)) {
+        nextErrors.discount = t('validationDiscountCap')
+      }
+    }
+    if (paymentMethod === 'cash') {
+      const tendered = amountTendered.trim()
+      if (!tendered || !MONEY_RE.test(tendered)) {
+        nextErrors.tendered = t('validationTendered')
+      } else if (parseMoney(tendered) < parseMoney(cartTotals.grandTotal)) {
+        nextErrors.tendered = t('validationTenderedShort')
+      }
+    }
+    if (nextErrors.discount || nextErrors.tendered) {
+      setFieldErrors(nextErrors)
+      scrollAfterFieldValidation()
+      return
+    }
+    setFieldErrors({ discount: '', tendered: '' })
+    checkoutMutation.mutate()
+  }
 
   return (
     <div
@@ -763,10 +801,39 @@ export function PosCheckoutView({
                 inputMode="decimal"
                 dir="ltr"
                 value={discount}
-                onChange={(e) => setDiscount(e.target.value)}
+                onChange={(e) => {
+                  setDiscount(e.target.value)
+                  if (fieldErrors.discount) {
+                    setFieldErrors((prev) => ({ ...prev, discount: '' }))
+                  }
+                }}
                 placeholder={t('discountPlaceholder')}
-                className="type-body-md text-hisabi-on-surface w-full rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10"
+                className={cn(
+                  'type-body-md text-hisabi-on-surface w-full rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10',
+                  fieldErrors.discount &&
+                    'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                )}
+                aria-invalid={fieldErrors.discount ? true : undefined}
+                aria-describedby={
+                  fieldErrors.discount ? 'pos-discount-error' : undefined
+                }
               />
+              {fieldErrors.discount ? (
+                <p
+                  id="pos-discount-error"
+                  className="type-body-sm text-hisabi-error"
+                  role="alert"
+                >
+                  {fieldErrors.discount}
+                </p>
+              ) : null}
+              {discountCapLimit != null ? (
+                <p className="type-body-sm text-hisabi-on-surface-variant">
+                  {t('discountCapHint', {
+                    amount: formatSarAmount(discountCapLimit, locale),
+                  })}
+                </p>
+              ) : null}
             </div>
 
             <div>
@@ -812,10 +879,32 @@ export function PosCheckoutView({
                   inputMode="decimal"
                   dir="ltr"
                   value={amountTendered}
-                  onChange={(e) => setAmountTendered(e.target.value)}
+                  onChange={(e) => {
+                    setAmountTendered(e.target.value)
+                    if (fieldErrors.tendered) {
+                      setFieldErrors((prev) => ({ ...prev, tendered: '' }))
+                    }
+                  }}
                   placeholder={t('amountReceivedPlaceholder')}
-                  className="type-body-md text-hisabi-on-surface w-full rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10"
+                  className={cn(
+                    'type-body-md text-hisabi-on-surface w-full rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10',
+                    fieldErrors.tendered &&
+                      'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                  )}
+                  aria-invalid={fieldErrors.tendered ? true : undefined}
+                  aria-describedby={
+                    fieldErrors.tendered ? 'pos-tendered-error' : undefined
+                  }
                 />
+                {fieldErrors.tendered ? (
+                  <p
+                    id="pos-tendered-error"
+                    className="type-body-sm text-hisabi-error"
+                    role="alert"
+                  >
+                    {fieldErrors.tendered}
+                  </p>
+                ) : null}
                 {changeDisplay != null ? (
                   <p className="type-label-md flex justify-between font-bold text-hisabi-teal">
                     <span>{t('change')}</span>
@@ -829,7 +918,7 @@ export function PosCheckoutView({
               type="button"
               disabled={!canCheckout}
               pending={checkoutMutation.isPending}
-              onClick={() => checkoutMutation.mutate()}
+              onClick={handleCheckout}
             >
               {t('checkout')}
             </AuthSubmitButton>

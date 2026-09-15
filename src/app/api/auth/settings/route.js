@@ -57,6 +57,16 @@ const settingsPatchBodySchema = z
       .max(MAX_RECEIPT_PRINTERS)
       .optional(),
     customerQueueLocale: z.enum(['ar', 'en']).optional(),
+    discountCap: z
+      .union([
+        z.literal(''),
+        z.null(),
+        z
+          .string()
+          .trim()
+          .regex(/^\d+(\.\d{1,4})?$/),
+      ])
+      .optional(),
   })
   .strict()
 
@@ -85,6 +95,7 @@ function mapSettingsPayload(settings, profile, printerRows, origin = '') {
     defaultVatPreset,
     email: profile.email,
     phone: profile.phone,
+    discountCap: settings.discountCap ?? null,
     slug: profile.slug,
     customerQueueLocale,
     customerQueueOrigin: origin,
@@ -158,6 +169,10 @@ export async function PATCH(request) {
     if (d.numberPadding !== undefined) settingsData.numberPadding = d.numberPadding
     if (d.dateFormat !== undefined) settingsData.dateFormat = d.dateFormat
     if (d.numberFormat !== undefined) settingsData.numberFormat = d.numberFormat
+    if (d.discountCap !== undefined) {
+      const raw = d.discountCap == null ? '' : String(d.discountCap).trim()
+      settingsData.discountCap = raw === '' ? null : raw
+    }
 
     /** @type {Record<string, unknown>} */
     const profileData = {}
