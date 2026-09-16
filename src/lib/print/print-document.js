@@ -1,6 +1,6 @@
 'use client'
 
-import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
+import { AuthApiError, authGet } from '@/lib/api/auth-client'
 import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
 import { downloadThermalReceiptPdf } from '@/lib/print/download-thermal-receipt-pdf'
 import { printWithElectron } from '@/lib/print/print-with-electron'
@@ -25,11 +25,6 @@ export async function printDocument(body) {
     noteType: body.noteType,
   }
 
-  if (isHisabiDesktop()) {
-    const prepared = await authPost('/pos/print', printBody)
-    return printWithElectron(prepared)
-  }
-
   let invoice = body.invoice
   let logoUrl = body.logoUrl ?? null
   if (!invoice && body.invoiceId) {
@@ -46,6 +41,16 @@ export async function printDocument(body) {
     invoice = data.note
     logoUrl = data.logoUrl ?? logoUrl
   }
+
+  if (isHisabiDesktop()) {
+    return printWithElectron({
+      invoice: invoice ?? null,
+      logoUrl,
+      documentLabel: body.documentLabel ?? invoice?.documentLabel ?? null,
+      printBody,
+    })
+  }
+
   if (!invoice) {
     throw new AuthApiError(400, 'VALIDATION_ERROR', 'Missing document')
   }

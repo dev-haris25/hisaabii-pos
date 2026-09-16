@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const { execFile } = require('node:child_process')
-const { readFileSync, writeFileSync, mkdirSync, unlinkSync } = require('node:fs')
+const { readFileSync, writeFileSync, mkdirSync } = require('node:fs')
 const { join } = require('node:path')
 const { promisify } = require('node:util')
 const net = require('node:net')
@@ -403,38 +403,57 @@ ipcMain.handle('hw:listPrintDevices', async (event) => {
 })
 
 ipcMain.handle('hw:printUsb', async (_e, payload) => {
-  const kind = payload?.kind === 'winprinter' ? 'winprinter' : 'serial'
   const id = String(payload?.id ?? '').trim()
   const raw = Buffer.from(String(payload?.base64 ?? ''), 'base64')
   if (!id || raw.length === 0) throw new Error('usb print payload missing')
-  if (kind === 'serial') {
-    await writeSerial(id, 9600, raw)
-    return true
-  }
-  const tmp = join(app.getPath('temp'), `hisabi-print-${Date.now()}.bin`)
-  writeFileSync(tmp, raw)
+  await writeSerial(id, 9600, raw)
+  return true
+})
+
+ipcMain.handle('hw:printWin', async (_e, payload) => {
+  const printerName = String(payload?.printerName ?? '').trim()
+  const html = String(payload?.html ?? '')
+  if (!printerName || !html) throw new Error('win print payload missing')
+
+  const printWin = new BrowserWindow({
+    show: false,
+    width: 302,
+    height: 1200,
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+    },
+  })
+
   try {
-    await execFileAsync(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        join(__dirname, 'print-raw-win.ps1'),
-        '-PrinterName',
-        id,
-        '-FilePath',
-        tmp,
-      ],
-      { windowsHide: true },
+    await printWin.loadURL(
+      `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
     )
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('print timeout'))
+      }, 45000)
+      printWin.webContents.print(
+        {
+          silent: true,
+          deviceName: printerName,
+          printBackground: true,
+          color: false,
+          margins: { marginType: 'none' },
+          pageSize: {
+            width: 80000,
+            height: 297000,
+          },
+        },
+        (success, failureReason) => {
+          clearTimeout(timer)
+          if (success) resolve(true)
+          else reject(new Error(failureReason || 'print failed'))
+        },
+      )
+    })
   } finally {
-    try {
-      unlinkSync(tmp)
-    } catch {
-      /* ignore */
-    }
+    if (!printWin.isDestroyed()) printWin.close()
   }
   return true
 })

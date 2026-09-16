@@ -12,4 +12,5 @@ contextBridge.exposeInMainWorld('hisabiDesktop', {
   openCashDrawer: (payload) => ipcRenderer.invoke('hw:openDrawer', payload),
   printRaw: (payload) => ipcRenderer.invoke('hw:printRaw', payload),
   printUsb: (payload) => ipcRenderer.invoke('hw:printUsb', payload),
+  printWin: (payload) => ipcRenderer.invoke('hw:printWin', payload),
 })

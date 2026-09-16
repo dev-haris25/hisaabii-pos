@@ -1,7 +1,8 @@
 'use client'
 
-import { AuthApiError, authGet } from '@/lib/api/auth-client'
+import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
 import { getHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
+import { renderThermalReceiptPrintHtml } from '@/lib/print/render-thermal-receipt-print-html'
 import {
   normalizePrintVia,
   parseLanPrinters,
@@ -17,16 +18,28 @@ async function loadBoundTill() {
 }
 
 /**
- * @param {Record<string, unknown>} data
+ * @param {Record<string, unknown> | null | undefined} invoice
+ */
+function requireQr(invoice) {
+  const qr = String(invoice?.qrCode ?? '').trim()
+  if (!qr) {
+    throw new AuthApiError(409, 'QR_REQUIRED', 'Wait for ZATCA QR')
+  }
+}
+
+/**
+ * @param {{
+ *   copies?: unknown[]
+ *   invoice?: Record<string, unknown> | null
+ *   logoUrl?: string | null
+ *   documentLabel?: string | null
+ *   printBody?: { invoiceId?: string, noteId?: string, noteType?: string }
+ * }} data
  */
 export async function printWithElectron(data) {
   const desktop = getHisabiDesktop()
-  if (!desktop?.printRaw) {
+  if (!desktop) {
     throw new AuthApiError(503, 'PRINT_FAILED', 'Desktop print is not available')
-  }
-  const copies = Array.isArray(data.copies) ? data.copies : []
-  if (copies.length === 0) {
-    throw new AuthApiError(502, 'PRINT_FAILED', 'No receipt bytes')
   }
 
   const till = await loadBoundTill()
@@ -44,39 +57,75 @@ export async function printWithElectron(data) {
 
   if (printVia === 'usb') {
     const devices = parseUsbPrinters(till.usbPrinters)
-    if (devices.length === 0 || !desktop.printUsb) {
+    const winprinters = devices.filter((d) => d.kind === 'winprinter')
+    const serials = devices.filter((d) => d.kind === 'serial')
+    if (devices.length === 0) {
       throw new AuthApiError(
         400,
         'USB_PRINTER_NOT_CONFIGURED',
         'Choose a USB printer in Till settings',
       )
     }
-    let lastBytes = null
-    for (const device of devices) {
-      for (const copy of copies) {
-        const rawBase64 = String(copy?.rawBase64 ?? '')
-        if (!rawBase64) throw new AuthApiError(502, 'PRINT_FAILED', 'No receipt bytes')
-        await desktop.printUsb({
-          kind: device.kind,
-          id: device.id,
-          base64: rawBase64,
-        })
-        lastBytes = Number(copy?.bytes) || rawBase64.length
+
+    if (winprinters.length) {
+      if (!desktop.printWin) {
+        throw new AuthApiError(503, 'PRINT_FAILED', 'Desktop print is not available')
+      }
+      const invoice = data.invoice
+      if (!invoice) {
+        throw new AuthApiError(400, 'VALIDATION_ERROR', 'Missing document')
+      }
+      requireQr(invoice)
+      const html = await renderThermalReceiptPrintHtml({
+        invoice,
+        logoUrl: data.logoUrl ?? null,
+        documentLabel: data.documentLabel ?? invoice.documentLabel ?? null,
+      })
+      for (const device of winprinters) {
+        try {
+          await desktop.printWin({ printerName: device.id, html })
+        } catch {
+          throw new AuthApiError(502, 'PRINT_FAILED', 'Could not print the receipt')
+        }
       }
     }
+
+    if (serials.length) {
+      if (!desktop.printUsb) {
+        throw new AuthApiError(503, 'PRINT_FAILED', 'Desktop print is not available')
+      }
+      const copies = await loadEscposCopies(data)
+      for (const device of serials) {
+        for (const copy of copies) {
+          const rawBase64 = String(copy?.rawBase64 ?? '')
+          if (!rawBase64) throw new AuthApiError(502, 'PRINT_FAILED', 'No receipt bytes')
+          await desktop.printUsb({
+            kind: 'serial',
+            id: device.id,
+            base64: rawBase64,
+          })
+        }
+      }
+    }
+
     return {
       printed: true,
       printedCount: devices.length,
       failedCount: 0,
       dryRun: false,
-      bytes: lastBytes,
     }
+  }
+
+  if (!desktop.printRaw) {
+    throw new AuthApiError(503, 'PRINT_FAILED', 'Desktop print is not available')
   }
 
   const printers = parseLanPrinters(till.lanPrinters)
   if (printers.length === 0) {
     throw new AuthApiError(400, 'PRINTER_NOT_CONFIGURED', 'Set the printer IP')
   }
+
+  const copies = await loadEscposCopies(data)
 
   /** @type {{ ip: string, ok: boolean, code: string | null, bytes: number | null }[]} */
   const results = []
@@ -110,4 +159,19 @@ export async function printWithElectron(data) {
     dryRun: false,
     bytes: successes[0]?.bytes ?? null,
   }
+}
+
+/**
+ * @param {{ copies?: unknown[], printBody?: { invoiceId?: string, noteId?: string, noteType?: string } }} data
+ */
+async function loadEscposCopies(data) {
+  if (Array.isArray(data.copies) && data.copies.length > 0) {
+    return data.copies
+  }
+  const prepared = await authPost('/pos/print', data.printBody ?? {})
+  const copies = Array.isArray(prepared?.copies) ? prepared.copies : []
+  if (copies.length === 0) {
+    throw new AuthApiError(502, 'PRINT_FAILED', 'No receipt bytes')
+  }
+  return copies
 }
