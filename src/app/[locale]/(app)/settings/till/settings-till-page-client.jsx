@@ -277,8 +277,8 @@ export function SettingsTillPageClient() {
         )}
 
         {canUpdate ? (
-          <div className="mt-hisabi-lg flex flex-col gap-hisabi-sm sm:flex-row sm:items-end">
-            <SettingsField label={t('tillNewName')} className="min-w-0 flex-1">
+          <div className="mt-hisabi-lg flex w-full flex-col gap-hisabi-md">
+            <SettingsField label={t('tillNewName')} className="w-full">
               <input
                 className={fieldClass}
                 value={newTillName}
@@ -288,6 +288,7 @@ export function SettingsTillPageClient() {
             </SettingsField>
             <AuthSubmitButton
               type="button"
+              className="w-full sm:w-auto sm:min-w-[11rem] sm:self-start"
               pending={createMutation.isPending}
               onClick={() => {
                 const name = newTillName.trim()
@@ -406,6 +407,7 @@ export function SettingsTillPageClient() {
               <AuthSubmitButton
                 type="button"
                 variant="secondary"
+                className="w-full min-[500px]:w-auto"
                 onClick={() => testDisplay()}
               >
                 {t('tillTestDisplay')}
@@ -413,12 +415,14 @@ export function SettingsTillPageClient() {
               <AuthSubmitButton
                 type="button"
                 variant="secondary"
+                className="w-full min-[500px]:w-auto"
                 onClick={() => testDrawer()}
               >
                 {t('tillTestDrawer')}
               </AuthSubmitButton>
               <AuthSubmitButton
                 type="button"
+                className="w-full min-[500px]:w-auto min-[500px]:min-w-[10rem]"
                 pending={saveMutation.isPending}
                 onClick={handleSave}
               >
