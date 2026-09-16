@@ -45,7 +45,12 @@ import {
   menuItemHasCustomizations,
   menuItemHasVariantGroups,
 } from '@/lib/menu/item-modifiers'
-import { isDiscountWithinCap, parseDiscountCap } from '@/lib/pos/discount-cap'
+import {
+  isDiscountWithinCap,
+  isValidDiscountPercent,
+  orderDiscountMoneyFromPercent,
+  parseDiscountCap,
+} from '@/lib/pos/discount-cap'
 import { formatSarAmount } from '@/lib/settings/format-helpers'
 import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { useAuthStore } from '@/stores/auth-store'
@@ -178,7 +183,10 @@ export function PosCheckoutView({
       unitPrice: line.unitPrice,
       vatPreset: line.vatPreset,
     }))
-    const lineDiscounts = allocateOrderDiscount(base, discount.trim() || '0')
+    const lineDiscounts = allocateOrderDiscount(
+      base,
+      orderDiscountMoneyFromPercent(base, discount.trim() || '0'),
+    )
     return computeInvoiceTotals(
       base.map((line, i) => ({
         ...line,
@@ -248,7 +256,7 @@ export function PosCheckoutView({
       }
       const disc = discount.trim()
       if (disc && parseMoney(disc) > 0) {
-        body.discount = decimalStringFromNumber(parseMoney(disc))
+        body.discount = disc
       }
       return authPost('/pos/checkout', body)
     },
@@ -448,7 +456,7 @@ export function PosCheckoutView({
     const nextErrors = { discount: '', tendered: '' }
     const disc = discount.trim()
     if (disc) {
-      if (!MONEY_RE.test(disc)) {
+      if (!isValidDiscountPercent(disc)) {
         nextErrors.discount = t('validationDiscount')
       } else if (!isDiscountWithinCap(disc, discountCap)) {
         nextErrors.discount = t('validationDiscountCap')
@@ -662,10 +670,7 @@ export function PosCheckoutView({
                         {name}
                       </span>
                       {arabicUnderEn ? (
-                        <span
-                          dir="rtl"
-                          className="type-body-sm line-clamp-2 text-hisabi-on-surface-variant"
-                        >
+                        <span className="type-body-sm line-clamp-2 text-start text-hisabi-on-surface-variant">
                           {arabicUnderEn}
                         </span>
                       ) : null}
@@ -745,10 +750,7 @@ export function PosCheckoutView({
                           {line.name}
                         </span>
                         {locale !== 'ar' && line.nameAr ? (
-                          <span
-                            dir="rtl"
-                            className="type-body-sm mt-0.5 line-clamp-2 block text-hisabi-on-surface-variant"
-                          >
+                          <span className="type-body-sm mt-0.5 line-clamp-2 block text-start text-hisabi-on-surface-variant">
                             {line.nameAr}
                           </span>
                         ) : null}
@@ -891,7 +893,7 @@ export function PosCheckoutView({
               {discountCapLimit != null ? (
                 <p className="type-body-sm text-hisabi-on-surface-variant">
                   {t('discountCapHint', {
-                    amount: formatSarAmount(discountCapLimit, locale),
+                    percent: discountCapLimit,
                   })}
                 </p>
               ) : null}

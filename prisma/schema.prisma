@@ -138,7 +138,7 @@ model BusinessSettings {
   dateFormat   String @default("dd/MM/yyyy")
   numberFormat String @default("1,234.56")
 
-  /// Max order discount in SAR at POS checkout. Null = no cap. "0" = no discount.
+  /// Max order discount percent at POS checkout (0–100). Null = no cap. "0" = no discount.
   discountCap String?
 
   /// Touch-till in-app numpad for POS money fields. Off = physical keyboard.

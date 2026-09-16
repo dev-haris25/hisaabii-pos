@@ -64,7 +64,11 @@ const settingsPatchBodySchema = z
         z
           .string()
           .trim()
-          .regex(/^\d+(\.\d{1,4})?$/),
+          .regex(/^\d+(\.\d{1,4})?$/)
+          .refine((v) => {
+            const n = Number.parseFloat(v)
+            return Number.isFinite(n) && n >= 0 && n <= 100
+          }, 'Discount cap must be 0–100'),
       ])
       .optional(),
     posOnScreenKeypad: z.boolean().optional(),

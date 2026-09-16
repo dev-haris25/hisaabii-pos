@@ -196,8 +196,15 @@ export function SettingsRestaurantPageClient() {
       errors.email = t('invalidCompanyEmail')
     }
     const cap = form.discountCap.trim()
-    if (cap && !/^\d+(\.\d{1,4})?$/.test(cap)) {
-      errors.discountCap = t('invalidDiscountCap')
+    if (cap) {
+      if (!/^\d+(\.\d{1,4})?$/.test(cap)) {
+        errors.discountCap = t('invalidDiscountCap')
+      } else {
+        const n = Number.parseFloat(cap)
+        if (!Number.isFinite(n) || n < 0 || n > 100) {
+          errors.discountCap = t('invalidDiscountCap')
+        }
+      }
     }
     form.printers.forEach((p, index) => {
       const port = Number.parseInt(String(p.port), 10)

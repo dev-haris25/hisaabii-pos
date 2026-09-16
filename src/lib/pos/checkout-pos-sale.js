@@ -8,7 +8,11 @@ import {
 import { menuItemInclude } from '@/lib/menu/map-menu-json'
 import { resolveCheckoutModifiers } from '@/lib/menu/resolve-checkout-modifiers'
 import { createKitchenOrderInTx } from '@/lib/orders/create-kitchen-order'
-import { isDiscountWithinCap } from '@/lib/pos/discount-cap'
+import {
+  isDiscountWithinCap,
+  isValidDiscountPercent,
+  orderDiscountMoneyFromPercent,
+} from '@/lib/pos/discount-cap'
 import { prisma } from '@/lib/prisma'
 import { humanizeZatcaError } from '@/lib/zatca/humanize-zatca-error'
 import { runInvoiceZatcaSend } from '@/lib/zatca/run-invoice-zatca-send'
@@ -34,7 +38,7 @@ export const posCheckoutBodySchema = z.object({
   lines: z.array(checkoutLineSchema).min(1).max(100),
   paymentMethod: z.enum(['cash', 'card']),
   amountTendered: moneyOptionalSchema,
-  /** Order-level discount (SAR); allocated across lines by gross share. */
+  /** Order-level discount percent (0–100); converted to SAR then allocated by gross share. */
   discount: moneyOptionalSchema,
   notes: z.string().trim().max(500).optional().nullable(),
 })
@@ -149,13 +153,22 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
     where: { businessProfileId: profileId },
     select: { discountCap: true },
   })
-  if (!isDiscountWithinCap(body.discount ?? '0', settings?.discountCap)) {
+  const discountPercent = body.discount ?? '0'
+  if (
+    String(discountPercent).trim() &&
+    (!isValidDiscountPercent(discountPercent) ||
+      !isDiscountWithinCap(discountPercent, settings?.discountCap))
+  ) {
     throw Object.assign(new Error('Discount exceeds restaurant cap'), {
       code: 'DISCOUNT_EXCEEDS_CAP',
     })
   }
 
-  const lineDiscounts = allocateOrderDiscount(baseLines, body.discount ?? '0')
+  const discountMoney = orderDiscountMoneyFromPercent(
+    baseLines,
+    discountPercent,
+  )
+  const lineDiscounts = allocateOrderDiscount(baseLines, discountMoney)
   const computeInput = baseLines.map((l, i) => ({
     ...l,
     discount: lineDiscounts[i],

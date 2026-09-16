@@ -91,12 +91,13 @@ export function PosItemModifiersFlow({
     })
   }
 
-  function groupName(group) {
-    return isAr ? group.nameAr : group.nameEn?.trim() || group.nameAr
-  }
-
-  function optionName(option) {
-    return isAr ? option.nameAr : option.nameEn?.trim() || option.nameAr
+  /** English UI: `English/Arabic`. Arabic UI: Arabic only. */
+  function bilingualName(row) {
+    const english = String(row?.nameEn ?? '').trim()
+    const arabic = String(row?.nameAr ?? '').trim()
+    if (isAr) return arabic || english
+    if (english && arabic && english !== arabic) return `${english}/${arabic}`
+    return english || arabic
   }
 
   return (
@@ -133,7 +134,7 @@ export function PosItemModifiersFlow({
           {(item.variantGroups ?? []).map((group) => (
             <div key={group.id} className="space-y-hisabi-xs">
               <p className="type-label-md font-bold text-hisabi-on-surface">
-                {groupName(group)}
+                {bilingualName(group)}
               </p>
               <div className="flex flex-wrap gap-hisabi-xs">
                 {(group.options ?? []).map((option) => {
@@ -155,7 +156,7 @@ export function PosItemModifiersFlow({
                           : 'border border-hisabi-outline-variant/50 bg-white text-hisabi-on-surface-variant hover:bg-hisabi-surface-container',
                       )}
                     >
-                      {optionName(option)}
+                      {bilingualName(option)}
                     </button>
                   )
                 })}
@@ -215,7 +216,7 @@ export function PosItemModifiersFlow({
                     className="size-4 accent-hisabi-primary"
                   />
                   <span className="type-body-md min-w-0 flex-1 text-hisabi-on-surface">
-                    {optionName(row)}
+                    {bilingualName(row)}
                   </span>
                   <span dir="ltr" className="type-body-sm text-hisabi-on-surface-variant">
                     +{formatSarAmount(row.priceChange ?? '0', locale)}
