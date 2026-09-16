@@ -1,7 +1,7 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MonitorSmartphone } from 'lucide-react'
+import { MonitorSmartphone, Plus, Trash2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -25,6 +25,12 @@ import {
   writeTillCustomerDisplay,
 } from '@/lib/desktop/till-hardware'
 import { hasFullAccess } from '@/lib/rbac/ability-utils'
+import {
+  MAX_TILL_LAN_PRINTERS,
+  normalizePrintVia,
+  parseLanPrinters,
+  parseUsbPrinters,
+} from '@/lib/tills/till-printers'
 import { cn } from '@/lib/utils'
 
 const EMPTY_FORM = {
@@ -34,13 +40,17 @@ const EMPTY_FORM = {
   displayBaud: 9600,
   drawerEnabled: true,
   drawerPort: '',
+  printVia: /** @type {'lan' | 'usb'} */ ('lan'),
+  lanPrinters: [{ ip: '', port: 9100 }],
+  usbPrinters: /** @type {{ id: string, kind: 'serial' | 'winprinter', label: string }[]} */ ([]),
 }
 
 /**
  * @param {Record<string, unknown> | null} till
  */
 function formFromTill(till) {
-  if (!till) return { ...EMPTY_FORM }
+  if (!till) return { ...EMPTY_FORM, lanPrinters: [{ ip: '', port: 9100 }] }
+  const lan = parseLanPrinters(till.lanPrinters)
   return {
     name: String(till.name ?? ''),
     displayEnabled: till.displayEnabled === true,
@@ -48,6 +58,11 @@ function formFromTill(till) {
     displayBaud: Number(till.displayBaud) || 9600,
     drawerEnabled: till.drawerEnabled === true,
     drawerPort: String(till.drawerPort ?? ''),
+    printVia: normalizePrintVia(
+      typeof till.printVia === 'string' ? till.printVia : 'lan',
+    ),
+    lanPrinters: lan.length > 0 ? lan : [{ ip: '', port: 9100 }],
+    usbPrinters: parseUsbPrinters(till.usbPrinters),
   }
 }
 
@@ -60,11 +75,14 @@ export function SettingsTillPageClient() {
   const canRead =
     hasFullAccess(ability) || ability.can('read', 'BusinessSettings')
   const canUpdate =
-    desktop &&
-    (hasFullAccess(ability) || ability.can('update', 'BusinessSettings'))
+    hasFullAccess(ability) || ability.can('update', 'BusinessSettings')
+  const canUpdateHw = desktop && canUpdate
 
   const [localTillId, setLocalTillId] = useState(/** @type {string | null} */ (null))
   const [ports, setPorts] = useState(/** @type {string[]} */ ([]))
+  const [printDevices, setPrintDevices] = useState(
+    /** @type {{ id: string, kind: 'serial' | 'winprinter', label: string }[]} */ ([]),
+  )
   const [form, setForm] = useState(EMPTY_FORM)
   const [nameError, setNameError] = useState('')
   const [newTillName, setNewTillName] = useState('')
@@ -77,6 +95,17 @@ export function SettingsTillPageClient() {
     })
     api.listSerialPorts?.().then((list) => {
       if (Array.isArray(list)) setPorts(list.map(String))
+    })
+    api.listPrintDevices?.().then((list) => {
+      if (Array.isArray(list)) {
+        setPrintDevices(
+          list.map((row) => ({
+            id: String(row?.id ?? ''),
+            kind: row?.kind === 'winprinter' ? 'winprinter' : 'serial',
+            label: String(row?.label ?? row?.id ?? ''),
+          })).filter((row) => row.id),
+        )
+      }
     })
   }, [])
 
@@ -91,10 +120,18 @@ export function SettingsTillPageClient() {
     () => (Array.isArray(tillsQuery.data?.tills) ? tillsQuery.data.tills : []),
     [tillsQuery.data],
   )
-  const boundTill = useMemo(
-    () => tills.find((row) => row.id === localTillId) ?? null,
-    [tills, localTillId],
-  )
+  const boundTill = useMemo(() => {
+    if (localTillId) {
+      return tills.find((row) => row.id === localTillId) ?? null
+    }
+    return !desktop && tills[0] ? tills[0] : null
+  }, [tills, localTillId, desktop])
+
+  useEffect(() => {
+    if (!localTillId && boundTill?.id) {
+      setLocalTillId(String(boundTill.id))
+    }
+  }, [boundTill, localTillId])
 
   useEffect(() => {
     setForm(formFromTill(boundTill))
@@ -104,8 +141,10 @@ export function SettingsTillPageClient() {
     mutationFn: (name) => authPost('/tills', { name }),
     onSuccess: async (data) => {
       const till = data.till
-      if (till?.id && getHisabiDesktop()?.setTillId) {
-        await getHisabiDesktop().setTillId(till.id)
+      if (till?.id) {
+        if (getHisabiDesktop()?.setTillId) {
+          await getHisabiDesktop().setTillId(till.id)
+        }
         setLocalTillId(till.id)
       }
       setNewTillName('')
@@ -128,6 +167,12 @@ export function SettingsTillPageClient() {
         displayBaud: Number(form.displayBaud) || 9600,
         drawerEnabled: form.drawerEnabled,
         drawerPort: form.drawerPort.trim() || null,
+        printVia: form.printVia,
+        lanPrinters: form.lanPrinters.map((p) => ({
+          ip: String(p.ip).trim(),
+          port: Number(p.port) || 9100,
+        })),
+        usbPrinters: form.usbPrinters,
       })
     },
     onSuccess: async () => {
@@ -214,6 +259,14 @@ export function SettingsTillPageClient() {
   }
 
   const disabled = !canUpdate
+  const hwDisabled = !canUpdateHw
+  const usbDeviceOptions = Array.from(
+    new Map(
+      [...printDevices, ...form.usbPrinters]
+        .filter((d) => d.id)
+        .map((d) => [`${d.kind}:${d.id}`, d]),
+    ).values(),
+  )
   const portOptions = Array.from(
     new Set(
       [...ports, form.displayPort, form.drawerPort].filter((p) => String(p).trim()),
@@ -224,7 +277,7 @@ export function SettingsTillPageClient() {
     <SettingsPageShell title={t('tillTitle')} subtitle={t('tillSubtitle')}>
       {!desktop ? (
         <p className="type-body-md text-hisabi-on-surface-variant rounded-lg border border-hisabi-outline-variant/30 bg-hisabi-surface-container-low/50 px-hisabi-md py-hisabi-sm">
-          {t('tillChromeViewOnly')}
+          {t('tillChromePrinterHint')}
         </p>
       ) : null}
 
@@ -302,7 +355,7 @@ export function SettingsTillPageClient() {
         ) : null}
       </SettingsSection>
 
-      {boundTill || !desktop ? (
+      {boundTill ? (
         <SettingsSection title={t('tillHardwareTitle')} icon={MonitorSmartphone}>
           <div className="grid gap-hisabi-lg sm:grid-cols-2">
             <SettingsField
@@ -322,6 +375,168 @@ export function SettingsTillPageClient() {
             </SettingsField>
           </div>
 
+          <div className="space-y-hisabi-lg rounded-xl border border-hisabi-outline-variant/20 px-hisabi-md py-hisabi-md">
+          <h3 className="type-label-md font-bold text-hisabi-on-surface">{t('tillPrintTitle')}</h3>
+            <p className="type-body-sm text-hisabi-on-surface-variant">
+              {t('tillPrintHint')}
+            </p>
+            <div className="flex flex-wrap gap-hisabi-lg">
+              <label className="flex items-center gap-hisabi-sm">
+                <input
+                  type="radio"
+                  name="till-print-via"
+                  className="size-4 accent-hisabi-primary"
+                  checked={form.printVia === 'lan'}
+                  disabled={disabled}
+                  onChange={() => setForm((f) => ({ ...f, printVia: 'lan' }))}
+                />
+                <span className="type-body-md">{t('tillPrintViaLan')}</span>
+              </label>
+              <label className="flex items-center gap-hisabi-sm">
+                <input
+                  type="radio"
+                  name="till-print-via"
+                  className="size-4 accent-hisabi-primary"
+                  checked={form.printVia === 'usb'}
+                  disabled={disabled}
+                  onChange={() => setForm((f) => ({ ...f, printVia: 'usb' }))}
+                />
+                <span className="type-body-md">{t('tillPrintViaUsb')}</span>
+              </label>
+            </div>
+
+            {form.printVia === 'lan' ? (
+              <div className="space-y-hisabi-lg">
+                {form.lanPrinters.map((printer, index) => (
+                  <div
+                    key={`lan-${index}`}
+                    className="grid gap-hisabi-lg sm:grid-cols-[1fr_8rem_auto] sm:items-end"
+                  >
+                    <SettingsField label={t('printerIpLabelIndexed', { n: index + 1 })}>
+                      <input
+                        className={fieldClass}
+                        dir="ltr"
+                        value={printer.ip}
+                        disabled={disabled}
+                        onChange={(e) => {
+                          const ip = e.target.value
+                          setForm((f) => ({
+                            ...f,
+                            lanPrinters: f.lanPrinters.map((row, i) =>
+                              i === index ? { ...row, ip } : row,
+                            ),
+                          }))
+                        }}
+                        placeholder={t('printerIpPlaceholder')}
+                      />
+                    </SettingsField>
+                    <SettingsField label={t('printerPortLabel')}>
+                      <input
+                        className={fieldClass}
+                        dir="ltr"
+                        value={String(printer.port)}
+                        disabled={disabled}
+                        onChange={(e) => {
+                          const port = Number.parseInt(e.target.value, 10) || 9100
+                          setForm((f) => ({
+                            ...f,
+                            lanPrinters: f.lanPrinters.map((row, i) =>
+                              i === index ? { ...row, port } : row,
+                            ),
+                          }))
+                        }}
+                      />
+                    </SettingsField>
+                    {form.lanPrinters.length > 1 ? (
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        className="mb-0.5 inline-flex h-11 items-center justify-center rounded-hisabi-md px-3 text-hisabi-error hover:bg-hisabi-error/10 disabled:opacity-50"
+                        onClick={() =>
+                          setForm((f) => ({
+                            ...f,
+                            lanPrinters: f.lanPrinters.filter((_, i) => i !== index),
+                          }))
+                        }
+                        aria-label={t('printerRemove')}
+                      >
+                        <Trash2 className="size-5" aria-hidden />
+                      </button>
+                    ) : (
+                      <span className="hidden sm:block" />
+                    )}
+                  </div>
+                ))}
+                {form.lanPrinters.length < MAX_TILL_LAN_PRINTERS ? (
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    className="type-label-sm inline-flex cursor-pointer items-center gap-2 font-semibold text-hisabi-secondary hover:underline disabled:opacity-50"
+                    onClick={() =>
+                      setForm((f) => ({
+                        ...f,
+                        lanPrinters: [...f.lanPrinters, { ip: '', port: 9100 }],
+                      }))
+                    }
+                  >
+                    <Plus className="size-4" aria-hidden />
+                    {t('printerAddMore')}
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <div className="space-y-hisabi-sm">
+                {!desktop ? (
+                  <p className="type-body-sm text-hisabi-on-surface-variant">
+                    {t('tillUsbChromeHint')}
+                  </p>
+                ) : null}
+                {usbDeviceOptions.length === 0 ? (
+                  <p className="type-body-sm text-hisabi-on-surface-variant">
+                    {t('tillUsbEmpty')}
+                  </p>
+                ) : (
+                  usbDeviceOptions.map((device) => {
+                    const checked = form.usbPrinters.some(
+                      (row) => row.id === device.id && row.kind === device.kind,
+                    )
+                    return (
+                      <label
+                        key={`${device.kind}-${device.id}`}
+                        className="flex items-center gap-hisabi-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          className="size-4 accent-hisabi-primary"
+                          checked={checked}
+                          disabled={!canUpdateHw}
+                          onChange={() => {
+                            setForm((f) => {
+                              if (checked) {
+                                return {
+                                  ...f,
+                                  usbPrinters: f.usbPrinters.filter(
+                                    (row) =>
+                                      !(row.id === device.id && row.kind === device.kind),
+                                  ),
+                                }
+                              }
+                              return {
+                                ...f,
+                                usbPrinters: [...f.usbPrinters, device],
+                              }
+                            })
+                          }}
+                        />
+                        <span className="type-body-md">{device.label}</span>
+                      </label>
+                    )
+                  })
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="grid gap-hisabi-lg sm:grid-cols-2">
             <SettingsField label={t('tillDisplayEnabled')}>
               <label className="flex items-center gap-hisabi-sm">
@@ -329,7 +544,7 @@ export function SettingsTillPageClient() {
                   type="checkbox"
                   className="size-4 accent-hisabi-primary"
                   checked={form.displayEnabled}
-                  disabled={disabled}
+                  disabled={hwDisabled}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, displayEnabled: e.target.checked }))
                   }
@@ -343,7 +558,7 @@ export function SettingsTillPageClient() {
                   type="checkbox"
                   className="size-4 accent-hisabi-primary"
                   checked={form.drawerEnabled}
-                  disabled={disabled}
+                  disabled={hwDisabled}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, drawerEnabled: e.target.checked }))
                   }
@@ -355,7 +570,7 @@ export function SettingsTillPageClient() {
               <select
                 className={selectClass}
                 value={form.displayPort}
-                disabled={disabled}
+                disabled={hwDisabled}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, displayPort: e.target.value }))
                 }
@@ -374,7 +589,7 @@ export function SettingsTillPageClient() {
                 dir="ltr"
                 inputMode="numeric"
                 value={String(form.displayBaud)}
-                disabled={disabled}
+                disabled={hwDisabled}
                 onChange={(e) =>
                   setForm((f) => ({
                     ...f,
@@ -387,7 +602,7 @@ export function SettingsTillPageClient() {
               <select
                 className={selectClass}
                 value={form.drawerPort}
-                disabled={disabled}
+                disabled={hwDisabled}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, drawerPort: e.target.value }))
                 }
@@ -404,6 +619,8 @@ export function SettingsTillPageClient() {
 
           {canUpdate ? (
             <SettingsFormFooter>
+              {canUpdateHw ? (
+                <>
               <AuthSubmitButton
                 type="button"
                 variant="secondary"
@@ -420,6 +637,8 @@ export function SettingsTillPageClient() {
               >
                 {t('tillTestDrawer')}
               </AuthSubmitButton>
+                </>
+              ) : null}
               <AuthSubmitButton
                 type="button"
                 className="w-full min-[500px]:w-auto min-[500px]:min-w-[10rem]"

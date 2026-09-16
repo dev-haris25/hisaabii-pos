@@ -49,6 +49,9 @@ export async function POST(request) {
         drawerEnabled: d.drawerEnabled ?? true,
         drawerPort: d.drawerPort?.trim() || null,
         drawerProtocol: d.drawerProtocol ?? 'escpos_pulse',
+        printVia: d.printVia ?? 'lan',
+        lanPrinters: d.lanPrinters ?? [],
+        usbPrinters: d.usbPrinters ?? [],
       },
     })
     return jsonOk({ till: mapTillToJson(row) })

@@ -1,7 +1,20 @@
 'use client'
 
-import { AuthApiError } from '@/lib/api/auth-client'
+import { AuthApiError, authGet } from '@/lib/api/auth-client'
 import { getHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
+import {
+  normalizePrintVia,
+  parseLanPrinters,
+  parseUsbPrinters,
+} from '@/lib/tills/till-printers'
+
+async function loadBoundTill() {
+  const desktop = getHisabiDesktop()
+  const tillId = await desktop?.getTillId?.()
+  if (!tillId) return null
+  const data = await authGet(`/pos/till?id=${encodeURIComponent(tillId)}`)
+  return data.till && typeof data.till === 'object' ? data.till : null
+}
 
 /**
  * @param {Record<string, unknown>} data
@@ -11,24 +24,65 @@ export async function printWithElectron(data) {
   if (!desktop?.printRaw) {
     throw new AuthApiError(503, 'PRINT_FAILED', 'Desktop print is not available')
   }
-  const printers = Array.isArray(data.printers) ? data.printers : []
   const copies = Array.isArray(data.copies) ? data.copies : []
-  if (printers.length === 0) {
-    throw new AuthApiError(400, 'PRINTER_NOT_CONFIGURED', 'Set the printer IP')
-  }
   if (copies.length === 0) {
     throw new AuthApiError(502, 'PRINT_FAILED', 'No receipt bytes')
+  }
+
+  const till = await loadBoundTill()
+  if (!till) {
+    throw new AuthApiError(
+      400,
+      'PRINTER_NOT_CONFIGURED',
+      'Bind this PC to a till in Settings',
+    )
+  }
+
+  const printVia = normalizePrintVia(
+    typeof till.printVia === 'string' ? till.printVia : 'lan',
+  )
+
+  if (printVia === 'usb') {
+    const devices = parseUsbPrinters(till.usbPrinters)
+    if (devices.length === 0 || !desktop.printUsb) {
+      throw new AuthApiError(
+        400,
+        'USB_PRINTER_NOT_CONFIGURED',
+        'Choose a USB printer in Till settings',
+      )
+    }
+    let lastBytes = null
+    for (const device of devices) {
+      for (const copy of copies) {
+        const rawBase64 = String(copy?.rawBase64 ?? '')
+        if (!rawBase64) throw new AuthApiError(502, 'PRINT_FAILED', 'No receipt bytes')
+        await desktop.printUsb({
+          kind: device.kind,
+          id: device.id,
+          base64: rawBase64,
+        })
+        lastBytes = Number(copy?.bytes) || rawBase64.length
+      }
+    }
+    return {
+      printed: true,
+      printedCount: devices.length,
+      failedCount: 0,
+      dryRun: false,
+      bytes: lastBytes,
+    }
+  }
+
+  const printers = parseLanPrinters(till.lanPrinters)
+  if (printers.length === 0) {
+    throw new AuthApiError(400, 'PRINTER_NOT_CONFIGURED', 'Set the printer IP')
   }
 
   /** @type {{ ip: string, ok: boolean, code: string | null, bytes: number | null }[]} */
   const results = []
   for (const printer of printers) {
-    const ip = String(printer?.ip ?? '').trim()
-    const port = Number(printer?.port ?? 9100)
-    if (!ip) {
-      results.push({ ip: '', ok: false, code: 'PRINTER_NOT_CONFIGURED', bytes: null })
-      continue
-    }
+    const ip = printer.ip
+    const port = printer.port || 9100
     try {
       let lastBytes = null
       for (const copy of copies) {

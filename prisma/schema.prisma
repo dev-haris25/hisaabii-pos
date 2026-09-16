@@ -126,6 +126,13 @@ model PosTill {
   drawerPort     String?
   drawerProtocol String  @default("escpos_pulse")
 
+  /// lan | usb — how this till prints receipts.
+  printVia     String @default("lan")
+  /// [{ ip, port }]
+  lanPrinters  Json   @default("[]")
+  /// [{ id, kind, label }] kind = serial | winprinter
+  usbPrinters  Json   @default("[]")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

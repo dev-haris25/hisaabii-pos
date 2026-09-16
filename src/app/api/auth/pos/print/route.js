@@ -11,7 +11,6 @@ import { WHERE_NOT_DELETED } from '@/lib/db/soft-delete-scope'
 import { buildReceiptPayloadFromInvoice } from '@/lib/print/build-receipt-from-invoice'
 import { buildReceiptPayloadFromNote } from '@/lib/print/build-receipt-from-note'
 import { loadReceiptLogoPngBase64 } from '@/lib/print/load-receipt-logo'
-import { listConfiguredReceiptPrinters } from '@/lib/print/receipt-printers'
 import {
   RECEIPT_COPY_KINDS,
   receiptCopyLabel,
@@ -55,11 +54,6 @@ export async function POST(request) {
         logoStoragePath: true,
       },
     })
-    const printers = await listConfiguredReceiptPrinters(
-      prisma,
-      auth.profileId,
-    )
-
     const locale = auth.session.preferredLocale === 'ar' ? 'ar' : 'en'
     const logoPngBase64 = await loadReceiptLogoPngBase64(profile)
 
@@ -169,10 +163,6 @@ export async function POST(request) {
       throw e
     }
 
-    if (printers.length === 0) {
-      return jsonError(400, 'PRINTER_NOT_CONFIGURED', 'Set the printer IP in Settings first')
-    }
-
     /** @type {{ kind: string, rawBase64: string, bytes: number }[]} */
     const copies = []
     for (const kind of RECEIPT_COPY_KINDS) {
@@ -189,7 +179,6 @@ export async function POST(request) {
 
     return jsonOk({
       ready: true,
-      printers,
       copies,
     })
   } catch (err) {

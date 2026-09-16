@@ -9,10 +9,7 @@ import {
   Keyboard,
   Loader2,
   Mail,
-  Plus,
-  Printer,
   SlidersHorizontal,
-  Trash2,
   Tv,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -32,11 +29,9 @@ import {
   fieldInvalidClass,
   selectClass,
 } from '@/components/settings/settings-page-shell'
-import { RequiredMark } from '@/components/ui/required-mark'
 import { useUnsavedChangesGuard } from '@/hooks/use-unsaved-changes-guard'
 import { AuthApiError, authGet, authPatch } from '@/lib/api/auth-client'
 import { customerQueueAbsoluteUrl } from '@/lib/orders/customer-queue-url'
-import { MAX_RECEIPT_PRINTERS } from '@/lib/print/receipt-printers'
 import { formatDocumentNumber } from '@/lib/settings/format-helpers'
 import { hasFullAccess } from '@/lib/rbac/ability-utils'
 import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
@@ -50,23 +45,6 @@ const PREFIX_FIELDS = [
   { key: 'debitNotePrefix', previewNum: 1 },
   { key: 'salarySlipPrefix', previewNum: 1 },
 ]
-
-/** @param {Record<string, unknown>} settings */
-function printersFromSettings(settings) {
-  const raw = Array.isArray(settings.printers) ? settings.printers : null
-  if (raw && raw.length > 0) {
-    return raw.map((p) => ({
-      ip: String(p?.ip ?? ''),
-      port: String(p?.port ?? 9100),
-    }))
-  }
-  return [
-    {
-      ip: String(settings.printerIp ?? ''),
-      port: String(settings.printerPort ?? 9100),
-    },
-  ]
-}
 
 /** @param {Record<string, unknown>} settings */
 function formStateFromSettings(settings) {
@@ -87,7 +65,6 @@ function formStateFromSettings(settings) {
         ? String(settings.discountCap)
         : '',
     posOnScreenKeypad: settings.posOnScreenKeypad === true,
-    printers: printersFromSettings(settings),
   }
 }
 
@@ -98,15 +75,8 @@ function formStateFromSettings(settings) {
 function isSettingsFormDirty(form, settings) {
   if (!settings) return false
   const baseline = formStateFromSettings(settings)
-  if (
-    JSON.stringify(form.printers) !== JSON.stringify(baseline.printers)
-  ) {
-    return true
-  }
   return /** @type {(keyof typeof baseline)[]} */ (Object.keys(baseline)).some(
-    (key) =>
-      key !== 'printers' &&
-      String(form[key] ?? '') !== String(baseline[key] ?? ''),
+    (key) => String(form[key] ?? '') !== String(baseline[key] ?? ''),
   )
 }
 
@@ -134,8 +104,6 @@ export function SettingsRestaurantPageClient() {
   const [fieldErrors, setFieldErrors] = useState({
     email: '',
     discountCap: '',
-    /** @type {Record<number, string>} */
-    printerPorts: {},
   })
   /** @type {React.MutableRefObject<null | { kind: 'href', href: string } | { kind: 'back' }>} */
   const pendingLeaveRef = useRef(null)
@@ -189,8 +157,8 @@ export function SettingsRestaurantPageClient() {
     isError && error instanceof AuthApiError && error.code === 'NO_COMPANY'
 
   function collectSettingsFieldErrors() {
-    /** @type {{ email: string, discountCap: string, printerPorts: Record<number, string> }} */
-    const errors = { email: '', discountCap: '', printerPorts: {} }
+    /** @type {{ email: string, discountCap: string }} */
+    const errors = { email: '', discountCap: '' }
     const email = String(form.email).trim()
     if (email && !EMAIL_RE.test(email)) {
       errors.email = t('invalidCompanyEmail')
@@ -206,21 +174,11 @@ export function SettingsRestaurantPageClient() {
         }
       }
     }
-    form.printers.forEach((p, index) => {
-      const port = Number.parseInt(String(p.port), 10)
-      if (!Number.isFinite(port) || port < 1 || port > 65535) {
-        errors.printerPorts[index] = t('invalidPrinterPort')
-      }
-    })
     return errors
   }
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const printers = form.printers.map((p) => ({
-        ip: String(p.ip).trim(),
-        port: Number.parseInt(String(p.port), 10),
-      }))
       return authPatch('/settings', {
         invoicePrefix: form.invoicePrefix.trim() || 'INV-',
         creditNotePrefix: form.creditNotePrefix.trim() || 'CN-',
@@ -235,7 +193,6 @@ export function SettingsRestaurantPageClient() {
         customerQueueLocale: form.customerQueueLocale,
         discountCap: form.discountCap.trim(),
         posOnScreenKeypad: form.posOnScreenKeypad === true,
-        printers,
       })
     },
     onSuccess: (res) => {
@@ -250,16 +207,12 @@ export function SettingsRestaurantPageClient() {
    */
   async function runUnifiedSave() {
     const settingsErrors = collectSettingsFieldErrors()
-    if (
-      settingsErrors.email ||
-      settingsErrors.discountCap ||
-      Object.keys(settingsErrors.printerPorts).length > 0
-    ) {
+    if (settingsErrors.email || settingsErrors.discountCap) {
       setFieldErrors(settingsErrors)
       scrollAfterFieldValidation()
       return 'invalid'
     }
-    setFieldErrors({ email: '', discountCap: '', printerPorts: {} })
+    setFieldErrors({ email: '', discountCap: '' })
 
     let identityResult = 'skipped'
     if (identityApiRef.current) {
@@ -535,116 +488,6 @@ export function SettingsRestaurantPageClient() {
         disabled={!canUpdate || unifiedSaving}
         className="min-w-0 space-y-hisabi-xl border-0 p-0"
       >
-        <SettingsSection title={t('printerSectionTitle')} icon={Printer}>
-          <p className="type-body-sm text-hisabi-on-surface-variant">
-            {t('printerSectionHint')}
-          </p>
-          <div className="space-y-hisabi-lg">
-            {form.printers.map((printer, index) => (
-              <div
-                key={index}
-                className="grid gap-hisabi-lg sm:grid-cols-[1fr_8rem_auto] sm:items-end"
-              >
-                <SettingsField
-                  label={t('printerIpLabelIndexed', { n: index + 1 })}
-                >
-                  <input
-                    className={fieldClass}
-                    dir="ltr"
-                    value={printer.ip}
-                    onChange={(e) => {
-                      const ip = e.target.value
-                      setForm((f) => ({
-                        ...f,
-                        printers: f.printers.map((row, i) =>
-                          i === index ? { ...row, ip } : row,
-                        ),
-                      }))
-                    }}
-                    placeholder={t('printerIpPlaceholder')}
-                  />
-                </SettingsField>
-                <SettingsField
-                  label={
-                    <>
-                      {t('printerPortLabel')}
-                      <RequiredMark />
-                    </>
-                  }
-                  error={fieldErrors.printerPorts[index]}
-                  errorId={`settings-printer-port-${index}-error`}
-                >
-                  <input
-                    id={`settings-printer-port-${index}`}
-                    className={cn(
-                      fieldClass,
-                      fieldErrors.printerPorts[index] && fieldInvalidClass,
-                    )}
-                    dir="ltr"
-                    value={printer.port}
-                    onChange={(e) => {
-                      const port = e.target.value
-                      setForm((f) => ({
-                        ...f,
-                        printers: f.printers.map((row, i) =>
-                          i === index ? { ...row, port } : row,
-                        ),
-                      }))
-                      if (fieldErrors.printerPorts[index]) {
-                        setFieldErrors((prev) => {
-                          const next = { ...prev.printerPorts }
-                          delete next[index]
-                          return { ...prev, printerPorts: next }
-                        })
-                      }
-                    }}
-                    aria-invalid={
-                      fieldErrors.printerPorts[index] ? true : undefined
-                    }
-                    aria-describedby={
-                      fieldErrors.printerPorts[index]
-                        ? `settings-printer-port-${index}-error`
-                        : undefined
-                    }
-                  />
-                </SettingsField>
-                {form.printers.length > 1 ? (
-                  <button
-                    type="button"
-                    className="mb-0.5 inline-flex h-11 items-center justify-center rounded-hisabi-md px-3 text-hisabi-error hover:bg-hisabi-error/10"
-                    onClick={() =>
-                      setForm((f) => ({
-                        ...f,
-                        printers: f.printers.filter((_, i) => i !== index),
-                      }))
-                    }
-                    aria-label={t('printerRemove')}
-                  >
-                    <Trash2 className="size-5" aria-hidden />
-                  </button>
-                ) : (
-                  <span className="hidden sm:block" />
-                )}
-              </div>
-            ))}
-            {form.printers.length < MAX_RECEIPT_PRINTERS ? (
-              <button
-                type="button"
-                className="type-label-sm inline-flex cursor-pointer items-center gap-2 font-semibold text-hisabi-secondary hover:underline"
-                onClick={() =>
-                  setForm((f) => ({
-                    ...f,
-                    printers: [...f.printers, { ip: '', port: '9100' }],
-                  }))
-                }
-              >
-                <Plus className="size-4" aria-hidden />
-                {t('printerAddMore')}
-              </button>
-            ) : null}
-          </div>
-        </SettingsSection>
-
         <SettingsSection title={t('sectionDocuments')} icon={FileText}>
           <div className="grid gap-hisabi-lg sm:grid-cols-2">
             {PREFIX_FIELDS.map(({ key, previewNum }) => (

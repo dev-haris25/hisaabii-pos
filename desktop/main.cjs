@@ -1,7 +1,11 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
-const { readFileSync, writeFileSync, mkdirSync } = require('node:fs')
+const { execFile } = require('node:child_process')
+const { readFileSync, writeFileSync, mkdirSync, unlinkSync } = require('node:fs')
 const { join } = require('node:path')
+const { promisify } = require('node:util')
 const net = require('node:net')
+
+const execFileAsync = promisify(execFile)
 
 function loadParentEnv() {
   try {
@@ -357,6 +361,81 @@ ipcMain.handle('hw:openDrawer', async (_e, payload) => {
   if (!port) throw new Error('drawer port missing')
   const pulse = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa])
   await writeSerial(port, Number(payload?.baud) || 9600, pulse)
+  return true
+})
+
+ipcMain.handle('hw:listPrintDevices', async (event) => {
+  /** @type {{ id: string, kind: 'serial' | 'winprinter', label: string }[]} */
+  const devices = []
+  try {
+    const { SerialPort } = require('serialport')
+    const ports = await SerialPort.list()
+    for (const port of ports) {
+      if (!port.path) continue
+      devices.push({
+        id: port.path,
+        kind: 'serial',
+        label: port.path,
+      })
+    }
+  } catch {
+    /* serialport optional at runtime */
+  }
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win && !win.isDestroyed() && win.webContents.getPrintersAsync) {
+    try {
+      const printers = await win.webContents.getPrintersAsync()
+      const skip = /pdf|fax|onenote|xps|microsoft print to pdf/i
+      for (const printer of printers) {
+        const name = String(printer?.name ?? '').trim()
+        if (!name || skip.test(name)) continue
+        devices.push({
+          id: name,
+          kind: 'winprinter',
+          label: String(printer.displayName || name).trim() || name,
+        })
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return devices
+})
+
+ipcMain.handle('hw:printUsb', async (_e, payload) => {
+  const kind = payload?.kind === 'winprinter' ? 'winprinter' : 'serial'
+  const id = String(payload?.id ?? '').trim()
+  const raw = Buffer.from(String(payload?.base64 ?? ''), 'base64')
+  if (!id || raw.length === 0) throw new Error('usb print payload missing')
+  if (kind === 'serial') {
+    await writeSerial(id, 9600, raw)
+    return true
+  }
+  const tmp = join(app.getPath('temp'), `hisabi-print-${Date.now()}.bin`)
+  writeFileSync(tmp, raw)
+  try {
+    await execFileAsync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        join(__dirname, 'print-raw-win.ps1'),
+        '-PrinterName',
+        id,
+        '-FilePath',
+        tmp,
+      ],
+      { windowsHide: true },
+    )
+  } finally {
+    try {
+      unlinkSync(tmp)
+    } catch {
+      /* ignore */
+    }
+  }
   return true
 })
 

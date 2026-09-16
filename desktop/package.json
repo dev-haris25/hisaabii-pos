@@ -24,7 +24,8 @@
       "main.cjs",
       "preload.cjs",
       "app-config.json",
-      "icon.png"
+      "icon.png",
+      "print-raw-win.ps1"
     ],
     "icon": "icon.png",
     "win": {

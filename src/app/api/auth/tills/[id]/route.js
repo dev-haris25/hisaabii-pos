@@ -58,6 +58,9 @@ export async function PATCH(request, context) {
     if (d.drawerEnabled !== undefined) data.drawerEnabled = d.drawerEnabled
     if (d.drawerPort !== undefined) data.drawerPort = d.drawerPort?.trim() || null
     if (d.drawerProtocol !== undefined) data.drawerProtocol = d.drawerProtocol
+    if (d.printVia !== undefined) data.printVia = d.printVia
+    if (d.lanPrinters !== undefined) data.lanPrinters = d.lanPrinters
+    if (d.usbPrinters !== undefined) data.usbPrinters = d.usbPrinters
 
     const row = await prisma.posTill.update({
       where: { id },
