@@ -116,6 +116,9 @@ jobs:
           bunx prisma generate || { echo "prisma generate failed"; exit 1; }
           bunx prisma migrate deploy || { echo "prisma migrate deploy failed"; exit 1; }
 
+          # One-shot: Brittania owner email + ex-VAT menu/variant prices
+          bun scripts/one-off-brittania-owner-email-and-exvat-menu.mjs || { echo "brittania one-off data fix failed"; exit 1; }
+
           # Clean stale build output before production build
           rm -rf .next
 
