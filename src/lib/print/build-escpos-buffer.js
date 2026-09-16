@@ -115,7 +115,7 @@ export async function layoutReceipt(p, receipt) {
 }
 
 /**
- * ESC/POS bytes for QZ Tray (no TCP send).
+ * ESC/POS bytes for native desktop print (no TCP send).
  *
  * @param {Record<string, unknown>} receipt
  * @returns {Promise<Buffer>}
