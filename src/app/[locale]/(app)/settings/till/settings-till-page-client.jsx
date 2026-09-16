@@ -337,6 +337,20 @@ export function SettingsTillPageClient() {
                 <span className="type-body-md">{t('tillEnabled')}</span>
               </label>
             </SettingsField>
+            <SettingsField label={t('tillDrawerEnabled')}>
+              <label className="flex items-center gap-hisabi-sm">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-hisabi-primary"
+                  checked={form.drawerEnabled}
+                  disabled={disabled}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, drawerEnabled: e.target.checked }))
+                  }
+                />
+                <span className="type-body-md">{t('tillEnabled')}</span>
+              </label>
+            </SettingsField>
             <SettingsField label={t('tillDisplayPort')}>
               <select
                 className={selectClass}
@@ -368,20 +382,6 @@ export function SettingsTillPageClient() {
                   }))
                 }
               />
-            </SettingsField>
-            <SettingsField label={t('tillDrawerEnabled')}>
-              <label className="flex items-center gap-hisabi-sm">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-hisabi-primary"
-                  checked={form.drawerEnabled}
-                  disabled={disabled}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, drawerEnabled: e.target.checked }))
-                  }
-                />
-                <span className="type-body-md">{t('tillEnabled')}</span>
-              </label>
             </SettingsField>
             <SettingsField label={t('tillDrawerPort')}>
               <select
