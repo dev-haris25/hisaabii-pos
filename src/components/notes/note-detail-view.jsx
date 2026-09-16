@@ -13,6 +13,7 @@ import { ZatcaStatusBadge } from '@/components/invoices/zatca-status-badge'
 import { PageBackButton } from '@/components/shared/page-back-button'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
+import { printDocument } from '@/lib/print/print-document'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import {
   canRepairFailedNote,
@@ -103,7 +104,7 @@ export function NoteDetailView({ documentNature, note, logoUrl = null }) {
 
   const printMutation = useMutation({
     mutationFn: () =>
-      authPost('/pos/print', { noteId: note.id, noteType: documentNature }),
+      printDocument({ noteId: note.id, noteType: documentNature }),
     onSuccess: (data) => {
       toastPrintResult(tInv, data)
     },

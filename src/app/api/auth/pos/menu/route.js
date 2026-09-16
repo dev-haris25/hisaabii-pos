@@ -23,7 +23,7 @@ export async function GET() {
       }),
       prisma.businessSettings.findUnique({
         where: { businessProfileId: profileId },
-        select: { discountCap: true },
+        select: { discountCap: true, posOnScreenKeypad: true },
       }),
     ])
 
@@ -31,6 +31,7 @@ export async function GET() {
       categories: categories.map((c) => mapMenuCategoryToJson(c)),
       items: items.map(mapMenuItemToJson),
       discountCap: settings?.discountCap ?? null,
+      posOnScreenKeypad: settings?.posOnScreenKeypad === true,
     })
   } catch (err) {
     return handleRouteError(err, 'GET /api/auth/pos/menu')

@@ -67,6 +67,7 @@ const settingsPatchBodySchema = z
           .regex(/^\d+(\.\d{1,4})?$/),
       ])
       .optional(),
+    posOnScreenKeypad: z.boolean().optional(),
   })
   .strict()
 
@@ -96,6 +97,7 @@ function mapSettingsPayload(settings, profile, printerRows, origin = '') {
     email: profile.email,
     phone: profile.phone,
     discountCap: settings.discountCap ?? null,
+    posOnScreenKeypad: settings.posOnScreenKeypad === true,
     slug: profile.slug,
     customerQueueLocale,
     customerQueueOrigin: origin,
@@ -172,6 +174,9 @@ export async function PATCH(request) {
     if (d.discountCap !== undefined) {
       const raw = d.discountCap == null ? '' : String(d.discountCap).trim()
       settingsData.discountCap = raw === '' ? null : raw
+    }
+    if (d.posOnScreenKeypad !== undefined) {
+      settingsData.posOnScreenKeypad = d.posOnScreenKeypad
     }
 
     /** @type {Record<string, unknown>} */

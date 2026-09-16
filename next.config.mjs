@@ -11,6 +11,7 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.js')
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   serverExternalPackages: ['node-thermal-printer'],
+  transpilePackages: ['qz-tray'],
   images: {
     remotePatterns: [
       {

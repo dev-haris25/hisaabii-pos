@@ -22,10 +22,16 @@ import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { PosThermalReceiptPreview } from '@/components/invoices/pos-thermal-receipt-preview'
 import { LineModifierSummary } from '@/components/pos/line-modifier-summary'
+import {
+  PosMoneyField,
+  PosOnScreenNumpad,
+  applyNumpadKey,
+} from '@/components/pos/pos-on-screen-numpad'
 import { PosItemModifiersFlow } from '@/components/pos/pos-item-modifiers-flow'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
+import { printDocument } from '@/lib/print/print-document'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import {
   allocateOrderDiscount,
@@ -103,6 +109,9 @@ export function PosCheckoutView({
   const [amountTendered, setAmountTendered] = useState('')
   const [discount, setDiscount] = useState('')
   const [fieldErrors, setFieldErrors] = useState({ discount: '', tendered: '' })
+  const [numpadField, setNumpadField] = useState(
+    /** @type {null | 'discount' | 'tendered'} */ (null),
+  )
   /** @type {[Record<string, unknown> | null, function]} */
   const [receipt, setReceipt] = useState(
     /** @type {Record<string, unknown> | null} */ (null),
@@ -131,6 +140,7 @@ export function PosCheckoutView({
     setDiscount('')
     setAmountTendered('')
     setPaymentMethod('cash')
+    setNumpadField(null)
     router.refresh()
     void queryClient.invalidateQueries({ queryKey: ['pos', 'menu'] })
   }, [activeBusinessProfileId, queryClient, router])
@@ -139,6 +149,7 @@ export function PosCheckoutView({
   const items = menuQuery.data?.items ?? []
   const discountCap = menuQuery.data?.discountCap ?? null
   const discountCapLimit = parseDiscountCap(discountCap)
+  const keypadEnabled = menuQuery.data?.posOnScreenKeypad === true
 
   const filteredItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase()
@@ -247,6 +258,7 @@ export function PosCheckoutView({
       setDiscount('')
       setPaymentMethod('cash')
       setFieldErrors({ discount: '', tendered: '' })
+      setNumpadField(null)
     },
     onError: (err) => {
       const code = err instanceof AuthApiError ? err.code : undefined
@@ -411,7 +423,7 @@ export function PosCheckoutView({
       if (!invoiceId) {
         throw new AuthApiError(400, 'VALIDATION_ERROR', 'Missing invoice')
       }
-      return authPost('/pos/print', { invoiceId })
+      return printDocument({ invoiceId })
     },
     onSuccess: (data) => {
       toastPrintResult(t, data)
@@ -452,7 +464,29 @@ export function PosCheckoutView({
       return
     }
     setFieldErrors({ discount: '', tendered: '' })
+    setNumpadField(null)
     checkoutMutation.mutate()
+  }
+
+  function openNumpad(field) {
+    if (!keypadEnabled) return
+    setNumpadField(field)
+  }
+
+  function handleNumpadKey(key) {
+    if (numpadField === 'discount') {
+      setDiscount((prev) => applyNumpadKey(prev, key))
+      if (fieldErrors.discount) {
+        setFieldErrors((prev) => ({ ...prev, discount: '' }))
+      }
+      return
+    }
+    if (numpadField === 'tendered') {
+      setAmountTendered((prev) => applyNumpadKey(prev, key))
+      if (fieldErrors.tendered) {
+        setFieldErrors((prev) => ({ ...prev, tendered: '' }))
+      }
+    }
   }
 
   return (
@@ -598,6 +632,8 @@ export function PosCheckoutView({
             <div className="grid grid-cols-2 gap-hisabi-sm sm:grid-cols-3 xl:grid-cols-4">
               {filteredItems.map((item) => {
                 const name = itemDisplayName(item)
+                const arabicUnderEn =
+                  locale !== 'ar' ? String(item.nameAr ?? '').trim() : ''
                 return (
                   <button
                     key={item.id}
@@ -621,6 +657,14 @@ export function PosCheckoutView({
                       <span className="type-body-md line-clamp-2 pb-0.5 font-bold leading-normal text-hisabi-on-surface">
                         {name}
                       </span>
+                      {arabicUnderEn ? (
+                        <span
+                          dir="rtl"
+                          className="type-body-sm line-clamp-2 text-hisabi-on-surface-variant"
+                        >
+                          {arabicUnderEn}
+                        </span>
+                      ) : null}
                       <span
                         dir="ltr"
                         className="type-body-sm font-medium text-hisabi-teal"
@@ -795,18 +839,21 @@ export function PosCheckoutView({
               >
                 {t('discount')}
               </label>
-              <input
+              <PosMoneyField
                 id="pos-discount"
-                type="text"
-                inputMode="decimal"
+                keypadEnabled={keypadEnabled}
+                active={numpadField === 'discount'}
                 dir="ltr"
                 value={discount}
                 onChange={(e) => {
+                  if (keypadEnabled) return
                   setDiscount(e.target.value)
                   if (fieldErrors.discount) {
                     setFieldErrors((prev) => ({ ...prev, discount: '' }))
                   }
                 }}
+                onClick={() => openNumpad('discount')}
+                onFocus={() => openNumpad('discount')}
                 placeholder={t('discountPlaceholder')}
                 className={cn(
                   'type-body-md text-hisabi-on-surface w-full rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10',
@@ -850,7 +897,12 @@ export function PosCheckoutView({
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setPaymentMethod(key)}
+                    onClick={() => {
+                      setPaymentMethod(key)
+                      if (key !== 'cash' && numpadField === 'tendered') {
+                        setNumpadField(null)
+                      }
+                    }}
                     className={cn(
                       'type-label-sm flex-1 cursor-pointer rounded-lg px-hisabi-md py-2 font-bold transition-colors',
                       paymentMethod === key
@@ -873,18 +925,21 @@ export function PosCheckoutView({
                   {t('amountReceived')}
                   <RequiredMark />
                 </label>
-                <input
+                <PosMoneyField
                   id="pos-tendered"
-                  type="text"
-                  inputMode="decimal"
+                  keypadEnabled={keypadEnabled}
+                  active={numpadField === 'tendered'}
                   dir="ltr"
                   value={amountTendered}
                   onChange={(e) => {
+                    if (keypadEnabled) return
                     setAmountTendered(e.target.value)
                     if (fieldErrors.tendered) {
                       setFieldErrors((prev) => ({ ...prev, tendered: '' }))
                     }
                   }}
+                  onClick={() => openNumpad('tendered')}
+                  onFocus={() => openNumpad('tendered')}
                   placeholder={t('amountReceivedPlaceholder')}
                   className={cn(
                     'type-body-md text-hisabi-on-surface w-full rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10',
@@ -925,6 +980,19 @@ export function PosCheckoutView({
           </div>
         </aside>
       </div>
+
+      {keypadEnabled ? (
+        <PosOnScreenNumpad
+          open={numpadField != null}
+          title={
+            numpadField === 'tendered' ? t('amountReceived') : t('discount')
+          }
+          value={numpadField === 'tendered' ? amountTendered : discount}
+          onKey={handleNumpadKey}
+          onClose={() => setNumpadField(null)}
+          onDone={() => setNumpadField(null)}
+        />
+      ) : null}
 
       <PosItemModifiersFlow
         open={Boolean(configurator.item)}

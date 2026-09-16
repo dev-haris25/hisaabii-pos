@@ -14,6 +14,7 @@ import { ZatcaStatusBadge } from '@/components/invoices/zatca-status-badge'
 import { PageBackButton } from '@/components/shared/page-back-button'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
+import { printDocument } from '@/lib/print/print-document'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import { canReportInvoiceToZatca } from '@/lib/invoices/map-invoice-json'
 import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
@@ -134,7 +135,7 @@ export function InvoiceDetailView({ invoice, logoUrl = null }) {
   })
 
   const printMutation = useMutation({
-    mutationFn: () => authPost('/pos/print', { invoiceId: invoice.id }),
+    mutationFn: () => printDocument({ invoiceId: invoice.id }),
     onSuccess: (data) => {
       toastPrintResult(t, data)
     },
@@ -329,7 +330,7 @@ function LinkedNoteCard({ note, logoUrl, documentLabel }) {
 
   const printMutation = useMutation({
     mutationFn: () =>
-      authPost('/pos/print', {
+      printDocument({
         noteId: note.id,
         noteType: note.documentNature,
       }),

@@ -6,6 +6,7 @@ import {
   Coins,
   Copy,
   FileText,
+  Keyboard,
   Loader2,
   Mail,
   Plus,
@@ -85,6 +86,7 @@ function formStateFromSettings(settings) {
       settings.discountCap != null && String(settings.discountCap).trim() !== ''
         ? String(settings.discountCap)
         : '',
+    posOnScreenKeypad: settings.posOnScreenKeypad === true,
     printers: printersFromSettings(settings),
   }
 }
@@ -225,6 +227,7 @@ export function SettingsRestaurantPageClient() {
         phone: String(form.phone).trim() || null,
         customerQueueLocale: form.customerQueueLocale,
         discountCap: form.discountCap.trim(),
+        posOnScreenKeypad: form.posOnScreenKeypad === true,
         printers,
       })
     },
@@ -736,6 +739,31 @@ export function SettingsRestaurantPageClient() {
               </div>
             </SettingsField>
           </div>
+        </SettingsSection>
+
+        <SettingsSection title={t('sectionPosTill')} icon={Keyboard}>
+          <SettingsField
+            label={t('fieldPosOnScreenKeypad')}
+            hint={t('fieldPosOnScreenKeypadHint')}
+          >
+            <label className="flex items-center gap-hisabi-md">
+              <input
+                id="settings-pos-keypad"
+                type="checkbox"
+                className="size-5 accent-hisabi-primary"
+                checked={form.posOnScreenKeypad === true}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    posOnScreenKeypad: e.target.checked,
+                  }))
+                }
+              />
+              <span className="type-body-md text-hisabi-on-surface">
+                {t('fieldPosOnScreenKeypadEnable')}
+              </span>
+            </label>
+          </SettingsField>
         </SettingsSection>
 
         <SettingsSection title={t('sectionFormats')} icon={SlidersHorizontal}>

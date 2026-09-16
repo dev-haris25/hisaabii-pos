@@ -16,7 +16,7 @@ import {
   RECEIPT_COPY_KINDS,
   receiptCopyLabel,
 } from '@/lib/print/receipt-copy-labels'
-import { sendReceiptToPrintBridge } from '@/lib/print/send-receipt-to-print-bridge'
+import { buildEscposBuffer } from '@/lib/print/build-escpos-buffer'
 import { prisma } from '@/lib/prisma'
 
 const bodySchema = z
@@ -173,95 +173,24 @@ export async function POST(request) {
       return jsonError(400, 'PRINTER_NOT_CONFIGURED', 'Set the printer IP in Settings first')
     }
 
-    const results = await Promise.all(
-      printers.map(async (printer) => {
-        /** @type {string | null} */
-        let firstDryRunPath = null
-        /** @type {number | null} */
-        let lastBytes = null
-        let allDryRun = true
-        /** @type {string | null} */
-        let failCode = null
-
-        for (const kind of RECEIPT_COPY_KINDS) {
-          try {
-            const result = await sendReceiptToPrintBridge({
-              receipt: {
-                ...receipt,
-                copyLabel: receiptCopyLabel(kind, locale),
-              },
-              printer,
-            })
-            allDryRun = allDryRun && Boolean(result.dryRun)
-            if (!firstDryRunPath && typeof result.dryRunPath === 'string') {
-              firstDryRunPath = result.dryRunPath
-            }
-            if (typeof result.bytes === 'number') lastBytes = result.bytes
-          } catch (e) {
-            failCode =
-              e && typeof e === 'object' && 'code' in e
-                ? String(e.code)
-                : 'PRINT_FAILED'
-          }
-        }
-
-        if (failCode) {
-          return {
-            ip: printer.ip,
-            ok: false,
-            code: failCode,
-            dryRun: false,
-            dryRunPath: null,
-            bytes: null,
-          }
-        }
-
-        return {
-          ip: printer.ip,
-          ok: true,
-          code: null,
-          dryRun: allDryRun,
-          dryRunPath: firstDryRunPath,
-          bytes: lastBytes,
-        }
-      }),
-    )
-
-    const successes = results.filter((r) => r.ok)
-    const failures = results.filter((r) => !r.ok)
-
-    if (successes.length === 0) {
-      const allUnreachable = failures.every(
-        (r) => r.code === 'PRINT_BRIDGE_UNREACHABLE',
-      )
-      if (allUnreachable) {
-        return jsonError(
-          503,
-          'PRINT_BRIDGE_UNREACHABLE',
-          'Print bridge is not running. Start it with: bun run print-bridge',
-        )
-      }
-      const allUnconfigured = failures.every(
-        (r) => r.code === 'PRINTER_NOT_CONFIGURED',
-      )
-      if (allUnconfigured) {
-        return jsonError(400, 'PRINTER_NOT_CONFIGURED', 'Set the printer IP in Settings first')
-      }
-      if (failures.some((r) => r.code === 'QR_REQUIRED')) {
-        return jsonError(409, 'QR_REQUIRED', 'Phase-2 QR required')
-      }
-      return jsonError(502, 'PRINT_FAILED', 'Could not print the receipt')
+    /** @type {{ kind: string, rawBase64: string, bytes: number }[]} */
+    const copies = []
+    for (const kind of RECEIPT_COPY_KINDS) {
+      const buffer = await buildEscposBuffer({
+        ...receipt,
+        copyLabel: receiptCopyLabel(kind, locale),
+      })
+      copies.push({
+        kind,
+        rawBase64: buffer.toString('base64'),
+        bytes: buffer.length,
+      })
     }
 
-    const firstOk = successes[0]
     return jsonOk({
-      printed: true,
-      printedCount: successes.length,
-      failedCount: failures.length,
-      printers: results,
-      dryRun: successes.every((r) => r.dryRun),
-      dryRunPath: firstOk.dryRunPath,
-      bytes: firstOk.bytes,
+      ready: true,
+      printers,
+      copies,
     })
   } catch (err) {
     return handleRouteError(err, 'POST /api/auth/pos/print')

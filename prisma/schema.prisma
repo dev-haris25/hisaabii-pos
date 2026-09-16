@@ -141,6 +141,9 @@ model BusinessSettings {
   /// Max order discount in SAR at POS checkout. Null = no cap. "0" = no discount.
   discountCap String?
 
+  /// Touch-till in-app numpad for POS money fields. Off = physical keyboard.
+  posOnScreenKeypad Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

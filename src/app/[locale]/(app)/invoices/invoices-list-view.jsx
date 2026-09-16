@@ -34,6 +34,7 @@ import {
 } from '@/components/row-actions/action-icon-button'
 import { usePathname, useRouter, Link } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
+import { printDocument } from '@/lib/print/print-document'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import { canReportInvoiceToZatca } from '@/lib/invoices/map-invoice-json'
 import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
@@ -215,7 +216,7 @@ export function InvoicesListView({
   const printMutation = useMutation({
     mutationFn: (/** @type {string} */ id) => {
       setPrintingId(id)
-      return authPost('/pos/print', { invoiceId: id })
+      return printDocument({ invoiceId: id })
     },
     onSuccess: (data) => {
       toastPrintResult(t, data)
@@ -234,7 +235,7 @@ export function InvoicesListView({
       if (!invoiceId) {
         throw new AuthApiError(400, 'VALIDATION_ERROR', 'Missing invoice')
       }
-      return authPost('/pos/print', { invoiceId })
+      return printDocument({ invoiceId })
     },
     onSuccess: (data) => {
       toastPrintResult(t, data)

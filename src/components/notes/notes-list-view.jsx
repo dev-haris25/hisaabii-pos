@@ -28,6 +28,7 @@ import {
 } from '@/components/row-actions/action-icon-button'
 import { usePathname, useRouter, Link } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
+import { printDocument } from '@/lib/print/print-document'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import { bulkDeleteRows } from '@/lib/list-views/bulk-delete-rows'
 import { canRepairFailedNote, canSoftDeleteNote } from '@/lib/notes/can-repair-failed-note'
@@ -186,7 +187,7 @@ export function NotesListView({
   const printMutation = useMutation({
     mutationFn: (/** @type {string} */ id) => {
       setPrintingId(id)
-      return authPost('/pos/print', { noteId: id, noteType: documentNature })
+      return printDocument({ noteId: id, noteType: documentNature })
     },
     onSuccess: (data) => {
       toastPrintResult(tInv, data)

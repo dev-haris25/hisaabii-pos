@@ -17,6 +17,7 @@ import { useGeminiArSuggestion } from '@/hooks/use-gemini-ar-suggestion'
 import { useGeminiEnSuggestion } from '@/hooks/use-gemini-en-suggestion'
 import { useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPatch, authPost } from '@/lib/api/auth-client'
+import { printDocument } from '@/lib/print/print-document'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import {
   computeInvoiceTotals,
@@ -236,7 +237,7 @@ export function InvoiceEditView({
       if (!createdNote?.note?.id) {
         throw new AuthApiError(400, 'VALIDATION_ERROR', 'Missing note')
       }
-      return authPost('/pos/print', {
+      return printDocument({
         noteId: String(createdNote.note.id),
         noteType: createdNote.documentNature,
       })
