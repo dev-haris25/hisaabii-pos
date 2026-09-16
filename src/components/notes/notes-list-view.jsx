@@ -6,6 +6,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Download,
   Eye,
   Pencil,
   Printer,
@@ -28,7 +29,9 @@ import {
 } from '@/components/row-actions/action-icon-button'
 import { usePathname, useRouter, Link } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
+import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
 import { printDocument } from '@/lib/print/print-document'
+import { invoiceReceiptActionLabel } from '@/lib/print/receipt-action-label'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import { bulkDeleteRows } from '@/lib/list-views/bulk-delete-rows'
 import { canRepairFailedNote, canSoftDeleteNote } from '@/lib/notes/can-repair-failed-note'
@@ -445,12 +448,16 @@ export function NotesListView({
                         </ActionIconLink>
                         {row.hasQr ? (
                           <ActionIconButton
-                            label={tInv('actionPrint')}
+                            label={invoiceReceiptActionLabel(tInv)}
                             disabled={printingId === row.id}
                             className="hover:text-hisabi-primary"
                             onClick={() => printMutation.mutate(row.id)}
                           >
-                            <Printer className="size-5" aria-hidden />
+                            {isHisabiDesktop() ? (
+                              <Printer className="size-5" aria-hidden />
+                            ) : (
+                              <Download className="size-5" aria-hidden />
+                            )}
                           </ActionIconButton>
                         ) : null}
                         {canReportNoteToZatca(row.zatcaStatus) ? (

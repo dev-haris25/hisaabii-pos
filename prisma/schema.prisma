@@ -104,9 +104,33 @@ model BusinessProfile {
   salarySlips           SalarySlip[]
   employeePayments      EmployeePayment[]
   businessSettings      BusinessSettings?
+  posTills              PosTill[]
 
   @@index([ownerUserId])
   @@map("business_profiles")
+}
+
+/// One physical till PC (rear display + cash drawer). Bound via local till id.
+model PosTill {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  name              String
+
+  displayEnabled  Boolean @default(true)
+  displayPort     String?
+  displayBaud     Int     @default(9600)
+  displayProtocol String  @default("vfd_ascii")
+
+  drawerEnabled  Boolean @default(true)
+  drawerPort     String?
+  drawerProtocol String  @default("escpos_pulse")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessProfileId])
+  @@map("pos_tills")
 }
 
 /// Extra LAN thermal printers for a restaurant (same receipt printed to each).

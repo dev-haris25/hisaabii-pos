@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Download,
   Eye,
   Loader2,
   Pencil,
@@ -34,7 +35,12 @@ import {
 } from '@/components/row-actions/action-icon-button'
 import { usePathname, useRouter, Link } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
+import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
 import { printDocument } from '@/lib/print/print-document'
+import {
+  invoiceReceiptActionLabel,
+  receiptActionLabel,
+} from '@/lib/print/receipt-action-label'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import { canReportInvoiceToZatca } from '@/lib/invoices/map-invoice-json'
 import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
@@ -562,12 +568,16 @@ export function InvoicesListView({
                         </ActionIconLink>
                         {row.status !== 'voided' && row.hasQr ? (
                           <ActionIconButton
-                            label={t('actionPrint')}
+                            label={invoiceReceiptActionLabel(t)}
                             disabled={printingId === row.id}
                             className="hover:text-hisabi-primary"
                             onClick={() => printMutation.mutate(row.id)}
                           >
-                            <Printer className="size-5" aria-hidden />
+                            {isHisabiDesktop() ? (
+                              <Printer className="size-5" aria-hidden />
+                            ) : (
+                              <Download className="size-5" aria-hidden />
+                            )}
                           </ActionIconButton>
                         ) : null}
                         {row.status !== 'voided' &&
@@ -863,7 +873,7 @@ export function InvoicesListView({
                   pending={modalPrintMutation.isPending}
                   onClick={() => modalPrintMutation.mutate()}
                 >
-                  {tPos('printReceipt')}
+                  {receiptActionLabel(tPos)}
                 </AuthSubmitButton>
               ) : (
                 <p className="type-body-sm text-hisabi-on-surface-variant text-center">

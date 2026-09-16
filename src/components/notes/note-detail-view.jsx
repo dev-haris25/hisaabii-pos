@@ -14,6 +14,7 @@ import { PageBackButton } from '@/components/shared/page-back-button'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
 import { printDocument } from '@/lib/print/print-document'
+import { invoiceReceiptActionLabel } from '@/lib/print/receipt-action-label'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import {
   canRepairFailedNote,
@@ -104,7 +105,12 @@ export function NoteDetailView({ documentNature, note, logoUrl = null }) {
 
   const printMutation = useMutation({
     mutationFn: () =>
-      printDocument({ noteId: note.id, noteType: documentNature }),
+      printDocument({
+        noteId: note.id,
+        noteType: documentNature,
+        invoice: note,
+        logoUrl,
+      }),
     onSuccess: (data) => {
       toastPrintResult(tInv, data)
     },
@@ -177,7 +183,7 @@ export function NoteDetailView({ documentNature, note, logoUrl = null }) {
               onClick={() => printMutation.mutate()}
             >
               <Printer className="size-4" aria-hidden />
-              {tInv('actionPrint')}
+              {invoiceReceiptActionLabel(tInv)}
             </AuthSubmitButton>
           ) : !canRepair ? (
             <p className="type-body-sm text-hisabi-on-surface-variant">

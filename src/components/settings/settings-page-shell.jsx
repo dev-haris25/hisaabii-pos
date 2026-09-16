@@ -17,6 +17,11 @@ const SETTINGS_LINKS = [
     subject: 'BusinessSettings',
   },
   {
+    href: '/settings/till',
+    labelKey: 'subNavTill',
+    subject: 'BusinessSettings',
+  },
+  {
     href: '/settings/data',
     labelKey: 'subNavData',
     subject: 'BusinessSettings',

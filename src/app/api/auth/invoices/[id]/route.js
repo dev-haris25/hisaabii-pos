@@ -5,6 +5,7 @@ import { handleRouteError } from '@/lib/api/route-error'
 import { PRISMA_INTERACTIVE_TRANSACTION_OPTIONS } from '@/lib/db/prisma-interactive-transaction-options'
 import { WHERE_NOT_DELETED } from '@/lib/db/soft-delete-scope'
 import { mapInvoiceDetailToJson } from '@/lib/invoices/map-invoice-json'
+import { restaurantLogoPreviewUrl } from '@/lib/print/load-receipt-logo'
 import {
   cashierWindowForbiddenResponse,
   requireInvoiceRestaurant,
@@ -40,6 +41,40 @@ const repairLineSchema = z.object({
 const repairBodySchema = z.object({
   lines: z.array(repairLineSchema).min(1).max(100),
 })
+
+export async function GET(_request, context) {
+  try {
+    const auth = await requireInvoiceRestaurant()
+    if (auth.error) return auth.error
+
+    const { id } = await context.params
+    const invoice = await prisma.invoice.findFirst({
+      where: { id, businessProfileId: auth.profileId, ...WHERE_NOT_DELETED },
+      include: {
+        lines: { orderBy: { sortOrder: 'asc' } },
+        createdByStaff: { select: { id: true, name: true } },
+        kitchenOrder: { select: { orderNumber: true, status: true } },
+      },
+    })
+    if (!invoice) return jsonError(404, 'NOT_FOUND', 'Invoice not found')
+    const windowErr = cashierWindowForbiddenResponse(
+      auth.isCashier,
+      invoice.invoiceDate,
+    )
+    if (windowErr) return windowErr
+
+    const profile = await prisma.businessProfile.findUnique({
+      where: { id: auth.profileId },
+      select: { logoStoragePath: true, updatedAt: true, id: true },
+    })
+    return jsonOk({
+      invoice: mapInvoiceDetailToJson(invoice),
+      logoUrl: restaurantLogoPreviewUrl(profile),
+    })
+  } catch (err) {
+    return handleRouteError(err, 'GET /api/auth/invoices/[id]')
+  }
+}
 
 /**
  * Soft-delete a failed invoice (hidden from lists; number stays reserved).

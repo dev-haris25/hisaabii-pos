@@ -5,6 +5,10 @@ import { toast } from 'sonner'
  * @param {Record<string, unknown> | undefined} data
  */
 export function toastPrintResult(t, data) {
+  if (data?.downloaded) {
+    toast.success(t('downloadSuccess'))
+    return
+  }
   if (data?.dryRun) {
     toast.success(t('printDryRunSuccess'))
     return

@@ -50,6 +50,12 @@ const ROUTE_PERMISSIONS = [
     },
   },
   {
+    pattern: /^\/pos\/till/,
+    methods: {
+      GET: { action: 'read', subject: 'Pos' },
+    },
+  },
+  {
     pattern: /^\/pos\/print/,
     methods: {
       POST: { action: 'create', subject: 'Pos' },
@@ -80,6 +86,14 @@ const ROUTE_PERMISSIONS = [
       POST: { action: 'create', subject: 'DebitNote' },
       PATCH: { action: 'update', subject: 'DebitNote' },
       DELETE: { action: 'delete', subject: 'DebitNote' },
+    },
+  },
+  {
+    pattern: /^\/tills/,
+    methods: {
+      GET: { action: 'read', subject: 'BusinessSettings' },
+      POST: { action: 'update', subject: 'BusinessSettings' },
+      PATCH: { action: 'update', subject: 'BusinessSettings' },
     },
   },
   {

@@ -18,6 +18,7 @@ import { useGeminiEnSuggestion } from '@/hooks/use-gemini-en-suggestion'
 import { useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPatch, authPost } from '@/lib/api/auth-client'
 import { printDocument } from '@/lib/print/print-document'
+import { receiptActionLabel } from '@/lib/print/receipt-action-label'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import {
   computeInvoiceTotals,
@@ -240,6 +241,8 @@ export function InvoiceEditView({
       return printDocument({
         noteId: String(createdNote.note.id),
         noteType: createdNote.documentNature,
+        invoice: createdNote.note,
+        logoUrl,
       })
     },
     onSuccess: (data) => {
@@ -763,7 +766,7 @@ export function InvoiceEditView({
                   pending={printMutation.isPending}
                   onClick={() => printMutation.mutate()}
                 >
-                  {tPos('printReceipt')}
+                  {receiptActionLabel(tPos)}
                 </AuthSubmitButton>
               ) : (
                 <p className="type-body-sm text-hisabi-on-surface-variant text-center">

@@ -15,6 +15,7 @@ import { PageBackButton } from '@/components/shared/page-back-button'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
 import { printDocument } from '@/lib/print/print-document'
+import { invoiceReceiptActionLabel } from '@/lib/print/receipt-action-label'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import { canReportInvoiceToZatca } from '@/lib/invoices/map-invoice-json'
 import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
@@ -135,7 +136,12 @@ export function InvoiceDetailView({ invoice, logoUrl = null }) {
   })
 
   const printMutation = useMutation({
-    mutationFn: () => printDocument({ invoiceId: invoice.id }),
+    mutationFn: () =>
+      printDocument({
+        invoiceId: invoice.id,
+        invoice,
+        logoUrl,
+      }),
     onSuccess: (data) => {
       toastPrintResult(t, data)
     },
@@ -220,7 +226,7 @@ export function InvoiceDetailView({ invoice, logoUrl = null }) {
               onClick={() => printMutation.mutate()}
             >
               <Printer className="size-4" aria-hidden />
-              {t('actionPrint')}
+              {invoiceReceiptActionLabel(t)}
             </AuthSubmitButton>
           ) : isVoided ? null : (
             <p className="type-body-sm text-hisabi-on-surface-variant">
@@ -333,6 +339,9 @@ function LinkedNoteCard({ note, logoUrl, documentLabel }) {
       printDocument({
         noteId: note.id,
         noteType: note.documentNature,
+        invoice: note,
+        logoUrl,
+        documentLabel,
       }),
     onSuccess: (data) => {
       toastPrintResult(t, data)
@@ -381,7 +390,7 @@ function LinkedNoteCard({ note, logoUrl, documentLabel }) {
             onClick={() => printMutation.mutate()}
           >
             <Printer className="size-4" aria-hidden />
-            {t('actionPrint')}
+            {invoiceReceiptActionLabel(t)}
           </AuthSubmitButton>
         ) : null}
       </div>

@@ -13,6 +13,7 @@ import {
   canSoftDeleteNote,
 } from '@/lib/notes/can-repair-failed-note'
 import { mapDebitNoteDetailToJson } from '@/lib/notes/map-note-json'
+import { restaurantLogoPreviewUrl } from '@/lib/print/load-receipt-logo'
 import {
   buildRepairedDocumentLines,
   CLEARED_ZATCA_ARTIFACTS,
@@ -35,6 +36,34 @@ const repairBodySchema = z.object({
   reasonEn: z.string().trim().max(500).optional().nullable(),
   lines: z.array(repairLineSchema).min(1).max(100),
 })
+
+export async function GET(_request, context) {
+  try {
+    const auth = await requireInvoiceRestaurant()
+    if (auth.error) return auth.error
+    const { id } = await context.params
+    const note = await prisma.debitNote.findFirst({
+      where: { id, businessProfileId: auth.profileId, ...WHERE_NOT_DELETED },
+      include: {
+        lines: { orderBy: { sortOrder: 'asc' } },
+        createdByStaff: { select: { id: true, name: true } },
+      },
+    })
+    if (!note) return jsonError(404, 'NOT_FOUND', 'Note not found')
+    const windowErr = cashierWindowForbiddenResponse(auth.isCashier, note.noteDate)
+    if (windowErr) return windowErr
+    const profile = await prisma.businessProfile.findUnique({
+      where: { id: auth.profileId },
+      select: { id: true, logoStoragePath: true, updatedAt: true },
+    })
+    return jsonOk({
+      note: mapDebitNoteDetailToJson(note),
+      logoUrl: restaurantLogoPreviewUrl(profile),
+    })
+  } catch (err) {
+    return handleRouteError(err, 'GET /api/auth/debit-notes/[id]')
+  }
+}
 
 export async function DELETE(_request, context) {
   try {

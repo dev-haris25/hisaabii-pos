@@ -31,7 +31,13 @@ import { PosItemModifiersFlow } from '@/components/pos/pos-item-modifiers-flow'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
+import { getHisabiDesktop, isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
+import {
+  openTillCashDrawer,
+  writeTillCustomerDisplay,
+} from '@/lib/desktop/till-hardware'
 import { printDocument } from '@/lib/print/print-document'
+import { receiptActionLabel } from '@/lib/print/receipt-action-label'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import {
   allocateOrderDiscount,
@@ -156,6 +162,19 @@ export function PosCheckoutView({
   const discountCap = menuQuery.data?.discountCap ?? null
   const discountCapLimit = parseDiscountCap(discountCap)
   const keypadEnabled = menuQuery.data?.posOnScreenKeypad === true
+  const desktop = isHisabiDesktop()
+
+  const tillQuery = useQuery({
+    queryKey: ['pos', 'bound-till'],
+    enabled: desktop,
+    queryFn: async () => {
+      const tillId = await getHisabiDesktop()?.getTillId?.()
+      if (!tillId) return { till: null }
+      return authGet(`/pos/till?id=${encodeURIComponent(tillId)}`)
+    },
+    staleTime: 15_000,
+  })
+  const boundTill = tillQuery.data?.till ?? null
 
   const filteredItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase()
@@ -194,6 +213,15 @@ export function PosCheckoutView({
       })),
     )
   }, [cart, discount])
+
+  useEffect(() => {
+    if (!desktop) return undefined
+    const text = cart.length === 0 ? '0.00' : String(cartTotals.grandTotal)
+    const timer = window.setTimeout(() => {
+      void writeTillCustomerDisplay(boundTill, text).catch(() => {})
+    }, 200)
+    return () => window.clearTimeout(timer)
+  }, [desktop, boundTill, cart.length, cartTotals.grandTotal])
 
   const changeDisplay = useMemo(() => {
     if (paymentMethod !== 'cash') return null
@@ -268,6 +296,7 @@ export function PosCheckoutView({
       setPaymentMethod('cash')
       setFieldErrors({ discount: '', tendered: '' })
       setNumpadField(null)
+      void openTillCashDrawer(boundTill).catch(() => {})
     },
     onError: (err) => {
       const code = err instanceof AuthApiError ? err.code : undefined
@@ -435,7 +464,11 @@ export function PosCheckoutView({
       if (!invoiceId) {
         throw new AuthApiError(400, 'VALIDATION_ERROR', 'Missing invoice')
       }
-      return printDocument({ invoiceId })
+      return printDocument({
+        invoiceId,
+        invoice: receipt ?? undefined,
+        logoUrl: restaurantLogoUrl,
+      })
     },
     onSuccess: (data) => {
       toastPrintResult(t, data)
@@ -1070,7 +1103,7 @@ export function PosCheckoutView({
                   pending={printMutation.isPending}
                   onClick={() => printMutation.mutate()}
                 >
-                  {t('printReceipt')}
+                  {receiptActionLabel(t)}
                 </AuthSubmitButton>
               ) : (
                 <p className="type-body-sm text-hisabi-on-surface-variant text-center">
