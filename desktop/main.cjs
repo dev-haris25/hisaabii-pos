@@ -66,7 +66,7 @@ function appUrl() {
   )
 }
 
-const BRAND_GREEN = '#004d40'
+const BRAND_GREEN = '#00342b'
 const LOAD_TIMEOUT_MS = 30_000
 
 /** @type {Electron.BrowserWindow | null} */
@@ -89,27 +89,28 @@ function loadingPageHtml() {
       display: grid;
       place-items: center;
       background: #ffffff;
-      font-family: system-ui, Segoe UI, sans-serif;
       color: ${BRAND_GREEN};
     }
-    .wrap { text-align: center; }
     .spinner {
-      width: 44px;
-      height: 44px;
-      margin: 0 auto 20px;
-      border: 3px solid #d7ebe4;
-      border-top-color: ${BRAND_GREEN};
-      border-radius: 50%;
-      animation: spin .8s linear infinite;
+      width: 2.75rem;
+      height: 2.75rem;
+      animation: spin 1s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    p { margin: 0; font-size: 15px; font-weight: 600; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="spinner" aria-hidden="true"></div>
-    <p>Loading Hisabi POS…</p>
+  <div role="status" aria-live="polite" aria-label="Loading">
+    <!-- Same shape as Lucide Loader2 used by HisabiSpinner on the web app -->
+    <svg class="spinner" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M21 12a9 9 0 1 1-6.219-8.56"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
   </div>
 </body>
 </html>`
