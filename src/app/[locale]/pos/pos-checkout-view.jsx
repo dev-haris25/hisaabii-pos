@@ -58,6 +58,7 @@ const MONEY_RE = /^\d+(\.\d{1,4})?$/
  *   lineKey: string
  *   menuItemId: string
  *   name: string
+ *   nameAr: string
  *   unitPrice: string
  *   vatPreset: string
  *   quantity: number
@@ -298,6 +299,7 @@ export function PosCheckoutView({
       payload.customizationIds,
     )
     const name = itemDisplayName(item)
+    const nameAr = String(item.nameAr ?? '').trim()
     setCart((prev) => {
       if (existingKey) {
         return prev.map((line) =>
@@ -306,6 +308,7 @@ export function PosCheckoutView({
                 ...line,
                 lineKey: nextKey,
                 name,
+                nameAr,
                 unitPrice: payload.unitPrice,
                 variantOptionIds: payload.variantOptionIds,
                 customizationIds: payload.customizationIds,
@@ -330,6 +333,7 @@ export function PosCheckoutView({
           lineKey: nextKey,
           menuItemId: item.id,
           name,
+          nameAr,
           unitPrice: payload.unitPrice,
           vatPreset: item.vatPreset,
           quantity: 1,
@@ -735,9 +739,19 @@ export function PosCheckoutView({
                       <button
                         type="button"
                         onClick={() => editCartLine(line)}
-                        className="type-label-md truncate text-start font-bold text-hisabi-on-surface hover:underline"
+                        className="block w-full min-w-0 text-start hover:underline"
                       >
-                        {line.name}
+                        <span className="type-label-md line-clamp-2 font-bold text-hisabi-on-surface">
+                          {line.name}
+                        </span>
+                        {locale !== 'ar' && line.nameAr ? (
+                          <span
+                            dir="rtl"
+                            className="type-body-sm mt-0.5 line-clamp-2 block text-hisabi-on-surface-variant"
+                          >
+                            {line.nameAr}
+                          </span>
+                        ) : null}
                       </button>
                       <LineModifierSummary
                         snapshot={line.modifiersSnapshot}
