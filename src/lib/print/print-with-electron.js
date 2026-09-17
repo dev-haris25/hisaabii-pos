@@ -2,7 +2,7 @@
 
 import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
 import { getHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
-import { renderThermalReceiptPrintHtml } from '@/lib/print/render-thermal-receipt-print-html'
+import { renderThermalReceiptPrintJobs } from '@/lib/print/render-thermal-receipt-print-html'
 import {
   normalizePrintVia,
   parseLanPrinters,
@@ -100,9 +100,9 @@ export async function printWithElectron(data) {
         throw new AuthApiError(400, 'VALIDATION_ERROR', 'Missing document')
       }
       requireQr(invoice)
-      let html
+      let jobs
       try {
-        html = await renderThermalReceiptPrintHtml({
+        jobs = await renderThermalReceiptPrintJobs({
           invoice,
           logoUrl: data.logoUrl ?? null,
           documentLabel: data.documentLabel ?? invoice.documentLabel ?? null,
@@ -111,10 +111,16 @@ export async function printWithElectron(data) {
         throwPrintError(err)
       }
       for (const device of winprinters) {
-        try {
-          await desktop.printWin({ printerName: device.id, html })
-        } catch (err) {
-          throwPrintError(err)
+        for (const job of jobs) {
+          try {
+            await desktop.printWin({
+              printerName: device.id,
+              html: job.html,
+              heightMicrons: job.heightMicrons,
+            })
+          } catch (err) {
+            throwPrintError(err)
+          }
         }
       }
     } else {

@@ -413,12 +413,13 @@ ipcMain.handle('hw:printUsb', async (_e, payload) => {
 ipcMain.handle('hw:printWin', async (_e, payload) => {
   const printerName = String(payload?.printerName ?? '').trim()
   const html = String(payload?.html ?? '')
+  const heightMicrons = Number(payload?.heightMicrons) || 0
   if (!printerName || !html) throw new Error('win print payload missing')
 
   const printWin = new BrowserWindow({
     show: false,
     width: 302,
-    height: 1200,
+    height: 1600,
     webPreferences: {
       sandbox: true,
       contextIsolation: true,
@@ -433,30 +434,31 @@ ipcMain.handle('hw:printWin', async (_e, payload) => {
       const timer = setTimeout(() => {
         reject(new Error('print timeout'))
       }, 45000)
-      printWin.webContents.print(
-        {
-          silent: true,
-          deviceName: printerName,
-          printBackground: true,
-          color: false,
-          margins: { marginType: 'none' },
-          pageSize: {
-            width: 80000,
-            height: 297000,
-          },
-        },
-        (success, failureReason) => {
-          clearTimeout(timer)
-          if (success) resolve(true)
-          else {
-            reject(
-              new Error(
-                `Windows print failed (${printerName}): ${failureReason || 'unknown'}`,
-              ),
-            )
-          }
-        },
-      )
+      /** @type {Electron.WebContentsPrintOptions} */
+      const options = {
+        silent: true,
+        deviceName: printerName,
+        printBackground: true,
+        color: true,
+        margins: { marginType: 'none' },
+      }
+      if (heightMicrons >= 40000) {
+        options.pageSize = {
+          width: 80000,
+          height: heightMicrons,
+        }
+      }
+      printWin.webContents.print(options, (success, failureReason) => {
+        clearTimeout(timer)
+        if (success) resolve(true)
+        else {
+          reject(
+            new Error(
+              `Windows print failed (${printerName}): ${failureReason || 'unknown'}`,
+            ),
+          )
+        }
+      })
     })
   } finally {
     if (!printWin.isDestroyed()) printWin.close()

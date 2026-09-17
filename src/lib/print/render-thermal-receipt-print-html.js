@@ -1,44 +1,43 @@
 'use client'
 
-import { captureThermalReceiptCanvas } from '@/lib/print/html2canvas-thermal'
 import {
   mountThermalReceiptPages,
   unmountThermalReceiptPages,
 } from '@/lib/print/mount-thermal-receipt-pages'
+import {
+  serializeThermalReceiptInnerHtml,
+  wrapThermalReceiptDocument,
+} from '@/lib/print/serialize-thermal-receipt-html'
 
 /**
- * Rasterize the thermal preview and wrap it as print-ready HTML.
- * Windows GDI printers (USB Printing) receive this as a normal print job.
+ * Build one Windows print job per receipt copy (customer, then kitchen).
+ * Uses the live preview HTML — not a screenshot — so layout matches the UI.
  *
  * @param {{
  *   invoice: Record<string, unknown>
  *   logoUrl?: string | null
  *   documentLabel?: string | null
  * }} opts
+ * @returns {Promise<{ html: string, heightMicrons: number }[]>}
  */
-export async function renderThermalReceiptPrintHtml(opts) {
+export async function renderThermalReceiptPrintJobs(opts) {
   const mounted = await mountThermalReceiptPages(opts)
+  const dir = document.documentElement.dir === 'rtl' ? 'rtl' : 'ltr'
   try {
-    const images = []
-    for (const page of mounted.pages) {
-      const canvas = await captureThermalReceiptCanvas(page)
-      images.push({
-        src: canvas.toDataURL('image/png'),
-        heightMm: Math.max((canvas.height * 80) / canvas.width, 80),
-      })
-    }
-    const body = images
-      .map(
-        (img) =>
-          `<div class="copy" style="page-break-after:always"><img src="${img.src}" alt="" /></div>`,
+    return mounted.pages.map((page) => {
+      const width = Math.max(page.clientWidth, 1)
+      const heightMm = Math.max(
+        50,
+        Math.ceil((page.scrollHeight * 80) / width) + 4,
       )
-      .join('')
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-@page { size: 80mm auto; margin: 0; }
-html, body { margin: 0; padding: 0; width: 80mm; background: #fff; }
-.copy { width: 80mm; }
-img { width: 80mm; display: block; }
-</style></head><body>${body}</body></html>`
+      return {
+        html: wrapThermalReceiptDocument(
+          serializeThermalReceiptInnerHtml(page),
+          dir,
+        ),
+        heightMicrons: heightMm * 1000,
+      }
+    })
   } finally {
     unmountThermalReceiptPages(mounted)
   }
