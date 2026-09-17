@@ -26,22 +26,27 @@ export async function renderThermalReceiptPrintJobs(opts) {
   const mounted = await mountThermalReceiptPages(opts)
   const dir = document.documentElement.dir === 'rtl' ? 'rtl' : 'ltr'
   try {
-    return mounted.pages.map((page) => {
+    /** @type {{ html: string, heightMicrons: number, paperFormat: 'a4' | 'thermal80' }[]} */
+    const jobs = []
+    for (const page of mounted.pages) {
       const width = Math.max(page.clientWidth, 1)
       const heightMm = Math.max(
         80,
         Math.ceil(((page.scrollHeight * 80) / width) * 1.12) + 10,
       )
-      return {
-        html: wrapThermalReceiptDocument(
-          serializeThermalReceiptInnerHtml(page, { forThermalPrinter: true }),
-          dir,
-          { forThermalPrinter: true, paperFormat },
-        ),
+      const innerHtml = await serializeThermalReceiptInnerHtml(page, {
+        forThermalPrinter: true,
+      })
+      jobs.push({
+        html: wrapThermalReceiptDocument(innerHtml, dir, {
+          forThermalPrinter: true,
+          paperFormat,
+        }),
         heightMicrons: heightMm * 1000,
         paperFormat,
-      }
-    })
+      })
+    }
+    return jobs
   } finally {
     unmountThermalReceiptPages(mounted)
   }

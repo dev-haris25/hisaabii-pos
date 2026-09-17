@@ -197,13 +197,78 @@ img {
 `
 
 /**
+ * Electron print loads `data:text/html` with no session cookies, so relative
+ * `/api/auth/.../logo` URLs fail. Copy pixels from already-loaded imgs in the
+ * app window into data URLs on the clone (fetch fallback if canvas fails).
+ *
+ * @param {HTMLElement} source
+ * @param {HTMLElement} clone
+ */
+async function inlineImagesAsDataUrls(source, clone) {
+  const srcImgs = [...source.querySelectorAll('img')]
+  const destImgs = [...clone.querySelectorAll('img')]
+  const n = Math.min(srcImgs.length, destImgs.length)
+  for (let i = 0; i < n; i++) {
+    const srcImg = srcImgs[i]
+    const destImg = destImgs[i]
+    if (!(srcImg instanceof HTMLImageElement) || !(destImg instanceof HTMLImageElement)) {
+      continue
+    }
+    const existing = String(srcImg.currentSrc || srcImg.src || '')
+    if (!existing) continue
+    if (existing.startsWith('data:')) {
+      destImg.setAttribute('src', existing)
+      continue
+    }
+
+    let dataUrl = /** @type {string | null} */ (null)
+    const w = srcImg.naturalWidth
+    const h = srcImg.naturalHeight
+    if (w > 0 && h > 0) {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(srcImg, 0, 0)
+          dataUrl = canvas.toDataURL('image/png')
+        }
+      } catch {
+        dataUrl = null
+      }
+    }
+
+    if (!dataUrl) {
+      try {
+        const res = await fetch(existing, { credentials: 'include' })
+        if (res.ok) {
+          const blob = await res.blob()
+          dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(String(reader.result ?? ''))
+            reader.onerror = () => reject(reader.error)
+            reader.readAsDataURL(blob)
+          })
+        }
+      } catch {
+        dataUrl = null
+      }
+    }
+
+    if (dataUrl) destImg.setAttribute('src', dataUrl)
+  }
+}
+
+/**
  * Snapshot the on-screen thermal preview so the print window matches it
  * without Tailwind / html2canvas.
  *
  * @param {HTMLElement} root
  * @param {{ forThermalPrinter?: boolean }} [opts]
+ * @returns {Promise<string>}
  */
-export function serializeThermalReceiptInnerHtml(root, opts = {}) {
+export async function serializeThermalReceiptInnerHtml(root, opts = {}) {
   const forPrinter = opts.forThermalPrinter === true
   const source =
     root.firstElementChild instanceof HTMLElement ? root.firstElementChild : root
@@ -224,6 +289,7 @@ export function serializeThermalReceiptInnerHtml(root, opts = {}) {
     clone.style.maxWidth = '100%'
     clone.style.color = PRINT_INK
     clone.style.overflow = 'visible'
+    await inlineImagesAsDataUrls(source, clone)
     replaceSarGlyphForPrint(clone)
     convertLabelValueFlexRowsToTable(clone)
   } else {
