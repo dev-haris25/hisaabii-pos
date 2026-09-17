@@ -26,14 +26,16 @@ export async function renderThermalReceiptPrintJobs(opts) {
   try {
     return mounted.pages.map((page) => {
       const width = Math.max(page.clientWidth, 1)
+      // Extra slack: print path bumps font/line-height vs the screen mount.
       const heightMm = Math.max(
         50,
-        Math.ceil((page.scrollHeight * 80) / width) + 4,
+        Math.ceil(((page.scrollHeight * 80) / width) * 1.25) + 14,
       )
       return {
         html: wrapThermalReceiptDocument(
-          serializeThermalReceiptInnerHtml(page),
+          serializeThermalReceiptInnerHtml(page, { forThermalPrinter: true }),
           dir,
+          { forThermalPrinter: true },
         ),
         heightMicrons: heightMm * 1000,
       }

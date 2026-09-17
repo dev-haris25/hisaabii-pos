@@ -438,9 +438,12 @@ ipcMain.handle('hw:printWin', async (_e, payload) => {
       const options = {
         silent: true,
         deviceName: printerName,
-        printBackground: true,
-        color: true,
+        // Thermal heads are mono — color/grayscale dithering makes text look washed out.
+        printBackground: false,
+        color: false,
         margins: { marginType: 'none' },
+        // Common 80mm ESC/POS class resolution; avoids soft antialiased scaling.
+        dpi: { horizontal: 203, vertical: 203 },
       }
       if (heightMicrons >= 40000) {
         options.pageSize = {
