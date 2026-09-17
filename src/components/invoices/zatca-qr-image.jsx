@@ -72,6 +72,6 @@ export function ZatcaQrImage({
 
   return (
     // eslint-disable-next-line @next/next/no-img-element -- data URL from TLV payload
-    <img src={src} alt="" width={size} height={size} className={className} />
+    <img src={src} alt="" className={className} />
   )
 }
