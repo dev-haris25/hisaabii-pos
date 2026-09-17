@@ -5,9 +5,9 @@ dist
 build
 
 .env
-.env.dev
 !.env.example
 !.env.prod
+!.env.dev
 
 src/generated
 tmp
