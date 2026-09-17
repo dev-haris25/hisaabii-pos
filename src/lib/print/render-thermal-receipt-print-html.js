@@ -1,5 +1,6 @@
 'use client'
 
+import { captureThermalReceiptCanvas } from '@/lib/print/html2canvas-thermal'
 import {
   mountThermalReceiptPages,
   unmountThermalReceiptPages,
@@ -16,16 +17,11 @@ import {
  * }} opts
  */
 export async function renderThermalReceiptPrintHtml(opts) {
-  const html2canvas = (await import('html2canvas')).default
   const mounted = await mountThermalReceiptPages(opts)
   try {
     const images = []
     for (const page of mounted.pages) {
-      const canvas = await html2canvas(page, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        useCORS: true,
-      })
+      const canvas = await captureThermalReceiptCanvas(page)
       images.push({
         src: canvas.toDataURL('image/png'),
         heightMm: Math.max((canvas.height * 80) / canvas.width, 80),
