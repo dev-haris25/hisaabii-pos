@@ -11,13 +11,13 @@ import {
 export const THERMAL_PAGE_WIDTH_MM = 80
 
 /**
- * Safe content width inside the printable area of typical 80mm heads.
- * Keep close to the on-screen preview (~280px) so lines do not wrap early.
+ * Content width inside the slip. Keep close to preview (~280px) so rows fit.
  */
-export const THERMAL_PRINT_CONTENT_WIDTH_MM = 76
+export const THERMAL_PRINT_CONTENT_WIDTH_MM = 78
 
 const PRINT_INK = '#000000'
 const PRINT_PAPER = '#ffffff'
+const SAR_GLYPH = '\u20C1'
 
 /**
  * @param {string} value
@@ -40,11 +40,83 @@ function printLineHeight(lineHeight, fontSize) {
   const fontPx = Number(String(fontSize).match(/^([\d.]+)/)?.[1] ?? 0)
   const lhPx = Number(String(lineHeight).match(/^([\d.]+)px$/i)?.[1] ?? 0)
   if (fontPx > 0) {
-    const min = Math.ceil(fontPx * 1.35)
-    if (lhPx > 0) return `${Math.max(min, Math.ceil(lhPx * 1.1))}px`
+    const min = Math.ceil(fontPx * 1.4)
+    if (lhPx > 0) return `${Math.max(min, Math.ceil(lhPx * 1.15))}px`
     return `${min}px`
   }
-  return bumpPx(lineHeight, 1.1, 15)
+  return bumpPx(lineHeight, 1.15, 16)
+}
+
+/**
+ * Electron print often lacks the Saudi Riyal webfont — U+20C1 becomes `#`
+ * and blows row width. Use plain "SAR" in the print HTML only.
+ *
+ * @param {HTMLElement} root
+ */
+function replaceSarGlyphForPrint(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  /** @type {Text[]} */
+  const nodes = []
+  while (walker.nextNode()) {
+    const node = walker.currentNode
+    if (node instanceof Text) nodes.push(node)
+  }
+  for (const node of nodes) {
+    if (!node.nodeValue?.includes(SAR_GLYPH)) continue
+    node.nodeValue = node.nodeValue.split(SAR_GLYPH).join('SAR')
+  }
+}
+
+/**
+ * Flex + justify-between clips in Chromium print. Two-child rows become
+ * a fixed table so label and value both stay visible on one line.
+ *
+ * @param {HTMLElement} root
+ */
+function convertLabelValueFlexRowsToTable(root) {
+  const candidates = [root, ...root.querySelectorAll('*')].filter(
+    (el) => el instanceof HTMLElement,
+  )
+  for (const el of candidates) {
+    const display = String(el.style.display || '').toLowerCase()
+    if (!display.includes('flex')) continue
+    const kids = [...el.children].filter((c) => c instanceof HTMLElement)
+    if (kids.length !== 2) continue
+
+    el.style.display = 'table'
+    el.style.width = '100%'
+    el.style.maxWidth = '100%'
+    el.style.tableLayout = 'fixed'
+    el.style.borderCollapse = 'collapse'
+    el.style.gap = ''
+    el.style.columnGap = ''
+    el.style.rowGap = ''
+    el.style.justifyContent = ''
+    el.style.flexWrap = ''
+    el.style.overflow = 'visible'
+
+    const [left, right] = kids
+    left.style.display = 'table-cell'
+    left.style.width = '42%'
+    left.style.verticalAlign = 'top'
+    left.style.textAlign = 'start'
+    left.style.paddingRight = '6px'
+    left.style.whiteSpace = 'normal'
+    left.style.overflow = 'visible'
+    left.style.wordBreak = 'break-word'
+    left.style.flexShrink = ''
+    left.style.minWidth = '0'
+
+    right.style.display = 'table-cell'
+    right.style.width = '58%'
+    right.style.verticalAlign = 'top'
+    right.style.textAlign = 'end'
+    right.style.whiteSpace = 'normal'
+    right.style.overflow = 'visible'
+    right.style.wordBreak = 'break-word'
+    right.style.flexShrink = ''
+    right.style.minWidth = '0'
+  }
 }
 
 /**
@@ -82,13 +154,11 @@ function copyComputedLayout(src, dest, opts = {}) {
       } else if (prop === 'lineHeight') {
         value = printLineHeight(value, cs.fontSize)
       } else if (prop === 'marginTop' || prop === 'marginBottom') {
-        value = bumpPx(value, 1.4, value === '0px' ? 0 : 3)
+        value = bumpPx(value, 1.5, value === '0px' ? 0 : 4)
       } else if (prop === 'rowGap' || prop === 'columnGap' || prop === 'gap') {
-        value = bumpPx(value, 1.25, 3)
-      } else if (prop === 'flexWrap') {
-        value = 'nowrap'
-      } else if (prop === 'whiteSpace' && cs.display.includes('flex')) {
-        value = 'nowrap'
+        value = bumpPx(value, 1.25, 4)
+      } else if (prop === 'overflow') {
+        value = 'visible'
       }
     }
 
@@ -102,10 +172,7 @@ function copyComputedLayout(src, dest, opts = {}) {
   dest.style.textShadow = 'none'
   if (forPrinter) {
     dest.style.color = PRINT_INK
-    if (String(cs.display).includes('flex')) {
-      dest.style.flexWrap = 'nowrap'
-      dest.style.alignItems = 'baseline'
-    }
+    dest.style.overflow = 'visible'
   }
 }
 
@@ -118,22 +185,7 @@ const PRINT_SHARED_RULES = `
   border-left-color: ${PRINT_INK} !important;
   box-shadow: none !important;
   text-shadow: none !important;
-}
-div[style*="display: flex"],
-div[style*="display:flex"] {
-  flex-wrap: nowrap !important;
-}
-div[style*="display: flex"] > span,
-div[style*="display:flex"] > span {
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-div[style*="display: flex"] > span:first-child,
-div[style*="display:flex"] > span:first-child {
-  flex-shrink: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible !important;
 }
 img {
   max-width: 100%;
@@ -171,6 +223,9 @@ export function serializeThermalReceiptInnerHtml(root, opts = {}) {
     clone.style.width = '100%'
     clone.style.maxWidth = '100%'
     clone.style.color = PRINT_INK
+    clone.style.overflow = 'visible'
+    replaceSarGlyphForPrint(clone)
+    convertLabelValueFlexRowsToTable(clone)
   } else {
     clone.style.width = `${THERMAL_PAGE_WIDTH_MM}mm`
     clone.style.maxWidth = `${THERMAL_PAGE_WIDTH_MM}mm`
@@ -201,7 +256,6 @@ ${fontCss}
 
   const sidePad = (THERMAL_PAGE_WIDTH_MM - THERMAL_PRINT_CONTENT_WIDTH_MM) / 2
 
-  // Normal office printer: real A4 page so 80mm CSS = true 80mm on paper.
   if (paperFormat === 'a4') {
     return `<!DOCTYPE html><html dir="${dir}"><head><meta charset="utf-8"><style>
 @page {
@@ -226,10 +280,11 @@ body {
   box-sizing: border-box;
   width: ${THERMAL_PAGE_WIDTH_MM}mm;
   max-width: ${THERMAL_PAGE_WIDTH_MM}mm;
-  padding: 1.5mm ${sidePad}mm 3mm;
+  padding: 2mm ${sidePad}mm 4mm;
   color: ${PRINT_INK};
   font-weight: 400;
   background: ${PRINT_PAPER};
+  overflow: visible;
 }
 ${PRINT_SHARED_RULES}
 ${fontCss}
@@ -253,9 +308,10 @@ html, body {
 }
 body {
   box-sizing: border-box;
-  padding: 1.5mm ${sidePad}mm 3mm;
+  padding: 2mm ${sidePad}mm 4mm;
   color: ${PRINT_INK};
   font-weight: 400;
+  overflow: visible;
 }
 ${PRINT_SHARED_RULES}
 ${fontCss}
