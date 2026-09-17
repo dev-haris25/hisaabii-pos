@@ -17,6 +17,8 @@ const usbPrinterSchema = z.object({
   id: z.string().trim().min(1).max(200),
   kind: z.enum(['serial', 'winprinter']),
   label: z.string().trim().max(200).optional(),
+  /** Windows printers only: A4 office paper vs 80mm thermal roll. */
+  paper: z.enum(['a4', 'thermal80']).optional(),
 })
 
 export const tillCreateSchema = z.object({

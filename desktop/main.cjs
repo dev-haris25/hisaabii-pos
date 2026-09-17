@@ -435,20 +435,26 @@ ipcMain.handle('hw:printWin', async (_e, payload) => {
         reject(new Error('print timeout'))
       }, 45000)
       /** @type {Electron.WebContentsPrintOptions} */
+      const paperFormat =
+        String(payload?.paperFormat ?? '') === 'thermal80' ? 'thermal80' : 'a4'
       const options = {
         silent: true,
         deviceName: printerName,
-        // Thermal heads are mono — color/grayscale dithering makes text look washed out.
-        printBackground: false,
+        // Thermal / mono heads — avoid color dithering that washes out text.
+        printBackground: true,
         color: false,
         margins: { marginType: 'none' },
-        // Common 80mm ESC/POS class resolution; avoids soft antialiased scaling.
-        dpi: { horizontal: 203, vertical: 203 },
+        preferCSSPageSize: true,
       }
-      if (heightMicrons >= 40000) {
+      if (paperFormat === 'a4') {
+        // Office printers: real A4 so an 80mm CSS slip is true 80mm on paper.
+        options.pageSize = 'A4'
+      } else {
+        // Do NOT set `dpi` — non-96 values shrink CSS layout on paper.
+        const height = Math.max(Number(heightMicrons) || 0, 80000)
         options.pageSize = {
           width: 80000,
-          height: heightMicrons,
+          height,
         }
       }
       printWin.webContents.print(options, (success, failureReason) => {

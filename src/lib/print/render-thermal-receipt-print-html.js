@@ -17,27 +17,29 @@ import {
  *   invoice: Record<string, unknown>
  *   logoUrl?: string | null
  *   documentLabel?: string | null
+ *   paperFormat?: 'a4' | 'thermal80'
  * }} opts
- * @returns {Promise<{ html: string, heightMicrons: number }[]>}
+ * @returns {Promise<{ html: string, heightMicrons: number, paperFormat: 'a4' | 'thermal80' }[]>}
  */
 export async function renderThermalReceiptPrintJobs(opts) {
+  const paperFormat = opts.paperFormat === 'a4' ? 'a4' : 'thermal80'
   const mounted = await mountThermalReceiptPages(opts)
   const dir = document.documentElement.dir === 'rtl' ? 'rtl' : 'ltr'
   try {
     return mounted.pages.map((page) => {
       const width = Math.max(page.clientWidth, 1)
-      // Extra slack: print path bumps font/line-height vs the screen mount.
       const heightMm = Math.max(
-        50,
-        Math.ceil(((page.scrollHeight * 80) / width) * 1.25) + 14,
+        80,
+        Math.ceil(((page.scrollHeight * 80) / width) * 1.12) + 10,
       )
       return {
         html: wrapThermalReceiptDocument(
           serializeThermalReceiptInnerHtml(page, { forThermalPrinter: true }),
           dir,
-          { forThermalPrinter: true },
+          { forThermalPrinter: true, paperFormat },
         ),
         heightMicrons: heightMm * 1000,
+        paperFormat,
       }
     })
   } finally {

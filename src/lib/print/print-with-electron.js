@@ -100,23 +100,27 @@ export async function printWithElectron(data) {
         throw new AuthApiError(400, 'VALIDATION_ERROR', 'Missing document')
       }
       requireQr(invoice)
-      let jobs
-      try {
-        jobs = await renderThermalReceiptPrintJobs({
-          invoice,
-          logoUrl: data.logoUrl ?? null,
-          documentLabel: data.documentLabel ?? invoice.documentLabel ?? null,
-        })
-      } catch (err) {
-        throwPrintError(err)
-      }
       for (const device of winprinters) {
+        const paperFormat =
+          device.paper === 'thermal80' ? 'thermal80' : 'a4'
+        let jobs
+        try {
+          jobs = await renderThermalReceiptPrintJobs({
+            invoice,
+            logoUrl: data.logoUrl ?? null,
+            documentLabel: data.documentLabel ?? invoice.documentLabel ?? null,
+            paperFormat,
+          })
+        } catch (err) {
+          throwPrintError(err)
+        }
         for (const job of jobs) {
           try {
             await desktop.printWin({
               printerName: device.id,
               html: job.html,
               heightMicrons: job.heightMicrons,
+              paperFormat: job.paperFormat,
             })
           } catch (err) {
             throwPrintError(err)
