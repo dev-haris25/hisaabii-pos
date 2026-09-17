@@ -72,12 +72,22 @@ export async function printWithElectron(data) {
   if (printVia === 'usb') {
     const devices = parseUsbPrinters(till.usbPrinters)
     const winprinters = devices.filter((d) => d.kind === 'winprinter')
-    const serials = devices.filter((d) => d.kind === 'serial')
+    /** Motherboard COM1/COM2 are for drawer/display — not a USB receipt printer. */
+    const serials = devices.filter(
+      (d) => d.kind === 'serial' && !/^COM[12]$/i.test(d.id),
+    )
     if (devices.length === 0) {
       throw new AuthApiError(
         400,
         'USB_PRINTER_NOT_CONFIGURED',
         'Choose a USB printer in Till settings',
+      )
+    }
+    if (winprinters.length === 0 && serials.length === 0) {
+      throw new AuthApiError(
+        400,
+        'USB_PRINTER_NOT_CONFIGURED',
+        'COM1/COM2 is not the USB receipt printer. In Till settings, tick the Windows printer name (for example XP-80C), not COM1.',
       )
     }
 
@@ -107,9 +117,7 @@ export async function printWithElectron(data) {
           throwPrintError(err)
         }
       }
-    }
-
-    if (serials.length) {
+    } else {
       if (!desktop.printUsb) {
         throw new AuthApiError(503, 'PRINT_FAILED', 'Desktop print is not available')
       }
@@ -125,6 +133,14 @@ export async function printWithElectron(data) {
               base64: rawBase64,
             })
           } catch (err) {
+            const raw = err instanceof Error ? err.message : String(err ?? '')
+            if (/file not found|cannot find|ENOENT/i.test(raw)) {
+              throw new AuthApiError(
+                502,
+                'PRINT_FAILED',
+                `${device.id} is not available. For a normal USB printer, tick the Windows printer name in Till settings, not a COM port.`,
+              )
+            }
             throwPrintError(err)
           }
         }
@@ -133,7 +149,7 @@ export async function printWithElectron(data) {
 
     return {
       printed: true,
-      printedCount: devices.length,
+      printedCount: winprinters.length || serials.length,
       failedCount: 0,
       dryRun: false,
     }
