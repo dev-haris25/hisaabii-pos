@@ -117,9 +117,13 @@ export function PosThermalReceiptPreview({
   return (
     <div
       className={cn(
-        'mx-auto w-full max-w-[18rem] bg-white px-3 py-4 text-hisabi-on-surface shadow-inner [font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace]',
+        'mx-auto w-full max-w-[18rem] bg-white px-3 py-4 text-hisabi-on-surface shadow-inner',
         className,
       )}
+      style={{
+        fontFamily:
+          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace, 'Hisabi Saudi Riyal'",
+      }}
     >
       <div className="space-y-1 text-center">
         {logoUrl ? (

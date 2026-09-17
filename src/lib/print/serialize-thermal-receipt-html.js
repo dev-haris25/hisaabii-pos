@@ -1,67 +1,11 @@
 'use client'
 
-const LAYOUT_PROPS = [
-  'boxSizing',
-  'display',
-  'flexDirection',
-  'flexWrap',
-  'justifyContent',
-  'alignItems',
-  'alignSelf',
-  'gap',
-  'rowGap',
-  'columnGap',
-  'width',
-  'maxWidth',
-  'minWidth',
-  'height',
-  'maxHeight',
-  'minHeight',
-  'padding',
-  'margin',
-  'fontFamily',
-  'fontSize',
-  'fontWeight',
-  'fontStyle',
-  'lineHeight',
-  'letterSpacing',
-  'textAlign',
-  'textDecoration',
-  'whiteSpace',
-  'wordBreak',
-  'direction',
-  'unicodeBidi',
-  'color',
-  'backgroundColor',
-  'borderTopWidth',
-  'borderRightWidth',
-  'borderBottomWidth',
-  'borderLeftWidth',
-  'borderTopStyle',
-  'borderRightStyle',
-  'borderBottomStyle',
-  'borderLeftStyle',
-  'borderTopColor',
-  'borderRightColor',
-  'borderBottomColor',
-  'borderLeftColor',
-  'borderRadius',
-  'objectFit',
-  'objectPosition',
-  'overflow',
-  'listStyle',
-]
-
-/**
- * @param {string} value
- * @param {string} prop
- */
-function safeCssValue(value, prop) {
-  if (!value || /oklch|oklab|color-mix|\blab\(|\blch\(/i.test(value)) {
-    return /background/i.test(prop) ? '#ffffff' : '#111111'
-  }
-  return value
-}
+import {
+  safeThermalCssValue,
+  saudiRiyalFontFaceCss,
+  THERMAL_RECEIPT_LAYOUT_PROPS,
+  withSaudiRiyalFont,
+} from '@/lib/print/thermal-receipt-computed-styles'
 
 /**
  * @param {HTMLElement} src
@@ -69,8 +13,13 @@ function safeCssValue(value, prop) {
  */
 function copyComputedLayout(src, dest) {
   const cs = getComputedStyle(src)
-  for (const prop of LAYOUT_PROPS) {
-    dest.style[prop] = safeCssValue(String(cs[prop] ?? ''), prop)
+  for (const prop of THERMAL_RECEIPT_LAYOUT_PROPS) {
+    const value = safeThermalCssValue(String(cs[prop] ?? ''), prop)
+    if (prop === 'fontFamily') {
+      dest.style.fontFamily = withSaudiRiyalFont(value)
+    } else {
+      dest.style[prop] = value
+    }
   }
   dest.style.boxShadow = 'none'
   dest.style.textShadow = 'none'
@@ -106,8 +55,10 @@ export function serializeThermalReceiptInnerHtml(root) {
  * @param {'ltr' | 'rtl'} dir
  */
 export function wrapThermalReceiptDocument(innerHtml, dir) {
+  const fontCss = saudiRiyalFontFaceCss()
   return `<!DOCTYPE html><html dir="${dir}"><head><meta charset="utf-8"><style>
 html, body { margin: 0; padding: 0; width: 80mm; background: #fff; color: #111; }
 img { max-width: 100%; height: auto; display: block; }
+${fontCss}
 </style></head><body>${innerHtml}</body></html>`
 }
