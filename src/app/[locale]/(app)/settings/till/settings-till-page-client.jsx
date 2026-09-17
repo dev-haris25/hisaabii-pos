@@ -27,7 +27,6 @@ import {
 import { hasFullAccess } from '@/lib/rbac/ability-utils'
 import {
   MAX_TILL_LAN_PRINTERS,
-  guessWinPrinterPaper,
   normalizePrintVia,
   parseLanPrinters,
   parseUsbPrinters,
@@ -43,7 +42,7 @@ const EMPTY_FORM = {
   drawerPort: '',
   printVia: /** @type {'lan' | 'usb'} */ ('lan'),
   lanPrinters: [{ ip: '', port: 9100 }],
-  usbPrinters: /** @type {{ id: string, kind: 'serial' | 'winprinter', label: string, paper: 'a4' | 'thermal80' }[]} */ ([]),
+  usbPrinters: /** @type {{ id: string, kind: 'serial' | 'winprinter', label: string }[]} */ ([]),
 }
 
 /**
@@ -498,84 +497,42 @@ export function SettingsTillPageClient() {
                   </p>
                 ) : (
                   usbDeviceOptions.map((device) => {
-                    const selected = form.usbPrinters.find(
+                    const checked = form.usbPrinters.some(
                       (row) => row.id === device.id && row.kind === device.kind,
                     )
-                    const checked = Boolean(selected)
                     return (
-                      <div
+                      <label
                         key={`${device.kind}-${device.id}`}
-                        className="space-y-hisabi-xs"
+                        className="flex items-center gap-hisabi-sm"
                       >
-                        <label className="flex items-center gap-hisabi-sm">
-                          <input
-                            type="checkbox"
-                            className="size-4 accent-hisabi-primary"
-                            checked={checked}
-                            disabled={!canUpdateHw}
-                            onChange={() => {
-                              setForm((f) => {
-                                if (checked) {
-                                  return {
-                                    ...f,
-                                    usbPrinters: f.usbPrinters.filter(
-                                      (row) =>
-                                        !(
-                                          row.id === device.id &&
-                                          row.kind === device.kind
-                                        ),
-                                    ),
-                                  }
-                                }
-                                const paper =
-                                  device.kind === 'winprinter'
-                                    ? guessWinPrinterPaper(device.id, device.label)
-                                    : 'thermal80'
+                        <input
+                          type="checkbox"
+                          className="size-4 accent-hisabi-primary"
+                          checked={checked}
+                          disabled={!canUpdateHw}
+                          onChange={() => {
+                            setForm((f) => {
+                              if (checked) {
                                 return {
                                   ...f,
-                                  usbPrinters: [
-                                    ...f.usbPrinters,
-                                    { ...device, paper },
-                                  ],
-                                }
-                              })
-                            }}
-                          />
-                          <span className="type-body-md">{device.label}</span>
-                        </label>
-                        {checked && device.kind === 'winprinter' ? (
-                          <div className="ms-6 flex flex-wrap items-center gap-hisabi-sm">
-                            <span className="type-label-sm text-hisabi-on-surface-variant">
-                              {t('tillPrinterPaper')}
-                            </span>
-                            <select
-                              className={cn(selectClass, 'max-w-[14rem]')}
-                              disabled={!canUpdateHw}
-                              value={selected?.paper === 'thermal80' ? 'thermal80' : 'a4'}
-                              onChange={(e) => {
-                                const paper =
-                                  e.target.value === 'thermal80'
-                                    ? 'thermal80'
-                                    : 'a4'
-                                setForm((f) => ({
-                                  ...f,
-                                  usbPrinters: f.usbPrinters.map((row) =>
-                                    row.id === device.id &&
-                                    row.kind === device.kind
-                                      ? { ...row, paper }
-                                      : row,
+                                  usbPrinters: f.usbPrinters.filter(
+                                    (row) =>
+                                      !(
+                                        row.id === device.id &&
+                                        row.kind === device.kind
+                                      ),
                                   ),
-                                }))
-                              }}
-                            >
-                              <option value="a4">{t('tillPrinterPaperA4')}</option>
-                              <option value="thermal80">
-                                {t('tillPrinterPaperThermal80')}
-                              </option>
-                            </select>
-                          </div>
-                        ) : null}
-                      </div>
+                                }
+                              }
+                              return {
+                                ...f,
+                                usbPrinters: [...f.usbPrinters, device],
+                              }
+                            })
+                          }}
+                        />
+                        <span className="type-body-md">{device.label}</span>
+                      </label>
                     )
                   })
                 )}
