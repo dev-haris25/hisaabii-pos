@@ -1,7 +1,7 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MonitorSmartphone, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, MonitorSmartphone, Plus, Trash2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -18,7 +18,13 @@ import {
   fieldInvalidClass,
   selectClass,
 } from '@/components/settings/settings-page-shell'
-import { AuthApiError, authGet, authPatch, authPost } from '@/lib/api/auth-client'
+import {
+  AuthApiError,
+  authDelete,
+  authGet,
+  authPatch,
+  authPost,
+} from '@/lib/api/auth-client'
 import { getHisabiDesktop, isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
 import {
   openTillCashDrawer,
@@ -66,6 +72,34 @@ function formFromTill(till) {
   }
 }
 
+/**
+ * @param {{
+ *   className?: string
+ *   disabled?: boolean
+ *   value: string
+ *   onChange: (value: string) => void
+ *   children: import('react').ReactNode
+ * }} props
+ */
+function TillSelect({ className, disabled, value, onChange, children }) {
+  return (
+    <div className="relative">
+      <select
+        className={cn(selectClass, className)}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        className="pointer-events-none absolute end-3 top-1/2 size-5 -translate-y-1/2 text-hisabi-on-surface-variant"
+        aria-hidden
+      />
+    </div>
+  )
+}
+
 export function SettingsTillPageClient() {
   const t = useTranslations('Settings')
   const tErr = useTranslations('AuthErrors')
@@ -99,11 +133,13 @@ export function SettingsTillPageClient() {
     api.listPrintDevices?.().then((list) => {
       if (Array.isArray(list)) {
         setPrintDevices(
-          list.map((row) => ({
-            id: String(row?.id ?? ''),
-            kind: row?.kind === 'winprinter' ? 'winprinter' : 'serial',
-            label: String(row?.label ?? row?.id ?? ''),
-          })).filter((row) => row.id),
+          list
+            .map((row) => ({
+              id: String(row?.id ?? ''),
+              kind: row?.kind === 'winprinter' ? 'winprinter' : 'serial',
+              label: String(row?.label ?? row?.id ?? ''),
+            }))
+            .filter((row) => row.id),
         )
       }
     })
@@ -120,6 +156,8 @@ export function SettingsTillPageClient() {
     () => (Array.isArray(tillsQuery.data?.tills) ? tillsQuery.data.tills : []),
     [tillsQuery.data],
   )
+
+  /** This PC’s till only (desktop binding). Browser falls back to first till for view/edit. */
   const boundTill = useMemo(() => {
     if (localTillId) {
       return tills.find((row) => row.id === localTillId) ?? null
@@ -185,11 +223,25 @@ export function SettingsTillPageClient() {
     },
   })
 
-  function bindTill(id) {
-    const api = getHisabiDesktop()
-    if (!api?.setTillId) return
-    api.setTillId(id).then(() => setLocalTillId(id))
-  }
+  const deleteMutation = useMutation({
+    mutationFn: () => {
+      if (!boundTill?.id) throw new AuthApiError(400, 'VALIDATION_ERROR')
+      return authDelete(`/tills/${boundTill.id}`)
+    },
+    onSuccess: async () => {
+      if (getHisabiDesktop()?.setTillId) {
+        await getHisabiDesktop().setTillId(null)
+      }
+      setLocalTillId(null)
+      setForm(formFromTill(null))
+      await queryClient.invalidateQueries({ queryKey: ['pos-tills'] })
+      toast.success(t('tillDeleted'))
+    },
+    onError: (err) => {
+      const code = err instanceof AuthApiError ? err.code : undefined
+      toast.error(code ? tErr(code) : tErr('generic'))
+    },
+  })
 
   async function testDisplay() {
     try {
@@ -226,6 +278,13 @@ export function SettingsTillPageClient() {
     }
     setNameError('')
     saveMutation.mutate()
+  }
+
+  function handleDelete() {
+    if (!boundTill?.id || !canUpdate) return
+    const name = String(boundTill.name ?? form.name ?? '')
+    if (!window.confirm(t('tillDeleteConfirm', { name }))) return
+    deleteMutation.mutate()
   }
 
   if (!canRead) {
@@ -282,77 +341,65 @@ export function SettingsTillPageClient() {
       ) : null}
 
       <SettingsSection title={t('tillListTitle')} icon={MonitorSmartphone}>
-        {tills.length === 0 ? (
-          <p className="type-body-md text-hisabi-on-surface-variant">{t('tillEmpty')}</p>
-        ) : (
-          <ul className="space-y-hisabi-sm">
-            {tills.map((row) => (
-              <li
-                key={String(row.id)}
-                className="flex flex-wrap items-center justify-between gap-hisabi-sm rounded-lg border border-hisabi-outline-variant/30 px-hisabi-md py-hisabi-sm"
+        {boundTill ? (
+          <div className="flex flex-wrap items-center justify-between gap-hisabi-sm rounded-lg border border-hisabi-outline-variant/30 px-hisabi-md py-hisabi-sm">
+            <div>
+              <p className="type-label-md font-bold text-hisabi-on-surface">
+                {String(boundTill.name)}
+                <span className="text-hisabi-primary ms-2 font-semibold">
+                  {t('tillThisPc')}
+                </span>
+              </p>
+              <p className="type-body-sm text-hisabi-on-surface-variant">
+                {t('tillListMeta', {
+                  display: String(boundTill.displayPort || '—'),
+                  drawer: String(boundTill.drawerPort || '—'),
+                })}
+              </p>
+            </div>
+            {canUpdate ? (
+              <button
+                type="button"
+                className="inline-flex size-11 items-center justify-center rounded-hisabi-md text-hisabi-error hover:bg-hisabi-error/10 disabled:opacity-50"
+                disabled={deleteMutation.isPending}
+                onClick={handleDelete}
+                aria-label={t('tillDelete')}
               >
-                <div>
-                  <p className="type-label-md font-bold text-hisabi-on-surface">
-                    {String(row.name)}
-                    {row.id === localTillId ? (
-                      <span className="text-hisabi-primary ms-2 font-semibold">
-                        {t('tillThisPc')}
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="type-body-sm text-hisabi-on-surface-variant">
-                    {t('tillListMeta', {
-                      display: String(row.displayPort || '—'),
-                      drawer: String(row.drawerPort || '—'),
-                    })}
-                  </p>
-                </div>
-                {canUpdate ? (
-                  <AuthSubmitButton
-                    type="button"
-                    variant="secondary"
-                    onClick={() => bindTill(String(row.id))}
-                  >
-                    {t('tillUseThis')}
-                  </AuthSubmitButton>
-                ) : (
-                  <AuthSubmitButton
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setLocalTillId(String(row.id))}
-                  >
-                    {t('tillView')}
-                  </AuthSubmitButton>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {canUpdate ? (
-          <div className="mt-hisabi-lg flex w-full flex-col gap-hisabi-md">
-            <SettingsField label={t('tillNewName')} className="w-full">
-              <input
-                className={fieldClass}
-                value={newTillName}
-                onChange={(e) => setNewTillName(e.target.value)}
-                placeholder={t('tillNewNamePlaceholder')}
-              />
-            </SettingsField>
-            <AuthSubmitButton
-              type="button"
-              className="w-full sm:w-auto sm:min-w-[11rem] sm:self-start"
-              pending={createMutation.isPending}
-              onClick={() => {
-                const name = newTillName.trim()
-                if (!name) return
-                createMutation.mutate(name)
-              }}
-            >
-              {t('tillCreate')}
-            </AuthSubmitButton>
+                <Trash2 className="size-5" aria-hidden />
+              </button>
+            ) : null}
           </div>
-        ) : null}
+        ) : (
+          <>
+            <p className="type-body-md text-hisabi-on-surface-variant">
+              {desktop ? t('tillBindHint') : t('tillEmpty')}
+            </p>
+            {canUpdate ? (
+              <div className="mt-hisabi-lg flex w-full flex-col gap-hisabi-md">
+                <SettingsField label={t('tillNewName')} className="w-full">
+                  <input
+                    className={fieldClass}
+                    value={newTillName}
+                    onChange={(e) => setNewTillName(e.target.value)}
+                    placeholder={t('tillNewNamePlaceholder')}
+                  />
+                </SettingsField>
+                <AuthSubmitButton
+                  type="button"
+                  className="w-full sm:w-auto sm:min-w-[11rem] sm:self-start"
+                  pending={createMutation.isPending}
+                  onClick={() => {
+                    const name = newTillName.trim()
+                    if (!name) return
+                    createMutation.mutate(name)
+                  }}
+                >
+                  {t('tillCreate')}
+                </AuthSubmitButton>
+              </div>
+            ) : null}
+          </>
+        )}
       </SettingsSection>
 
       {boundTill ? (
@@ -376,7 +423,9 @@ export function SettingsTillPageClient() {
           </div>
 
           <div className="space-y-hisabi-lg rounded-xl border border-hisabi-outline-variant/20 px-hisabi-md py-hisabi-md">
-          <h3 className="type-label-md font-bold text-hisabi-on-surface">{t('tillPrintTitle')}</h3>
+            <h3 className="type-label-md font-bold text-hisabi-on-surface">
+              {t('tillPrintTitle')}
+            </h3>
             <p className="type-body-sm text-hisabi-on-surface-variant">
               {t('tillPrintHint')}
             </p>
@@ -412,7 +461,9 @@ export function SettingsTillPageClient() {
                     key={`lan-${index}`}
                     className="grid gap-hisabi-lg sm:grid-cols-[1fr_8rem_auto] sm:items-end"
                   >
-                    <SettingsField label={t('printerIpLabelIndexed', { n: index + 1 })}>
+                    <SettingsField
+                      label={t('printerIpLabelIndexed', { n: index + 1 })}
+                    >
                       <input
                         className={fieldClass}
                         dir="ltr"
@@ -570,12 +621,11 @@ export function SettingsTillPageClient() {
               </label>
             </SettingsField>
             <SettingsField label={t('tillDisplayPort')}>
-              <select
-                className={selectClass}
+              <TillSelect
                 value={form.displayPort}
                 disabled={hwDisabled}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, displayPort: e.target.value }))
+                onChange={(displayPort) =>
+                  setForm((f) => ({ ...f, displayPort }))
                 }
               >
                 <option value="">{t('tillPortNone')}</option>
@@ -584,7 +634,23 @@ export function SettingsTillPageClient() {
                     {port}
                   </option>
                 ))}
-              </select>
+              </TillSelect>
+            </SettingsField>
+            <SettingsField label={t('tillDrawerPort')}>
+              <TillSelect
+                value={form.drawerPort}
+                disabled={hwDisabled}
+                onChange={(drawerPort) =>
+                  setForm((f) => ({ ...f, drawerPort }))
+                }
+              >
+                <option value="">{t('tillPortNone')}</option>
+                {portOptions.map((port) => (
+                  <option key={`k-${port}`} value={port}>
+                    {port}
+                  </option>
+                ))}
+              </TillSelect>
             </SettingsField>
             <SettingsField label={t('tillDisplayBaud')}>
               <input
@@ -601,45 +667,28 @@ export function SettingsTillPageClient() {
                 }
               />
             </SettingsField>
-            <SettingsField label={t('tillDrawerPort')}>
-              <select
-                className={selectClass}
-                value={form.drawerPort}
-                disabled={hwDisabled}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, drawerPort: e.target.value }))
-                }
-              >
-                <option value="">{t('tillPortNone')}</option>
-                {portOptions.map((port) => (
-                  <option key={`k-${port}`} value={port}>
-                    {port}
-                  </option>
-                ))}
-              </select>
-            </SettingsField>
           </div>
 
           {canUpdate ? (
             <SettingsFormFooter>
               {canUpdateHw ? (
                 <>
-              <AuthSubmitButton
-                type="button"
-                variant="secondary"
-                className="w-full min-[500px]:w-auto"
-                onClick={() => testDisplay()}
-              >
-                {t('tillTestDisplay')}
-              </AuthSubmitButton>
-              <AuthSubmitButton
-                type="button"
-                variant="secondary"
-                className="w-full min-[500px]:w-auto"
-                onClick={() => testDrawer()}
-              >
-                {t('tillTestDrawer')}
-              </AuthSubmitButton>
+                  <AuthSubmitButton
+                    type="button"
+                    variant="secondary"
+                    className="w-full min-[500px]:w-auto"
+                    onClick={() => testDisplay()}
+                  >
+                    {t('tillTestDisplay')}
+                  </AuthSubmitButton>
+                  <AuthSubmitButton
+                    type="button"
+                    variant="secondary"
+                    className="w-full min-[500px]:w-auto"
+                    onClick={() => testDrawer()}
+                  >
+                    {t('tillTestDrawer')}
+                  </AuthSubmitButton>
                 </>
               ) : null}
               <AuthSubmitButton
@@ -653,10 +702,6 @@ export function SettingsTillPageClient() {
             </SettingsFormFooter>
           ) : null}
         </SettingsSection>
-      ) : desktop ? (
-        <p className="type-body-md text-hisabi-on-surface-variant">
-          {t('tillBindHint')}
-        </p>
       ) : null}
     </SettingsPageShell>
   )

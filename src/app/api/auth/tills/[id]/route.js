@@ -71,3 +71,22 @@ export async function PATCH(request, context) {
     return handleRouteError(err, 'PATCH /api/auth/tills/:id')
   }
 }
+
+export async function DELETE(request, context) {
+  try {
+    const auth = await authorizeBusinessRequest(request)
+    if (auth.error) return auth.error
+
+    const { id } = await context.params
+    const existing = await prisma.posTill.findFirst({
+      where: { id, businessProfileId: auth.profile.id },
+      select: { id: true },
+    })
+    if (!existing) return jsonError(404, 'NOT_FOUND', 'Till not found')
+
+    await prisma.posTill.delete({ where: { id } })
+    return jsonOk({ deleted: true })
+  } catch (err) {
+    return handleRouteError(err, 'DELETE /api/auth/tills/:id')
+  }
+}
