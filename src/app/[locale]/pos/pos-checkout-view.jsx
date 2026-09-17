@@ -38,6 +38,7 @@ import {
 } from '@/lib/desktop/till-hardware'
 import { printDocument } from '@/lib/print/print-document'
 import { receiptActionLabel } from '@/lib/print/receipt-action-label'
+import { toastPrintError } from '@/lib/print/toast-print-error'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import {
   allocateOrderDiscount,
@@ -474,8 +475,7 @@ export function PosCheckoutView({
       toastPrintResult(t, data)
     },
     onError: (err) => {
-      const code = err instanceof AuthApiError ? err.code : undefined
-      toast.error(code ? tErr(code) : tErr('generic'))
+      toastPrintError(err)
     },
   })
 

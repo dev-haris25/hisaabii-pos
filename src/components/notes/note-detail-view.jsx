@@ -15,6 +15,7 @@ import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
 import { printDocument } from '@/lib/print/print-document'
 import { invoiceReceiptActionLabel } from '@/lib/print/receipt-action-label'
+import { toastPrintError } from '@/lib/print/toast-print-error'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import {
   canRepairFailedNote,
@@ -115,8 +116,7 @@ export function NoteDetailView({ documentNature, note, logoUrl = null }) {
       toastPrintResult(tInv, data)
     },
     onError: (err) => {
-      const code = err instanceof AuthApiError ? err.code : undefined
-      toast.error(code ? tErr(code) : tErr('generic'))
+      toastPrintError(err)
     },
   })
 

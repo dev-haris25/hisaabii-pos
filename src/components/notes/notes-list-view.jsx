@@ -32,6 +32,7 @@ import { AuthApiError, authPost } from '@/lib/api/auth-client'
 import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
 import { printDocument } from '@/lib/print/print-document'
 import { invoiceReceiptActionLabel } from '@/lib/print/receipt-action-label'
+import { toastPrintError } from '@/lib/print/toast-print-error'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import { bulkDeleteRows } from '@/lib/list-views/bulk-delete-rows'
 import { canRepairFailedNote, canSoftDeleteNote } from '@/lib/notes/can-repair-failed-note'
@@ -196,8 +197,7 @@ export function NotesListView({
       toastPrintResult(tInv, data)
     },
     onError: (err) => {
-      const code = err instanceof AuthApiError ? err.code : undefined
-      toast.error(code ? tErr(code) : tErr('generic'))
+      toastPrintError(err)
     },
     onSettled: () => setPrintingId(null),
   })

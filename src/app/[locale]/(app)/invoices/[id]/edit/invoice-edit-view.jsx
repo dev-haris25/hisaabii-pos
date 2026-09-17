@@ -19,6 +19,7 @@ import { useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPatch, authPost } from '@/lib/api/auth-client'
 import { printDocument } from '@/lib/print/print-document'
 import { receiptActionLabel } from '@/lib/print/receipt-action-label'
+import { toastPrintError } from '@/lib/print/toast-print-error'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import {
   computeInvoiceTotals,
@@ -250,8 +251,7 @@ export function InvoiceEditView({
       closeNoteModal()
     },
     onError: (err) => {
-      const code = err instanceof AuthApiError ? err.code : undefined
-      toast.error(code ? tErr(code) : tErr('generic'))
+      toastPrintError(err)
     },
   })
 

@@ -16,6 +16,7 @@ import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
 import { printDocument } from '@/lib/print/print-document'
 import { invoiceReceiptActionLabel } from '@/lib/print/receipt-action-label'
+import { toastPrintError } from '@/lib/print/toast-print-error'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import { canReportInvoiceToZatca } from '@/lib/invoices/map-invoice-json'
 import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
@@ -146,8 +147,7 @@ export function InvoiceDetailView({ invoice, logoUrl = null }) {
       toastPrintResult(t, data)
     },
     onError: (err) => {
-      const code = err instanceof AuthApiError ? err.code : undefined
-      toast.error(code ? tErr(code) : tErr('generic'))
+      toastPrintError(err)
     },
   })
 
@@ -347,8 +347,7 @@ function LinkedNoteCard({ note, logoUrl, documentLabel }) {
       toastPrintResult(t, data)
     },
     onError: (err) => {
-      const code = err instanceof AuthApiError ? err.code : undefined
-      toast.error(code ? tErr(code) : tErr('generic'))
+      toastPrintError(err)
     },
   })
 

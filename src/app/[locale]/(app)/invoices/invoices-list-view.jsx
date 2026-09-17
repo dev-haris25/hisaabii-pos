@@ -41,6 +41,7 @@ import {
   invoiceReceiptActionLabel,
   receiptActionLabel,
 } from '@/lib/print/receipt-action-label'
+import { toastPrintError } from '@/lib/print/toast-print-error'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import { canReportInvoiceToZatca } from '@/lib/invoices/map-invoice-json'
 import { formatOrderNumber } from '@/lib/orders/riyadh-order-date'
@@ -228,8 +229,7 @@ export function InvoicesListView({
       toastPrintResult(t, data)
     },
     onError: (err) => {
-      const code = err instanceof AuthApiError ? err.code : undefined
-      toast.error(code ? tErr(code) : tErr('generic'))
+      toastPrintError(err)
     },
     onSettled: () => setPrintingId(null),
   })
@@ -247,8 +247,7 @@ export function InvoicesListView({
       toastPrintResult(t, data)
     },
     onError: (err) => {
-      const code = err instanceof AuthApiError ? err.code : undefined
-      toast.error(code ? tErr(code) : tErr('generic'))
+      toastPrintError(err)
     },
   })
 

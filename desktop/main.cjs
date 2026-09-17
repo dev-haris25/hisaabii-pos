@@ -448,7 +448,13 @@ ipcMain.handle('hw:printWin', async (_e, payload) => {
         (success, failureReason) => {
           clearTimeout(timer)
           if (success) resolve(true)
-          else reject(new Error(failureReason || 'print failed'))
+          else {
+            reject(
+              new Error(
+                `Windows print failed (${printerName}): ${failureReason || 'unknown'}`,
+              ),
+            )
+          }
         },
       )
     })

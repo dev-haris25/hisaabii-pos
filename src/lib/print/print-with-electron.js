@@ -28,6 +28,20 @@ function requireQr(invoice) {
 }
 
 /**
+ * @param {unknown} err
+ * @param {string} [code]
+ */
+function throwPrintError(err, code = 'PRINT_FAILED') {
+  const message =
+    err instanceof Error
+      ? err.message
+      : typeof err === 'string'
+        ? err
+        : 'Print failed'
+  throw new AuthApiError(502, code, message || 'Print failed')
+}
+
+/**
  * @param {{
  *   copies?: unknown[]
  *   invoice?: Record<string, unknown> | null
@@ -76,16 +90,21 @@ export async function printWithElectron(data) {
         throw new AuthApiError(400, 'VALIDATION_ERROR', 'Missing document')
       }
       requireQr(invoice)
-      const html = await renderThermalReceiptPrintHtml({
-        invoice,
-        logoUrl: data.logoUrl ?? null,
-        documentLabel: data.documentLabel ?? invoice.documentLabel ?? null,
-      })
+      let html
+      try {
+        html = await renderThermalReceiptPrintHtml({
+          invoice,
+          logoUrl: data.logoUrl ?? null,
+          documentLabel: data.documentLabel ?? invoice.documentLabel ?? null,
+        })
+      } catch (err) {
+        throwPrintError(err)
+      }
       for (const device of winprinters) {
         try {
           await desktop.printWin({ printerName: device.id, html })
-        } catch {
-          throw new AuthApiError(502, 'PRINT_FAILED', 'Could not print the receipt')
+        } catch (err) {
+          throwPrintError(err)
         }
       }
     }
@@ -99,11 +118,15 @@ export async function printWithElectron(data) {
         for (const copy of copies) {
           const rawBase64 = String(copy?.rawBase64 ?? '')
           if (!rawBase64) throw new AuthApiError(502, 'PRINT_FAILED', 'No receipt bytes')
-          await desktop.printUsb({
-            kind: 'serial',
-            id: device.id,
-            base64: rawBase64,
-          })
+          try {
+            await desktop.printUsb({
+              kind: 'serial',
+              id: device.id,
+              base64: rawBase64,
+            })
+          } catch (err) {
+            throwPrintError(err)
+          }
         }
       }
     }
