@@ -191,15 +191,84 @@ img {
   max-width: 100%;
   height: auto;
   display: block;
-  -webkit-filter: contrast(1.15);
-  filter: contrast(1.15);
 }
 `
 
 /**
+ * Thermal / mono Windows print: turn soft logo colors into solid black ink.
+ * Transparent pixels stay white (no burn).
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} width
+ * @param {number} height
+ * @param {number} [threshold]
+ */
+function binarizeCanvasInPlace(ctx, width, height, threshold = 200) {
+  const image = ctx.getImageData(0, 0, width, height)
+  const data = image.data
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3] ?? 255
+    if (a < 28) {
+      data[i] = 255
+      data[i + 1] = 255
+      data[i + 2] = 255
+      data[i + 3] = 255
+      continue
+    }
+    const y = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+    // Fade toward white as alpha drops so soft edges don't smear gray.
+    const yAdj = y + ((255 - a) * (255 - y)) / 255
+    const v = yAdj < threshold ? 0 : 255
+    data[i] = v
+    data[i + 1] = v
+    data[i + 2] = v
+    data[i + 3] = 255
+  }
+  ctx.putImageData(image, 0, 0)
+}
+
+/**
+ * @param {CanvasImageSource} source
+ * @param {number} width
+ * @param {number} height
+ * @returns {string | null}
+ */
+function canvasSourceToBinarizedPngDataUrl(source, width, height) {
+  if (!width || !height) return null
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, width, height)
+    ctx.drawImage(source, 0, 0, width, height)
+    binarizeCanvasInPlace(ctx, width, height)
+    return canvas.toDataURL('image/png')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * @param {string} src
+ * @returns {Promise<HTMLImageElement>}
+ */
+function loadHtmlImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.decoding = 'sync'
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('image load failed'))
+    img.src = src
+  })
+}
+
+/**
  * Electron print loads `data:text/html` with no session cookies, so relative
- * `/api/auth/.../logo` URLs fail. Copy pixels from already-loaded imgs in the
- * app window into data URLs on the clone (fetch fallback if canvas fails).
+ * `/api/auth/.../logo` URLs fail. Embed imgs as pure black/white data URLs so
+ * thermal / mono drivers burn a solid logo (not washed-out gray).
  *
  * @param {HTMLElement} source
  * @param {HTMLElement} clone
@@ -216,43 +285,46 @@ async function inlineImagesAsDataUrls(source, clone) {
     }
     const existing = String(srcImg.currentSrc || srcImg.src || '')
     if (!existing) continue
-    if (existing.startsWith('data:')) {
-      destImg.setAttribute('src', existing)
-      continue
-    }
 
     let dataUrl = /** @type {string | null} */ (null)
     const w = srcImg.naturalWidth
     const h = srcImg.naturalHeight
     if (w > 0 && h > 0) {
+      dataUrl = canvasSourceToBinarizedPngDataUrl(srcImg, w, h)
+    }
+
+    if (!dataUrl && !existing.startsWith('data:')) {
       try {
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          ctx.drawImage(srcImg, 0, 0)
-          dataUrl = canvas.toDataURL('image/png')
+        const res = await fetch(existing, { credentials: 'include' })
+        if (res.ok) {
+          const blob = await res.blob()
+          const objectUrl = URL.createObjectURL(blob)
+          try {
+            const loaded = await loadHtmlImage(objectUrl)
+            dataUrl = canvasSourceToBinarizedPngDataUrl(
+              loaded,
+              loaded.naturalWidth,
+              loaded.naturalHeight,
+            )
+          } finally {
+            URL.revokeObjectURL(objectUrl)
+          }
         }
       } catch {
         dataUrl = null
       }
     }
 
-    if (!dataUrl) {
+    if (!dataUrl && existing.startsWith('data:')) {
       try {
-        const res = await fetch(existing, { credentials: 'include' })
-        if (res.ok) {
-          const blob = await res.blob()
-          dataUrl = await new Promise((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(String(reader.result ?? ''))
-            reader.onerror = () => reject(reader.error)
-            reader.readAsDataURL(blob)
-          })
-        }
+        const loaded = await loadHtmlImage(existing)
+        dataUrl = canvasSourceToBinarizedPngDataUrl(
+          loaded,
+          loaded.naturalWidth,
+          loaded.naturalHeight,
+        )
       } catch {
-        dataUrl = null
+        dataUrl = existing
       }
     }
 
