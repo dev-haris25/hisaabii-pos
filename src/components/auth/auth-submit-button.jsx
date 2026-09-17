@@ -44,7 +44,7 @@ export function AuthSubmitButton({
       disabled={isDisabled}
       aria-busy={pending || undefined}
       className={cn(
-        'type-label-md flex min-h-hisabi-btn w-full cursor-pointer items-center justify-center gap-hisabi-sm rounded-xl py-hisabi-btn font-bold transition-all active:scale-[0.98] disabled:cursor-not-allowed [&_svg]:h-[var(--size-hisabi-icon-md)] [&_svg]:w-[var(--size-hisabi-icon-md)]',
+        'type-label-md flex min-h-hisabi-btn w-full cursor-pointer items-center justify-center gap-hisabi-sm rounded-xl px-hisabi-lg py-hisabi-btn font-bold transition-all active:scale-[0.98] disabled:cursor-not-allowed [&_svg]:h-[var(--size-hisabi-icon-md)] [&_svg]:w-[var(--size-hisabi-icon-md)]',
         variantClasses,
         className,
       )}
