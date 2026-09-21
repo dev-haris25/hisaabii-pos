@@ -116,8 +116,9 @@ jobs:
           bunx prisma generate || { echo "prisma generate failed"; exit 1; }
           bunx prisma migrate deploy || { echo "prisma migrate deploy failed"; exit 1; }
 
-          # Idempotent demo owner + menu for staging (skips if already present)
-          bun run db:seed-demo-dev || { echo "db:seed-demo-dev failed"; exit 1; }
+          # Same local demo seed: keep login, menu, and ZATCA; add Karahi if missing;
+          # Arabic recipe steps; week of sales, day-end reports, and Gemini.
+          bun run db:seed-mvp2-demo || { echo "db:seed-mvp2-demo failed"; exit 1; }
 
           # Clean stale build output before production build
           rm -rf .next
