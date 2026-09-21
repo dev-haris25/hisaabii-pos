@@ -16,6 +16,7 @@ import {
   normalizeCustomerQueueLocale,
 } from '@/lib/orders/customer-queue-url'
 import { getOrCreateBusinessSettings } from '@/lib/settings/get-or-create-business-settings'
+import { hasFullAccess } from '@/lib/rbac/ability-utils'
 import { prisma } from '@/lib/prisma'
 
 const prefixSchema = z.string().trim().min(1).max(20)
@@ -72,6 +73,10 @@ const settingsPatchBodySchema = z
       ])
       .optional(),
     posOnScreenKeypad: z.boolean().optional(),
+    allowNegativeStock: z.boolean().optional(),
+    allowMainStockIfNoKitchenStock: z.boolean().optional(),
+    lowStockAlertsEnabled: z.boolean().optional(),
+    emailHighWasteReports: z.boolean().optional(),
   })
   .strict()
 
@@ -80,8 +85,15 @@ const settingsPatchBodySchema = z
  * @param {import('@/generated/prisma').BusinessProfile} profile
  * @param {{ ip: string, port: number }[]} printerRows
  * @param {string} [origin]
+ * @param {boolean} [emailHighWasteReports]
  */
-function mapSettingsPayload(settings, profile, printerRows, origin = '') {
+function mapSettingsPayload(
+  settings,
+  profile,
+  printerRows,
+  origin = '',
+  emailHighWasteReports = false,
+) {
   const defaultVatPreset =
     profile.defaultVatPercent === '0' ? 'zero' : 'standard'
   const printers = printersForSettingsPayload(printerRows, profile)
@@ -102,6 +114,11 @@ function mapSettingsPayload(settings, profile, printerRows, origin = '') {
     phone: profile.phone,
     discountCap: settings.discountCap ?? null,
     posOnScreenKeypad: settings.posOnScreenKeypad === true,
+    allowNegativeStock: settings.allowNegativeStock === true,
+    allowMainStockIfNoKitchenStock:
+      settings.allowMainStockIfNoKitchenStock === true,
+    lowStockAlertsEnabled: settings.lowStockAlertsEnabled !== false,
+    emailHighWasteReports: emailHighWasteReports === true,
     slug: profile.slug,
     customerQueueLocale,
     customerQueueOrigin: origin,
@@ -121,10 +138,19 @@ export async function GET(request) {
     if (auth.error) return auth.error
     const { profile } = auth
 
-    const [settings, profileRow, printerRows] = await Promise.all([
+    const [settings, profileRow, printerRows, membership] = await Promise.all([
       getOrCreateBusinessSettings(profile.id),
       prisma.businessProfile.findUnique({ where: { id: profile.id } }),
       loadReceiptPrinterRows(prisma, profile.id),
+      prisma.businessMembership.findUnique({
+        where: {
+          userId_businessProfileId: {
+            userId: auth.session.id,
+            businessProfileId: profile.id,
+          },
+        },
+        select: { emailHighWasteReports: true },
+      }),
     ])
     if (!profileRow) {
       return jsonError(404, 'NOT_FOUND', 'Restaurant not found')
@@ -136,6 +162,7 @@ export async function GET(request) {
         profileRow,
         printerRows,
         customerQueueOriginFromRequest(request),
+        membership?.emailHighWasteReports === true,
       ),
     })
   } catch (err) {
@@ -182,6 +209,25 @@ export async function PATCH(request) {
     if (d.posOnScreenKeypad !== undefined) {
       settingsData.posOnScreenKeypad = d.posOnScreenKeypad
     }
+    if (d.allowNegativeStock !== undefined) {
+      settingsData.allowNegativeStock = d.allowNegativeStock
+    }
+    if (d.allowMainStockIfNoKitchenStock !== undefined) {
+      settingsData.allowMainStockIfNoKitchenStock =
+        d.allowMainStockIfNoKitchenStock
+    }
+    if (d.lowStockAlertsEnabled !== undefined) {
+      settingsData.lowStockAlertsEnabled = d.lowStockAlertsEnabled
+    }
+    if (d.emailHighWasteReports !== undefined) {
+      if (!hasFullAccess(auth.ability)) {
+        return jsonError(
+          403,
+          'FORBIDDEN',
+          'Only the owner or an admin can change this email alert',
+        )
+      }
+    }
 
     /** @type {Record<string, unknown>} */
     const profileData = {}
@@ -204,7 +250,7 @@ export async function PATCH(request) {
       if (d.printerPort !== undefined) profileData.printerPort = d.printerPort
     }
 
-    const [settings, profileRow, printerRows] = await prisma.$transaction(
+    const [settings, profileRow, printerRows, membership] = await prisma.$transaction(
       async (tx) => {
         if (Object.keys(profileData).length > 0) {
           await tx.businessProfile.update({
@@ -237,11 +283,37 @@ export async function PATCH(request) {
               })
             : await getOrCreateBusinessSettings(profile.id, tx)
 
-        const [nextProfile, nextPrinters] = await Promise.all([
+        if (d.emailHighWasteReports !== undefined) {
+          await tx.businessMembership.upsert({
+            where: {
+              userId_businessProfileId: {
+                userId: auth.session.id,
+                businessProfileId: profile.id,
+              },
+            },
+            create: {
+              userId: auth.session.id,
+              businessProfileId: profile.id,
+              emailHighWasteReports: d.emailHighWasteReports === true,
+            },
+            update: { emailHighWasteReports: d.emailHighWasteReports === true },
+          })
+        }
+
+        const [nextProfile, nextPrinters, membership] = await Promise.all([
           tx.businessProfile.findUnique({ where: { id: profile.id } }),
           loadReceiptPrinterRows(tx, profile.id),
+          tx.businessMembership.findUnique({
+            where: {
+              userId_businessProfileId: {
+                userId: auth.session.id,
+                businessProfileId: profile.id,
+              },
+            },
+            select: { emailHighWasteReports: true },
+          }),
         ])
-        return [settings, nextProfile, nextPrinters]
+        return [settings, nextProfile, nextPrinters, membership]
       },
     )
 
@@ -255,6 +327,7 @@ export async function PATCH(request) {
         profileRow,
         printerRows,
         customerQueueOriginFromRequest(request),
+        membership?.emailHighWasteReports === true,
       ),
     })
   } catch (err) {

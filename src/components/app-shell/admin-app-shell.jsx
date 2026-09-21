@@ -18,6 +18,7 @@ import {
   Users,
   UtensilsCrossed,
   UserCircle,
+  Warehouse,
   X,
 } from 'lucide-react'
 import Image from 'next/image'
@@ -51,6 +52,7 @@ const SIDEBAR_BADGE_TONES = {
   error: 'bg-hisabi-error text-white',
 }
 
+/** Same pill shape as the header notifications unread circle. */
 /** @param {{ count: number, ariaLabel?: string, tone?: 'gold' | 'error' }} props */
 function SidebarCountBadge({ count, ariaLabel, tone = 'gold' }) {
   if (!count || count <= 0) return null
@@ -58,7 +60,7 @@ function SidebarCountBadge({ count, ariaLabel, tone = 'gold' }) {
   return (
     <span
       className={cn(
-        'inline-flex min-w-[1.25rem] shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none',
+        'flex min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-4',
         SIDEBAR_BADGE_TONES[tone] ?? SIDEBAR_BADGE_TONES.gold,
       )}
       aria-label={ariaLabel}
@@ -196,6 +198,17 @@ function AdminAppShellInner({
   })
   const visaExpiryCount = visaExpiryData?.count ?? 0
 
+  const { data: lowStockData } = useQuery({
+    queryKey: ['low-stock-count', activeBusinessProfileId],
+    queryFn: async () => authGet('/stock/items/low-stock-count'),
+    enabled:
+      hasBusinessProfile === true &&
+      Boolean(activeBusinessProfileId) &&
+      Boolean(ability?.can('read', 'StockItem')),
+    staleTime: 60_000,
+  })
+  const lowStockCount = lowStockData?.count ?? 0
+
   const skippedEffective =
     typeof liveZatcaSkipped === 'boolean'
       ? liveZatcaSkipped
@@ -262,6 +275,18 @@ function AdminAppShellInner({
           { href: '/menu', labelKey: 'subMenuList' },
           { href: '/menu/items/new', labelKey: 'subMenuAdd' },
           { href: '/menu/categories', labelKey: 'subMenuCategories' },
+        ],
+      },
+      {
+        id: 'stock',
+        labelKey: 'navStock',
+        icon: Warehouse,
+        isGroupActive: (p) => p === '/stock' || p.startsWith('/stock/'),
+        children: [
+          { href: '/stock', labelKey: 'subStockItems' },
+          { href: '/stock/items/new', labelKey: 'subStockAdd' },
+          { href: '/stock/day-end', labelKey: 'subStockDayEnd' },
+          { href: '/stock/movements', labelKey: 'subStockMovements' },
         ],
       },
       {
@@ -549,6 +574,13 @@ function AdminAppShellInner({
                         ariaLabel={t('visaExpiryBadge', { count: visaExpiryCount })}
                       />
                     ) : null}
+                    {item.id === 'stock' && !groupOpen ? (
+                      <SidebarCountBadge
+                        count={lowStockCount}
+                        tone="error"
+                        ariaLabel={t('lowStockSidebarBadge', { count: lowStockCount })}
+                      />
+                    ) : null}
                     {groupOpen ? (
                       <ChevronUp className="size-4 shrink-0" aria-hidden />
                     ) : (
@@ -575,6 +607,15 @@ function AdminAppShellInner({
                                 tone="error"
                                 ariaLabel={t('visaExpiryBadge', {
                                   count: visaExpiryCount,
+                                })}
+                              />
+                            ) : null}
+                            {child.href === '/stock' ? (
+                              <SidebarCountBadge
+                                count={lowStockCount}
+                                tone="error"
+                                ariaLabel={t('lowStockSidebarBadge', {
+                                  count: lowStockCount,
                                 })}
                               />
                             ) : null}

@@ -16,6 +16,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
+import { HisabiStatusModal } from '@/components/hisabi-status-modal'
 import { AppLoader } from '@/components/app-loader'
 import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
@@ -64,6 +65,59 @@ import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
 
 const MONEY_RE = /^\d+(\.\d{1,4})?$/
+
+/**
+ * Plain-language shortfall list for the POS stock modal.
+ * @param {Array<Record<string, unknown>>} shortfalls
+ * @param {string} locale
+ * @param {(key: string, values?: Record<string, string>) => string} t
+ */
+function formatStockShortfallDetail(shortfalls, locale, t) {
+  const names = shortfalls
+    .map((s) => {
+      if (locale === 'ar') return String(s.nameAr ?? '').trim()
+      return String(s.nameEn || s.nameAr || '').trim()
+    })
+    .filter(Boolean)
+
+  if (names.length === 0) return t('stockConfirmTitle')
+  if (names.length === 1) {
+    return t('stockConfirmShortOne', { name: names[0] })
+  }
+  if (names.length === 2) {
+    return t('stockConfirmShortTwo', { a: names[0], b: names[1] })
+  }
+  return t('stockConfirmShortMany', {
+    list: names.slice(0, -1).join(', '),
+    last: names[names.length - 1],
+  })
+}
+
+/**
+ * @param {Array<Record<string, unknown>>} shortfalls
+ * @param {string} locale
+ * @param {(key: string, values?: Record<string, string>) => string} t
+ */
+function formatAllotmentMissingDetail(shortfalls, locale, t) {
+  const names = shortfalls
+    .map((s) => {
+      if (locale === 'ar') return String(s.nameAr ?? '').trim()
+      return String(s.nameEn || s.nameAr || '').trim()
+    })
+    .filter(Boolean)
+
+  if (names.length === 0) return t('kitchenStockConfirmTitle')
+  if (names.length === 1) {
+    return t('kitchenStockConfirmShortOne', { name: names[0] })
+  }
+  if (names.length === 2) {
+    return t('kitchenStockConfirmShortTwo', { a: names[0], b: names[1] })
+  }
+  return t('kitchenStockConfirmShortMany', {
+    list: names.slice(0, -1).join(', '),
+    last: names[names.length - 1],
+  })
+}
 
 /**
  * @typedef {{
@@ -135,6 +189,12 @@ export function PosCheckoutView({
     mode: /** @type {'add' | 'edit'} */ ('add'),
     lineKey: /** @type {string | null} */ (null),
   })
+  const [stockConfirm, setStockConfirm] = useState(
+    /** @type {{ shortfalls: Array<Record<string, unknown>> } | null} */ (null),
+  )
+  const [allotmentConfirm, setAllotmentConfirm] = useState(
+    /** @type {{ shortfalls: Array<Record<string, unknown>> } | null} */ (null),
+  )
 
   const menuQuery = useQuery({
     queryKey: ['pos', 'menu', activeBusinessProfileId],
@@ -268,7 +328,10 @@ export function PosCheckoutView({
   })
 
   const checkoutMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (
+      /** @type {{ allowNegativeStock?: boolean, allowMainStockIfNoKitchenStock?: boolean } | void} */ opts,
+    ) => {
+      const options = opts && typeof opts === 'object' ? opts : {}
       /** @type {Record<string, unknown>} */
       const body = {
         lines: cart.map((l) => ({
@@ -287,9 +350,17 @@ export function PosCheckoutView({
       if (disc && parseMoney(disc) > 0) {
         body.discount = disc
       }
+      if (options.allowNegativeStock) {
+        body.allowNegativeStock = true
+      }
+      if (options.allowMainStockIfNoKitchenStock) {
+        body.allowMainStockIfNoKitchenStock = true
+      }
       return authPost('/pos/checkout', body)
     },
     onSuccess: (data) => {
+      setStockConfirm(null)
+      setAllotmentConfirm(null)
       setReceipt(data.invoice ?? null)
       setCart([])
       setAmountTendered('')
@@ -307,6 +378,38 @@ export function PosCheckoutView({
           discount: t('validationDiscountCap'),
         }))
         scrollAfterFieldValidation()
+        return
+      }
+      if (
+        code === 'NO_KITCHEN_STOCK_CONFIRM' ||
+        code === 'NO_ALLOTMENT_CONFIRM'
+      ) {
+        const details =
+          err instanceof AuthApiError && Array.isArray(err.details)
+            ? err.details
+            : []
+        setAllotmentConfirm({ shortfalls: details })
+        return
+      }
+      if (code === 'INSUFFICIENT_STOCK_CONFIRM') {
+        const details =
+          err instanceof AuthApiError && Array.isArray(err.details)
+            ? err.details
+            : []
+        setStockConfirm({ shortfalls: details })
+        return
+      }
+      if (code === 'INSUFFICIENT_STOCK') {
+        // Hard block (e.g. unexpected); still surface shortfalls if present.
+        const details =
+          err instanceof AuthApiError && Array.isArray(err.details)
+            ? err.details
+            : []
+        if (details.length > 0) {
+          setStockConfirm({ shortfalls: details })
+          return
+        }
+        toast.error(tErr('INSUFFICIENT_STOCK'))
         return
       }
       toast.error(code ? tErr(code) : tErr('generic'))
@@ -1121,6 +1224,60 @@ export function PosCheckoutView({
           </div>
         </div>
       ) : null}
+
+      <HisabiStatusModal
+        open={Boolean(allotmentConfirm)}
+        onOpenChange={(open) => {
+          if (!open) setAllotmentConfirm(null)
+        }}
+        variant="warning"
+        title={t('kitchenStockConfirmTitle')}
+        description={
+          allotmentConfirm
+            ? t('kitchenStockConfirmBody', {
+                detail: formatAllotmentMissingDetail(
+                  allotmentConfirm.shortfalls,
+                  locale,
+                  t,
+                ),
+              })
+            : undefined
+        }
+        primaryLabel={t('kitchenStockConfirmContinue')}
+        secondaryLabel={t('kitchenStockConfirmCancel')}
+        primaryPending={checkoutMutation.isPending}
+        onPrimary={() => {
+          checkoutMutation.mutate({ allowMainStockIfNoKitchenStock: true })
+        }}
+        onSecondary={() => setAllotmentConfirm(null)}
+      />
+
+      <HisabiStatusModal
+        open={Boolean(stockConfirm)}
+        onOpenChange={(open) => {
+          if (!open) setStockConfirm(null)
+        }}
+        variant="warning"
+        title={t('stockConfirmTitle')}
+        description={
+          stockConfirm
+            ? t('stockConfirmBody', {
+                detail: formatStockShortfallDetail(
+                  stockConfirm.shortfalls,
+                  locale,
+                  t,
+                ),
+              })
+            : undefined
+        }
+        primaryLabel={t('stockConfirmContinue')}
+        secondaryLabel={t('stockConfirmCancel')}
+        primaryPending={checkoutMutation.isPending}
+        onPrimary={() => {
+          checkoutMutation.mutate({ allowNegativeStock: true })
+        }}
+        onSecondary={() => setStockConfirm(null)}
+      />
     </div>
   )
 }

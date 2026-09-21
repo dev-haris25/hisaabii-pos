@@ -84,6 +84,31 @@ export async function POST(request) {
       if (code === 'DISCOUNT_EXCEEDS_CAP') {
         return jsonError(400, code, 'Discount is above the restaurant cap')
       }
+      if (code === 'INSUFFICIENT_STOCK' || code === 'INSUFFICIENT_STOCK_CONFIRM') {
+        const shortfalls =
+          e && typeof e === 'object' && 'shortfalls' in e ? e.shortfalls : []
+        return jsonError(
+          409,
+          code,
+          code === 'INSUFFICIENT_STOCK_CONFIRM'
+            ? 'Not enough stock — allow negative stock to continue'
+            : 'Not enough stock for this order',
+          shortfalls,
+        )
+      }
+      if (
+        code === 'NO_KITCHEN_STOCK_CONFIRM' ||
+        code === 'NO_ALLOTMENT_CONFIRM'
+      ) {
+        const shortfalls =
+          e && typeof e === 'object' && 'shortfalls' in e ? e.shortfalls : []
+        return jsonError(
+          409,
+          'NO_KITCHEN_STOCK_CONFIRM',
+          'Some items do not have enough kitchen stock',
+          shortfalls,
+        )
+      }
       if (code === 'ZATCA_ERROR') {
         const raw = e instanceof Error ? e.message : String(e)
         console.error('[pos/checkout] ZATCA_ERROR:', raw)

@@ -14,6 +14,7 @@ export function kitchenLinesSnapshot(lines) {
   return lines
     .filter((l) => Number(l?.quantity) > 0)
     .map((l) => ({
+      menuItemId: l.menuItemId != null ? String(l.menuItemId) : null,
       nameAr: String(l.nameAr ?? '').trim(),
       nameEn: l.nameEn != null ? String(l.nameEn).trim() : null,
       quantity: Number.parseInt(String(l.quantity), 10) || 0,

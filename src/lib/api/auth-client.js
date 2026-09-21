@@ -3,12 +3,14 @@ export class AuthApiError extends Error {
    * @param {number} status
    * @param {string} [code]
    * @param {string} [message]
+   * @param {unknown} [details]
    */
-  constructor(status, code, message) {
+  constructor(status, code, message, details) {
     super(message || code || String(status))
     this.name = 'AuthApiError'
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 
@@ -46,6 +48,7 @@ export async function authPost(path, body) {
       res.status,
       code,
       typeof data.message === 'string' ? data.message : undefined,
+      data.details,
     )
   }
   return data
@@ -92,6 +95,7 @@ export async function authPostInvoiceSendStream(invoiceId, options = {}) {
       res.status,
       code,
       typeof data.message === 'string' ? data.message : undefined,
+      data.details,
     )
   }
 
@@ -166,6 +170,7 @@ export async function authPostNoteSendStream(noteType, id, options = {}) {
       res.status,
       code,
       typeof data.message === 'string' ? data.message : undefined,
+      data.details,
     )
   }
 
@@ -224,6 +229,7 @@ export async function authPatch(path, body) {
       res.status,
       code,
       typeof data.message === 'string' ? data.message : undefined,
+      data.details,
     )
   }
   return data
@@ -257,6 +263,7 @@ export async function authGet(path) {
       res.status,
       code,
       typeof data.message === 'string' ? data.message : undefined,
+      data.details,
     )
   }
   return data
@@ -295,6 +302,7 @@ export async function authGetBlob(path) {
       res.status,
       code,
       typeof data.message === 'string' ? data.message : undefined,
+      data.details,
     )
   }
   const disposition = res.headers.get('Content-Disposition') || ''
@@ -336,6 +344,7 @@ export async function authDelete(path) {
       res.status,
       code,
       typeof data.message === 'string' ? data.message : undefined,
+      data.details,
     )
   }
   return data

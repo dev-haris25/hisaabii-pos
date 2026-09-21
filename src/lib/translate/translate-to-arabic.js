@@ -161,29 +161,52 @@ export async function translateBilingualField(text, sourceLang, targetLang) {
 
   const toArabic = targetLang === 'ar'
   const sourceLabel = sourceLang === 'ar' ? 'Arabic' : 'English'
-  const targetLabel = targetLang === 'ar' ? 'Arabic' : 'English'
   const resultKey = toArabic ? 'ar' : 'en'
+  const isLongForm = trimmed.length > 200 || /\n/.test(trimmed)
 
-  const systemText = toArabic
+  const systemText = isLongForm
+    ? toArabic
+      ? [
+          'You are a translation micro-service for Hisabi POS kitchen recipes.',
+          'Convert the English cooking method / steps into clear Modern Standard Arabic for kitchen staff.',
+          'Keep the same structure, numbering, and line breaks. Preserve units and temperatures.',
+          `Return JSON only: {"${resultKey}":"<arabic translation>"}.`,
+          'The value must be Arabic script (plus Arabic punctuation and digits). No English glosses, markdown, or explanations.',
+        ].join(' ')
+      : [
+          'You are a translation micro-service for Hisabi POS kitchen recipes.',
+          'Convert the Arabic cooking method / steps into clear kitchen English.',
+          'Keep the same structure, numbering, and line breaks. Preserve units and temperatures.',
+          `Return JSON only: {"${resultKey}":"<english translation>"}.`,
+          'The value must be English only. No Arabic, markdown, reasoning, or restated constraints.',
+        ].join(' ')
+    : toArabic
+      ? [
+          'You are a translation micro-service for Saudi VAT e-invoices.',
+          'Convert the English field value into Modern Standard Arabic suitable for invoice printing.',
+          `Return JSON only: {"${resultKey}":"<arabic translation>"}.`,
+          'The value must be Arabic script only (plus Arabic punctuation). No English, markdown, or explanations.',
+        ].join(' ')
+      : [
+          'You are a translation micro-service for Saudi VAT e-invoices.',
+          'Convert the Arabic field value into clear business English suitable for invoice printing.',
+          `Return JSON only: {"${resultKey}":"<english translation>"}.`,
+          'The value must be English only. No Arabic, markdown, reasoning, or restated constraints.',
+        ].join(' ')
+
+  const userText = isLongForm
     ? [
-        'You are a translation micro-service for Saudi VAT e-invoices.',
-        'Convert the English field value into Modern Standard Arabic suitable for invoice printing.',
-        `Return JSON only: {"${resultKey}":"<arabic translation>"}.`,
-        'The value must be Arabic script only (plus Arabic punctuation). No English, markdown, or explanations.',
-      ].join(' ')
+        `Translate the following ${sourceLabel} kitchen recipe steps.`,
+        `Return JSON with key "${resultKey}" only.`,
+        `${sourceLabel}:`,
+        trimmed,
+      ].join('\n')
     : [
-        'You are a translation micro-service for Saudi VAT e-invoices.',
-        'Convert the Arabic field value into clear business English suitable for invoice printing.',
-        `Return JSON only: {"${resultKey}":"<english translation>"}.`,
-        'The value must be English only. No Arabic, markdown, reasoning, or restated constraints.',
-      ].join(' ')
-
-  const userText = [
-    `Translate the following ${sourceLabel} for a Saudi VAT invoice.`,
-    `Return JSON with key "${resultKey}" only.`,
-    `${sourceLabel}:`,
-    trimmed,
-  ].join('\n')
+        `Translate the following ${sourceLabel} for a Saudi VAT invoice.`,
+        `Return JSON with key "${resultKey}" only.`,
+        `${sourceLabel}:`,
+        trimmed,
+      ].join('\n')
 
   const body = {
     systemInstruction: {
@@ -196,7 +219,7 @@ export async function translateBilingualField(text, sourceLang, targetLang) {
     ],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 256,
+      maxOutputTokens: isLongForm ? 4096 : 256,
       responseMimeType: 'application/json',
       responseSchema: {
         type: 'OBJECT',
@@ -250,13 +273,15 @@ export async function translateBilingualField(text, sourceLang, targetLang) {
   }
 
   const fromJson = parseJsonTranslation(out, targetLang)
-  const cleaned = fromJson
-    ? toArabic
-      ? extractArabicInvoiceLine(fromJson)
-      : extractEnglishInvoiceLine(fromJson)
-    : toArabic
-      ? extractArabicInvoiceLine(out)
-      : extractEnglishInvoiceLine(out)
+  const cleaned = isLongForm
+    ? fromJson || out.trim()
+    : fromJson
+      ? toArabic
+        ? extractArabicInvoiceLine(fromJson)
+        : extractEnglishInvoiceLine(fromJson)
+      : toArabic
+        ? extractArabicInvoiceLine(out)
+        : extractEnglishInvoiceLine(out)
 
   if (!cleaned) {
     throw new Error('EMPTY_TRANSLATION')

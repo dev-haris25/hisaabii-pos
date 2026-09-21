@@ -105,6 +105,10 @@ model BusinessProfile {
   employeePayments      EmployeePayment[]
   businessSettings      BusinessSettings?
   posTills              PosTill[]
+  stockItems            StockItem[]
+  stockMovements        StockMovement[]
+  kitchenStockAllocations KitchenStockAllocation[]
+  stockDayEndReports    StockDayEndReport[]
 
   @@index([ownerUserId])
   @@map("business_profiles")
@@ -175,6 +179,13 @@ model BusinessSettings {
   /// Touch-till in-app numpad for POS money fields. Off = physical keyboard.
   posOnScreenKeypad Boolean @default(false)
 
+  /// When false, POS/kitchen block sales that would drive stock below zero.
+  allowNegativeStock Boolean @default(false)
+  /// When true, missing/short kitchen stock may deduct the rest from main warehouse.
+  allowMainStockIfNoKitchenStock Boolean @default(false)
+  /// When true, email low-stock alerts (in-app highlight/notify is always on).
+  lowStockAlertsEnabled Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -223,6 +234,7 @@ model User {
   otpCodes           OtpCode[]
   salarySlipsCreated SalarySlip[]         @relation("SalarySlipCreatedBy")
   notifications      Notification[]
+  stockMovementsCreated StockMovement[]   @relation("StockMovementCreatedBy")
 
   @@index([activeBusinessProfileId])
   @@map("users")
@@ -236,6 +248,10 @@ model BusinessMembership {
   user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   businessProfileId String
   businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  /// This user wants high-waste kitchen reports emailed (owner/admin only).
+  emailHighWasteReports Boolean @default(false)
+
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
@@ -342,7 +358,250 @@ model UserInvitation {
 }
 
 // ---------------------------------------------------------------------------
-// Menu (rules.md #22 — deliberately no inventory/stock fields)
+// Stock (warehouse items — recipes/allotment come in later steps)
+// ---------------------------------------------------------------------------
+
+/// Base unit for a stock item. Mass (g/kg) and volume (ml/l) convert within
+/// family only — never mass ↔ volume. Piece never converts.
+enum StockUnit {
+  piece
+  g
+  kg
+  ml
+  l
+}
+
+model StockItem {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  nameAr String
+  nameEn String?
+
+  /// Display / storage unit for this item (family derived from unit).
+  unit StockUnit
+
+  /// On-hand qty as a decimal string (never float) in `unit`.
+  quantityOnHand String @default("0")
+  /// Optional low-stock threshold in the same unit. Null = no per-item alert.
+  lowStockThreshold String?
+  /// Optional unit cost (SAR) as a decimal string.
+  unitCost String?
+
+  /// Bulk usage (e.g. fryer oil) — kitchen stock / AI waste in later steps.
+  isBulk Boolean @default(false)
+  active Boolean @default(true)
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movements StockMovement[]
+  recipeIngredients MenuItemRecipeIngredient[]
+  kitchenStockAllocations KitchenStockAllocation[]
+  dayEndLines             StockDayEndLine[]
+
+  @@index([businessProfileId, active])
+  @@index([businessProfileId, nameAr])
+  @@map("stock_items")
+}
+
+/// Warehouse ledger — purchase / adjust / opening / recipe / kitchen stock issue.
+enum StockMovementType {
+  purchase
+  adjust_in
+  adjust_out
+  opening
+  recipe_deduct
+  /// Legacy daily-allotment issue (kept for history).
+  allotment_issue
+  /// Legacy daily-allotment return (kept for history; no longer created).
+  allotment_return
+  kitchen_stock_issue
+}
+
+model StockMovement {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  stockItemId String
+  stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  type StockMovementType
+  /// Always positive magnitude in the item's unit at time of movement.
+  quantity String
+  /// Snapshot of stock item unit when the movement was recorded.
+  unit StockUnit
+  quantityBefore String
+  quantityAfter  String
+
+  reason String?
+  note   String?
+
+  /// Unit cost (SAR) at purchase — optional; used for prep-cost averages.
+  unitCost String?
+
+  createdByUserId String?
+  createdBy       User?   @relation("StockMovementCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([businessProfileId, createdAt])
+  @@index([stockItemId, createdAt])
+  @@index([stockItemId, type])
+  @@map("stock_movements")
+}
+
+enum StockDayEndStatus {
+  draft
+  submitted
+}
+
+/// One stock day-end report per restaurant per Asia/Riyadh calendar day.
+model StockDayEndReport {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  reportDate DateTime          @db.Date
+  status     StockDayEndStatus @default(draft)
+
+  submittedAt      DateTime?
+  submittedByUserId String?
+
+  aiAnalysis   String?
+  aiAnalyzedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines StockDayEndLine[]
+
+  @@unique([businessProfileId, reportDate])
+  @@index([businessProfileId, status])
+  @@map("stock_day_end_reports")
+}
+
+model StockDayEndLine {
+  id       String            @id @default(cuid())
+  reportId String
+  report   StockDayEndReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  stockItemId String
+  stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+
+  isBulk Boolean
+  unit   StockUnit
+
+  nameAr String
+  nameEn String?
+
+  /// Recipe deducts for this day (0 for bulk).
+  recipeUsed String @default("0")
+  /// Owner-entered used. Bulk starts empty (null).
+  userUsed   String?
+
+  /// Non-bulk: max(0, userUsed - recipeUsed). Bulk: 0 (AI judges used vs sales).
+  quantityWaste String @default("0")
+  wasteSeverity KitchenWasteSeverity?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([reportId])
+  @@index([stockItemId])
+  @@map("stock_day_end_lines")
+}
+
+enum KitchenStockAllocationStatus {
+  open
+  closed
+}
+
+/// AI grade of wastage on a closed kitchen batch (MVP 3).
+enum KitchenWasteSeverity {
+  low
+  bearable
+  high
+}
+
+/// Consumption-based kitchen stock cycle for one warehouse item (not calendar-day).
+/// Issue → recipe use over any number of days → mark consumed (or top up without closing).
+model KitchenStockAllocation {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  stockItemId String
+  stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+
+  status KitchenStockAllocationStatus @default(open)
+
+  /// Total issued into this cycle (grows on top-up).
+  quantityIssued String @default("0")
+  /// Recipe use taken from this kitchen pool.
+  quantityUsed   String @default("0")
+  /// On mark-consumed: non-bulk = issued − used; bulk = AI estimate after MVP 3 (else "0").
+  quantityWaste  String?
+  /// Snapshot of StockItem.isBulk when closed.
+  isBulkAtClose  Boolean?
+
+  /// AI estimated used (bulk). Recipe `quantityUsed` is unchanged.
+  aiQuantityUsed String?
+  /// True when `quantityWaste` was written by AI (bulk).
+  wasteIsAiEstimate Boolean @default(false)
+  wasteSeverity     KitchenWasteSeverity?
+  /// Human-readable AI write-up (not ledger math).
+  aiAnalysis   String?
+  aiAnalyzedAt DateTime?
+
+  openedAt DateTime @default(now())
+  closedAt DateTime?
+
+  openedByUserId String?
+  closedByUserId String?
+
+  usageLines KitchenStockUsageLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessProfileId, status])
+  @@index([businessProfileId, stockItemId, status])
+  @@index([stockItemId])
+  @@index([businessProfileId, closedAt])
+  @@map("kitchen_stock_allocations")
+}
+
+/// Per-recipe (menu item) use drawn from a kitchen stock allocation.
+model KitchenStockUsageLine {
+  id String @id @default(cuid())
+
+  allocationId String
+  allocation   KitchenStockAllocation @relation(fields: [allocationId], references: [id], onDelete: Cascade)
+
+  kitchenOrderId String?
+  menuItemId     String?
+
+  menuItemNameAr String
+  menuItemNameEn String?
+
+  /// Sold / kitchen servings of this menu item on this ticket.
+  servings Int @default(1)
+  /// Qty of the allocation's stock item used (in the stock item unit).
+  quantityUsed String
+
+  createdAt DateTime @default(now())
+
+  @@index([allocationId, createdAt])
+  @@index([menuItemId])
+  @@map("kitchen_stock_usage_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Menu
 // ---------------------------------------------------------------------------
 
 model MenuCategory {
@@ -394,10 +653,51 @@ model MenuItem {
   invoiceLines    InvoiceLine[]
   variantGroups   MenuItemVariantGroup[]
   customizations  MenuItemCustomization[]
+  recipe          MenuItemRecipe?
 
   @@index([businessProfileId, active, sortOrder])
   @@index([categoryId])
   @@map("menu_items")
+}
+
+/// Optional recipe for a menu item — steps (text) + structured ingredients.
+model MenuItemRecipe {
+  id         String   @id @default(cuid())
+  menuItemId String   @unique
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  /// Free-text method / steps in English for kitchen + AI (does not move stock).
+  steps String?
+  /// Arabic method / steps (bilingual with `steps`).
+  stepsAr String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ingredients MenuItemRecipeIngredient[]
+
+  @@map("menu_item_recipes")
+}
+
+model MenuItemRecipeIngredient {
+  id       String         @id @default(cuid())
+  recipeId String
+  recipe   MenuItemRecipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  stockItemId String
+  stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+
+  /// Qty per 1 menu item, in `unit` (same family as stock item).
+  quantity String
+  unit     StockUnit
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([recipeId, sortOrder])
+  @@index([stockItemId])
+  @@map("menu_item_recipe_ingredients")
 }
 
 model MenuItemVariantGroup {
@@ -609,6 +909,8 @@ model KitchenOrder {
   itemsUpdatedAt DateTime @default(now())
   /// Set when the ticket is marked served (`completed`).
   completedAt    DateTime?
+  /// Set when recipe stock was deducted for this ticket (idempotent on re-ready).
+  stockDeductedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

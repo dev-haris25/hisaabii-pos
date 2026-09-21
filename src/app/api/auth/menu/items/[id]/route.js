@@ -5,6 +5,7 @@ import { mapMenuItemToJson, menuItemInclude } from '@/lib/menu/map-menu-json'
 import { menuItemImageUploadErrorResponse } from '@/lib/menu/menu-item-image-errors'
 import { resolveMenuItemImageAfterUpsert } from '@/lib/menu/menu-item-image-storage'
 import { replaceMenuItemModifiers } from '@/lib/menu/replace-menu-item-modifiers'
+import { replaceMenuItemRecipe } from '@/lib/menu/replace-menu-item-recipe'
 import { requireAdminRestaurant } from '@/lib/menu/require-admin-restaurant'
 import { menuItemPatchSchema } from '@/lib/menu/schemas'
 import { prisma } from '@/lib/prisma'
@@ -84,6 +85,9 @@ export async function PATCH(request, context) {
         d.variantGroups,
         d.customizations,
       )
+      if (d.recipe !== undefined) {
+        await replaceMenuItemRecipe(tx, auth.profileId, id, d.recipe)
+      }
       return tx.menuItem.findFirstOrThrow({
         where: { id },
         include: menuItemInclude,

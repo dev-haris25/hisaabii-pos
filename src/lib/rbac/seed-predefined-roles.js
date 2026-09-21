@@ -30,12 +30,13 @@ export function predefinedRolePermissionMap() {
     'VisaStatus',
   ]
   const menu = ['MenuItem', 'MenuCategory']
+  const stock = ['StockItem']
   const invoicesAll = ['Invoice', 'CreditNote', 'DebitNote']
 
   return {
     [ADMIN_ROLE_NAME]: [],
     [MANAGER_ROLE_NAME]: [
-      ...crudFor([...menu, ...invoicesAll, 'Pos', ...allHr]),
+      ...crudFor([...menu, ...stock, ...invoicesAll, 'Pos', ...allHr]),
       ...readFor(['Dashboard', ...ALL_REPORT_SUBJECTS]),
     ],
     [ACCOUNTANT_ROLE_NAME]: [
@@ -44,6 +45,7 @@ export function predefinedRolePermissionMap() {
         'Dashboard',
         'MenuItem',
         'MenuCategory',
+        'StockItem',
         'Employee',
         ...ALL_REPORT_SUBJECTS,
       ]),
@@ -63,7 +65,7 @@ export function predefinedRolePermissionMap() {
       { action: 'create', subject: 'DebitNote' },
       { action: 'update', subject: 'DebitNote' },
       { action: 'delete', subject: 'DebitNote' },
-      ...readFor(['MenuItem', 'MenuCategory']),
+      ...readFor(['MenuItem', 'MenuCategory', 'StockItem']),
     ],
     [STAFF_ROLE_NAME]: [],
     [KITCHEN_BOARD_MANAGER_ROLE_NAME]: [

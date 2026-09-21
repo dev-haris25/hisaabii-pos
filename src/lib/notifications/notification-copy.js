@@ -154,6 +154,36 @@ const COPY = {
       message: '{detail}',
     },
   },
+  stock_low: {
+    en: {
+      title: 'Low stock',
+      message: '{name} is at {qty} (threshold {threshold}).',
+    },
+    ar: {
+      title: 'مخزون منخفض',
+      message: '{name} عند {qty} (الحد {threshold}).',
+    },
+  },
+  kitchen_waste_high: {
+    en: {
+      title: 'High kitchen wastage',
+      message: '{name} needs attention — waste {waste}.',
+    },
+    ar: {
+      title: 'هدر مطبخ مرتفع',
+      message: '{name} يحتاج انتباهاً — الهدر {waste}.',
+    },
+  },
+  day_end_waste_high: {
+    en: {
+      title: 'High day-end wastage',
+      message: 'The day-end report for {date} includes high wastage ({items}).',
+    },
+    ar: {
+      title: 'هدر مرتفع في تقرير نهاية اليوم',
+      message: 'تقرير نهاية اليوم {date} يتضمن هدراً مرتفعاً ({items}).',
+    },
+  },
 }
 
 /** @param {string} template @param {Record<string, string>} vars */

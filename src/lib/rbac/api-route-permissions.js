@@ -38,6 +38,30 @@ const ROUTE_PERMISSIONS = [
     },
   },
   {
+    pattern: /^\/stock\/days/,
+    methods: {
+      GET: { action: 'read', subject: 'StockItem' },
+      POST: { action: 'update', subject: 'StockItem' },
+      PATCH: { action: 'update', subject: 'StockItem' },
+    },
+  },
+  {
+    pattern: /^\/stock\/items\/[^/]+\/movements/,
+    methods: {
+      GET: { action: 'read', subject: 'StockItem' },
+      POST: { action: 'update', subject: 'StockItem' },
+    },
+  },
+  {
+    pattern: /^\/stock\/(items|movements)/,
+    methods: {
+      GET: { action: 'read', subject: 'StockItem' },
+      POST: { action: 'create', subject: 'StockItem' },
+      PATCH: { action: 'update', subject: 'StockItem' },
+      DELETE: { action: 'delete', subject: 'StockItem' },
+    },
+  },
+  {
     pattern: /^\/pos\/checkout/,
     methods: {
       POST: { action: 'create', subject: 'Pos' },

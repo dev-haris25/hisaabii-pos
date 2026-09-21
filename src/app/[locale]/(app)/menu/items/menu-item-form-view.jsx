@@ -19,6 +19,10 @@ import { useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
 
 import { MenuCategoryEditModal } from '../categories/menu-category-edit-modal'
+import {
+  MenuItemRecipeEditor,
+  emptyRecipeIngredient,
+} from './menu-item-recipe-editor'
 import { AppLoader } from '@/components/app-loader'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { RequiredMark } from '@/components/ui/required-mark'
@@ -391,6 +395,13 @@ export function MenuItemFormView({ mode, itemId }) {
   const [customizations, setCustomizations] = useState(
     /** @type {ReturnType<typeof emptyCustomization>[]} */ ([]),
   )
+  const [recipeSteps, setRecipeSteps] = useState('')
+  const [recipeStepsAr, setRecipeStepsAr] = useState('')
+  const [recipeStepsBaseline, setRecipeStepsBaseline] = useState('')
+  const [recipeStepsArBaseline, setRecipeStepsArBaseline] = useState('')
+  const [recipeIngredients, setRecipeIngredients] = useState(
+    /** @type {ReturnType<typeof emptyRecipeIngredient>[]} */ ([]),
+  )
 
   const { loading: loadingNameAr } = useGeminiArSuggestion(
     nameEn,
@@ -482,6 +493,18 @@ export function MenuItemFormView({ mode, itemId }) {
         priceChange: String(row.priceChange ?? '0'),
       })),
     )
+    setRecipeSteps(item.recipe?.steps ?? '')
+    setRecipeStepsAr(item.recipe?.stepsAr ?? '')
+    setRecipeStepsBaseline(item.recipe?.steps ?? '')
+    setRecipeStepsArBaseline(item.recipe?.stepsAr ?? '')
+    setRecipeIngredients(
+      (item.recipe?.ingredients ?? []).map((ing) => ({
+        clientId: ing.id,
+        stockItemId: ing.stockItemId ?? '',
+        quantity: String(ing.quantity ?? ''),
+        unit: ing.unit ?? 'g',
+      })),
+    )
     setHydrated(true)
   }, [itemQuery.data, hydrated])
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -512,6 +535,20 @@ export function MenuItemFormView({ mode, itemId }) {
           nameEn: row.nameEn.trim() || null,
           priceChange: row.priceChange.trim() || '0',
         })),
+        recipe:
+          recipeSteps.trim() ||
+          recipeStepsAr.trim() ||
+          recipeIngredients.length > 0
+            ? {
+                steps: recipeSteps.trim() || null,
+                stepsAr: recipeStepsAr.trim() || null,
+                ingredients: recipeIngredients.map((ing) => ({
+                  stockItemId: ing.stockItemId,
+                  quantity: ing.quantity.trim(),
+                  unit: ing.unit,
+                })),
+              }
+            : null,
       }
       if (imageNext === 'clear') {
         body.clearImage = true
@@ -583,6 +620,14 @@ export function MenuItemFormView({ mode, itemId }) {
       }
       if (!/^\d+(\.\d{1,4})?$/.test(row.priceChange.trim())) {
         errors[`cz-price-${row.clientId}`] = t('validationPrice')
+      }
+    }
+    for (const ing of recipeIngredients) {
+      if (!ing.stockItemId) {
+        errors[`ri-${ing.clientId}`] = t('validationRecipeStock')
+      }
+      if (!/^\d+(\.\d+)?$/.test(ing.quantity.trim()) || Number(ing.quantity) <= 0) {
+        errors[`ri-qty-${ing.clientId}`] = t('validationRecipeQty')
       }
     }
     if (Object.keys(errors).length > 0) {
@@ -1487,6 +1532,26 @@ export function MenuItemFormView({ mode, itemId }) {
                 </button>
               ) : null}
             </div>
+          </MenuItemFormSection>
+
+          <MenuItemFormSection title={t('sectionRecipe')} icon="checks" alignDoc={alignDoc}>
+            <MenuItemRecipeEditor
+              steps={recipeSteps}
+              setSteps={setRecipeSteps}
+              stepsAr={recipeStepsAr}
+              setStepsAr={setRecipeStepsAr}
+              stepsBaseline={recipeStepsBaseline}
+              stepsArBaseline={recipeStepsArBaseline}
+              translateEnabled={hydrated || mode === 'create'}
+              origin={origin}
+              reportUserInput={reportUserInput}
+              markAutoFilled={markAutoFilled}
+              consumeAutoFillSkip={consumeAutoFillSkip}
+              ingredients={recipeIngredients}
+              setIngredients={setRecipeIngredients}
+              fieldErrors={fieldErrors}
+              clearFieldError={clearFieldError}
+            />
           </MenuItemFormSection>
         </div>
 

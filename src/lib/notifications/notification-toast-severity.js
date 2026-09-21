@@ -12,6 +12,9 @@ const WARNING_TYPES = new Set([
   'salary_cap_reached',
   'advance_outstanding',
   'invoice_voided',
+  'stock_low',
+  'kitchen_waste_high',
+  'day_end_waste_high',
 ])
 
 const INFO_TYPES = new Set(['role_changed', 'member_joined'])

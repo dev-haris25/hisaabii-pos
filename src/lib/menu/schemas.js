@@ -57,6 +57,28 @@ export const menuItemBodySchema = z.object({
   imageMimeType: optionalImageMime,
   variantGroups: z.array(variantGroupBodySchema).max(20).optional(),
   customizations: z.array(customizationBodySchema).max(40).optional(),
+  recipe: z
+    .union([
+      z.null(),
+      z.object({
+        steps: z.string().trim().max(8000).nullable().optional(),
+        stepsAr: z.string().trim().max(8000).nullable().optional(),
+        ingredients: z
+          .array(
+            z.object({
+              stockItemId: z.string().trim().min(1),
+              quantity: z
+                .string()
+                .trim()
+                .regex(/^\d+(\.\d+)?$/)
+                .refine((v) => Number(v) > 0, 'Quantity must be > 0'),
+              unit: z.enum(['piece', 'g', 'kg', 'ml', 'l']),
+            }),
+          )
+          .max(40),
+      }),
+    ])
+    .optional(),
 })
 
 export const menuItemPatchSchema = menuItemBodySchema.partial()

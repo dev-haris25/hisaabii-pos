@@ -13,6 +13,12 @@ import {
   isValidDiscountPercent,
   orderDiscountMoneyFromPercent,
 } from '@/lib/pos/discount-cap'
+import { getOrCreateBusinessSettings } from '@/lib/settings/get-or-create-business-settings'
+import { excludeBulkStockNeeds } from '@/lib/stock/exclude-bulk-stock-needs'
+import {
+  aggregateRecipeStockNeeds,
+  loadRecipesByMenuItemIds,
+} from '@/lib/stock/recipe-stock-needs'
 import { prisma } from '@/lib/prisma'
 import { humanizeZatcaError } from '@/lib/zatca/humanize-zatca-error'
 import { runInvoiceZatcaSend } from '@/lib/zatca/run-invoice-zatca-send'
@@ -41,6 +47,12 @@ export const posCheckoutBodySchema = z.object({
   /** Order-level discount percent (0–100); converted to SAR then allocated by gross share. */
   discount: moneyOptionalSchema,
   notes: z.string().trim().max(500).optional().nullable(),
+  /** When restaurant allows negative stock, cashier confirms override. */
+  allowNegativeStock: z.boolean().optional(),
+  /** When kitchen stock mode is on and an item has no open kitchen stock, confirm deduct from main. */
+  allowMainStockIfNoKitchenStock: z.boolean().optional(),
+  /** @deprecated use allowMainStockIfNoKitchenStock */
+  allowMainStockIfNoAllotment: z.boolean().optional(),
 })
 
 /**
@@ -144,6 +156,41 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
       lineNote: l.lineNote?.trim() || null,
     }
   })
+
+  const bizSettings = await getOrCreateBusinessSettings(profileId)
+  const recipesByMenuItemId = await loadRecipesByMenuItemIds(
+    prisma,
+    profileId,
+    itemIds,
+  )
+  const { needs } = aggregateRecipeStockNeeds(
+    body.lines.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity })),
+    recipesByMenuItemId,
+  )
+
+  const fromMain = await excludeBulkStockNeeds(prisma, profileId, needs)
+  const shortfalls = fromMain.filter((n) => n.shortfall)
+  if (shortfalls.length > 0) {
+    if (bizSettings.allowNegativeStock === true) {
+      // Restaurant already allows negative stock — continue without a confirm modal.
+    } else if (body.allowNegativeStock === true) {
+      // Cashier confirmed via POS modal: persist the restaurant setting, then continue.
+      await prisma.businessSettings.upsert({
+        where: { businessProfileId: profileId },
+        create: {
+          businessProfileId: profileId,
+          allowNegativeStock: true,
+        },
+        update: { allowNegativeStock: true },
+      })
+    } else {
+      throw Object.assign(new Error('Confirm allow negative stock'), {
+        code: 'INSUFFICIENT_STOCK_CONFIRM',
+        shortfalls,
+      })
+    }
+  }
+
   const baseLines = pricedLines.map((l) => ({
     quantity: l.quantity,
     unitPrice: l.unitPrice,
@@ -259,6 +306,7 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
         const item = byId.get(l.menuItemId)
         const priced = pricedLines[idx]
         return {
+          menuItemId: item.id,
           nameAr: item.nameAr,
           nameEn: item.nameEn,
           quantity: priced.quantity,

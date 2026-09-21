@@ -143,8 +143,60 @@ export function mapMenuItemToJson(row) {
       priceChange: rowC.priceChange,
       sortOrder: rowC.sortOrder,
     })),
+    recipe: mapRecipeToJson(row.recipe),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  }
+}
+
+/**
+ * @param {{
+ *   steps: string | null
+ *   stepsAr?: string | null
+ *   ingredients?: Array<{
+ *     id: string
+ *     stockItemId: string
+ *     quantity: string
+ *     unit: string
+ *     sortOrder: number
+ *     stockItem?: {
+ *       id: string
+ *       nameAr: string
+ *       nameEn: string | null
+ *       unit: string
+ *       unitCost: string | null
+ *       quantityOnHand?: string
+ *       active?: boolean
+ *     } | null
+ *   }>
+ * } | null | undefined} recipe
+ */
+function mapRecipeToJson(recipe) {
+  if (!recipe) return null
+  const ingredients = [...(recipe.ingredients ?? [])].sort(
+    (a, b) => a.sortOrder - b.sortOrder,
+  )
+  return {
+    steps: recipe.steps,
+    stepsAr: recipe.stepsAr ?? null,
+    ingredients: ingredients.map((ing) => ({
+      id: ing.id,
+      stockItemId: ing.stockItemId,
+      quantity: ing.quantity,
+      unit: ing.unit,
+      sortOrder: ing.sortOrder,
+      stockItem: ing.stockItem
+        ? {
+            id: ing.stockItem.id,
+            nameAr: ing.stockItem.nameAr,
+            nameEn: ing.stockItem.nameEn,
+            unit: ing.stockItem.unit,
+            unitCost: ing.stockItem.unitCost,
+            quantityOnHand: ing.stockItem.quantityOnHand,
+            active: ing.stockItem.active,
+          }
+        : null,
+    })),
   }
 }
 
@@ -160,6 +212,26 @@ export const menuItemInclude = {
   },
   customizations: {
     orderBy: { sortOrder: 'asc' },
+  },
+  recipe: {
+    include: {
+      ingredients: {
+        orderBy: { sortOrder: 'asc' },
+        include: {
+          stockItem: {
+            select: {
+              id: true,
+              nameAr: true,
+              nameEn: true,
+              unit: true,
+              unitCost: true,
+              quantityOnHand: true,
+              active: true,
+            },
+          },
+        },
+      },
+    },
   },
 }
 

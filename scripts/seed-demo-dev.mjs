@@ -1,13 +1,19 @@
 /**
+<<<<<<< Updated upstream
  * Develop/staging seed: one owner account + demo menu.
  * Idempotent on demo@hisaabiipos.com — safe to re-run on every deploy.
  *
  * Does NOT create RBAC roles (owner access is via BusinessProfile.ownerUserId).
  * Does NOT create invoices, tills, HR data, etc.
+=======
+ * Develop / local seed: owner + menu + stock + recipes.
+ * Idempotent on demo@hisaabiipos.com. No sales / invoices.
+>>>>>>> Stashed changes
  *
  * Run: bun scripts/seed-demo-dev.mjs
  *   or: bun run db:seed-demo-dev
  */
+<<<<<<< Updated upstream
 import 'dotenv/config'
 
 import { PrismaPg } from '@prisma/adapter-pg'
@@ -16,12 +22,22 @@ import { Pool } from 'pg'
 
 import { hashPassword } from '../src/lib/auth/password.js'
 import { generateRestaurantSlug } from '../src/lib/auth/restaurant-slug.js'
+=======
+import { hashPassword } from '../src/lib/auth/password.js'
+import { generateRestaurantSlug } from '../src/lib/auth/restaurant-slug.js'
+import { AR } from './seed-demo-dev/ar.mjs'
+import { createPrisma, log } from './seed-demo-dev/db.mjs'
+import { seedMenu } from './seed-demo-dev/ensure-menu.mjs'
+import { ensureRecipes } from './seed-demo-dev/ensure-recipes.mjs'
+import { ensureStockItems } from './seed-demo-dev/ensure-stock.mjs'
+>>>>>>> Stashed changes
 
 const DEMO_EMAIL = 'demo@hisaabiipos.com'
 const DEMO_PASSWORD = 'Demo@123'
 const DEMO_NAME = 'Demo Owner'
 const DEMO_VAT = '300000000000003'
 
+<<<<<<< Updated upstream
 /** @param {string} raw */
 function connectionStringForPool(raw) {
   const s = raw.replace(/([?&])sslmode=[^&]*/gi, '$1')
@@ -143,19 +159,75 @@ const MENU = [
   },
 ]
 
+=======
+/**
+ * @param {import('../src/generated/prisma/client.ts').PrismaClient} prisma
+ * @param {{ businessProfileId: string, userId: string }} opts
+ */
+async function seedStockAndRecipes(prisma, { businessProfileId, userId }) {
+  await prisma.businessSettings.upsert({
+    where: { businessProfileId },
+    create: {
+      businessProfileId,
+      lowStockAlertsEnabled: true,
+      allowNegativeStock: false,
+    },
+    update: { lowStockAlertsEnabled: true },
+  })
+
+  await prisma.$transaction(
+    async (tx) => {
+      const stockByKey = await ensureStockItems(tx, {
+        businessProfileId,
+        createdByUserId: userId,
+      })
+      await ensureRecipes(tx, { businessProfileId, stockByKey })
+    },
+    { maxWait: 20_000, timeout: 120_000 },
+  )
+}
+
+>>>>>>> Stashed changes
 async function main() {
   const prisma = createPrisma()
   try {
     const existing = await prisma.user.findUnique({
       where: { email: DEMO_EMAIL },
+<<<<<<< Updated upstream
       select: { id: true },
     })
     if (existing) {
       log(`Already seeded — skipping. email=${DEMO_EMAIL}`)
+=======
+      select: {
+        id: true,
+        activeBusinessProfileId: true,
+        ownedBusinesses: { select: { id: true }, take: 1 },
+      },
+    })
+
+    if (existing) {
+      const profileId =
+        existing.activeBusinessProfileId ?? existing.ownedBusinesses[0]?.id
+      if (!profileId) {
+        throw new Error(`User ${DEMO_EMAIL} exists but has no business profile`)
+      }
+      log(`Owner exists — stock + recipes only. profileId=${profileId}`)
+      await seedStockAndRecipes(prisma, {
+        businessProfileId: profileId,
+        userId: existing.id,
+      })
+      log('Done — stock + recipes (no sales).')
+>>>>>>> Stashed changes
       return
     }
 
     const passwordHash = hashPassword(DEMO_PASSWORD)
+<<<<<<< Updated upstream
+=======
+    /** @type {{ userId: string, profileId: string }} */
+    let created = { userId: '', profileId: '' }
+>>>>>>> Stashed changes
 
     await prisma.$transaction(
       async (tx) => {
@@ -172,6 +244,7 @@ async function main() {
         const profile = await tx.businessProfile.create({
           data: {
             ownerUserId: user.id,
+<<<<<<< Updated upstream
             companyNameAr: 'مطعم تجريبي',
             companyNameEn: 'Demo Restaurant',
             crNumber: '1010000000',
@@ -183,6 +256,19 @@ async function main() {
             districtAr: 'العليا',
             districtEn: 'Olaya',
             cityAr: 'الرياض',
+=======
+            companyNameAr: AR.company,
+            companyNameEn: 'Demo Restaurant',
+            crNumber: '1010000000',
+            vatNumber: DEMO_VAT,
+            addressAr: AR.address,
+            addressEn: 'Riyadh, Saudi Arabia',
+            streetAr: AR.street,
+            streetEn: 'King Fahd Road',
+            districtAr: AR.district,
+            districtEn: 'Olaya',
+            cityAr: AR.city,
+>>>>>>> Stashed changes
             cityEn: 'Riyadh',
             buildingNumber: '1234',
             postalCode: '12211',
@@ -202,6 +288,7 @@ async function main() {
         })
 
         await tx.businessMembership.create({
+<<<<<<< Updated upstream
           data: {
             userId: user.id,
             businessProfileId: profile.id,
@@ -277,12 +364,44 @@ async function main() {
           }
         }
 
+=======
+          data: { userId: user.id, businessProfileId: profile.id },
+        })
+
+        await tx.businessSettings.create({
+          data: {
+            businessProfileId: profile.id,
+            lowStockAlertsEnabled: true,
+            allowNegativeStock: false,
+          },
+        })
+
+        await seedMenu(tx, profile.id)
+
+        const stockByKey = await ensureStockItems(tx, {
+          businessProfileId: profile.id,
+          createdByUserId: user.id,
+        })
+        await ensureRecipes(tx, {
+          businessProfileId: profile.id,
+          stockByKey,
+        })
+
+        created = { userId: user.id, profileId: profile.id }
+>>>>>>> Stashed changes
         log(`Created owner userId=${user.id} profileId=${profile.id}`)
       },
       { maxWait: 20_000, timeout: 120_000 },
     )
 
+<<<<<<< Updated upstream
     log('Done — owner + menu seeded (no roles).')
+=======
+    log(
+      `Done — owner + menu + stock + recipes (no sales). Login ${DEMO_EMAIL} / ${DEMO_PASSWORD}`,
+    )
+    log(`userId=${created.userId} profileId=${created.profileId}`)
+>>>>>>> Stashed changes
   } finally {
     await prisma.$disconnect()
   }

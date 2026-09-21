@@ -13,6 +13,19 @@ export function riyadhOrderDate(now = new Date()) {
   return new Date(`${s}T00:00:00.000Z`)
 }
 
+/**
+ * Absolute UTC bounds for an Asia/Riyadh calendar date (no DST in Saudi Arabia).
+ * @param {string} isoDate YYYY-MM-DD
+ * @returns {{ from: Date, to: Date } | null}
+ */
+export function riyadhDayBounds(isoDate) {
+  if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return null
+  const from = new Date(`${isoDate}T00:00:00+03:00`)
+  const to = new Date(`${isoDate}T23:59:59.999+03:00`)
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null
+  return { from, to }
+}
+
 /** @param {number | null | undefined} n */
 export function formatOrderNumber(n) {
   const value = Number(n)

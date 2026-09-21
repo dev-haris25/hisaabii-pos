@@ -11,6 +11,7 @@ import {
   Mail,
   SlidersHorizontal,
   Tv,
+  Warehouse,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -65,6 +66,11 @@ function formStateFromSettings(settings) {
         ? String(settings.discountCap)
         : '',
     posOnScreenKeypad: settings.posOnScreenKeypad === true,
+    allowNegativeStock: settings.allowNegativeStock === true,
+    allowMainStockIfNoKitchenStock:
+      settings.allowMainStockIfNoKitchenStock === true,
+    lowStockAlertsEnabled: settings.lowStockAlertsEnabled !== false,
+    emailHighWasteReports: settings.emailHighWasteReports === true,
   }
 }
 
@@ -193,6 +199,11 @@ export function SettingsRestaurantPageClient() {
         customerQueueLocale: form.customerQueueLocale,
         discountCap: form.discountCap.trim(),
         posOnScreenKeypad: form.posOnScreenKeypad === true,
+        allowNegativeStock: form.allowNegativeStock === true,
+        allowMainStockIfNoKitchenStock:
+          form.allowMainStockIfNoKitchenStock === true,
+        lowStockAlertsEnabled: form.lowStockAlertsEnabled === true,
+        emailHighWasteReports: form.emailHighWasteReports === true,
       })
     },
     onSuccess: (res) => {
@@ -614,6 +625,99 @@ export function SettingsRestaurantPageClient() {
               </span>
             </label>
           </SettingsField>
+        </SettingsSection>
+
+        <SettingsSection title={t('sectionStock')} icon={Warehouse}>
+          <SettingsField
+            label={t('fieldAllowNegativeStock')}
+            hint={t('fieldAllowNegativeStockHint')}
+          >
+            <label className="flex items-center gap-hisabi-md">
+              <input
+                id="settings-allow-negative-stock"
+                type="checkbox"
+                className="size-5 accent-hisabi-primary"
+                checked={form.allowNegativeStock === true}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    allowNegativeStock: e.target.checked,
+                  }))
+                }
+              />
+              <span className="type-body-md text-hisabi-on-surface">
+                {t('fieldAllowNegativeStockEnable')}
+              </span>
+            </label>
+          </SettingsField>
+          <SettingsField
+            label={t('fieldAllowMainKitchenStock')}
+            hint={t('fieldAllowMainKitchenStockHint')}
+          >
+            <label className="flex items-center gap-hisabi-md">
+              <input
+                id="settings-allow-main-kitchen-stock"
+                type="checkbox"
+                className="size-5 accent-hisabi-primary"
+                checked={form.allowMainStockIfNoKitchenStock === true}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    allowMainStockIfNoKitchenStock: e.target.checked,
+                  }))
+                }
+              />
+              <span className="type-body-md text-hisabi-on-surface">
+                {t('fieldAllowMainKitchenStockEnable')}
+              </span>
+            </label>
+          </SettingsField>
+          <SettingsField
+            label={t('fieldLowStockAlerts')}
+            hint={t('fieldLowStockAlertsHint')}
+          >
+            <label className="flex items-center gap-hisabi-md">
+              <input
+                id="settings-low-stock-alerts"
+                type="checkbox"
+                className="size-5 accent-hisabi-primary"
+                checked={form.lowStockAlertsEnabled === true}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    lowStockAlertsEnabled: e.target.checked,
+                  }))
+                }
+              />
+              <span className="type-body-md text-hisabi-on-surface">
+                {t('fieldLowStockAlertsEnable')}
+              </span>
+            </label>
+          </SettingsField>
+          {hasFullAccess(ability) ? (
+            <SettingsField
+              label={t('fieldEmailHighWaste')}
+              hint={t('fieldEmailHighWasteHint')}
+            >
+              <label className="flex items-center gap-hisabi-md">
+                <input
+                  id="settings-email-high-waste"
+                  type="checkbox"
+                  className="size-5 accent-hisabi-primary"
+                  checked={form.emailHighWasteReports === true}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      emailHighWasteReports: e.target.checked,
+                    }))
+                  }
+                />
+                <span className="type-body-md text-hisabi-on-surface">
+                  {t('fieldEmailHighWasteEnable')}
+                </span>
+              </label>
+            </SettingsField>
+          ) : null}
         </SettingsSection>
 
         <SettingsSection title={t('sectionFormats')} icon={SlidersHorizontal}>

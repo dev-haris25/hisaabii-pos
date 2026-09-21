@@ -6,6 +6,8 @@ export const NOTIFICATION_AUDIENCE_ROLES = {
   hr: ['Admin', 'Manager', 'HR'],
   salesOps: ['Admin', 'Manager', 'Accountant'],
   team: ['Admin', 'Manager', 'HR'],
+  /** High kitchen wastage: owner (always) + Admin only. */
+  ownerAdmin: ['Admin'],
 }
 
 /**

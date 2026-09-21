@@ -30,6 +30,12 @@ export const PERMISSION_REGISTRY = {
       MenuCategory: { labelKey: 'subMenuCategories' },
     },
   },
+  stock: {
+    moduleLabelKey: 'navStock',
+    subjects: {
+      StockItem: { labelKey: 'subStockItems' },
+    },
+  },
   pos: {
     moduleLabelKey: 'navPos',
     subjects: {
