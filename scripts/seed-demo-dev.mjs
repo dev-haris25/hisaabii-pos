@@ -1,28 +1,10 @@
 /**
-<<<<<<< Updated upstream
- * Develop/staging seed: one owner account + demo menu.
- * Idempotent on demo@hisaabiipos.com — safe to re-run on every deploy.
- *
- * Does NOT create RBAC roles (owner access is via BusinessProfile.ownerUserId).
- * Does NOT create invoices, tills, HR data, etc.
-=======
  * Develop / local seed: owner + menu + stock + recipes.
  * Idempotent on demo@hisaabiipos.com. No sales / invoices.
->>>>>>> Stashed changes
  *
  * Run: bun scripts/seed-demo-dev.mjs
  *   or: bun run db:seed-demo-dev
  */
-<<<<<<< Updated upstream
-import 'dotenv/config'
-
-import { PrismaPg } from '@prisma/adapter-pg'
-import { PrismaClient } from '../src/generated/prisma/client.ts'
-import { Pool } from 'pg'
-
-import { hashPassword } from '../src/lib/auth/password.js'
-import { generateRestaurantSlug } from '../src/lib/auth/restaurant-slug.js'
-=======
 import { hashPassword } from '../src/lib/auth/password.js'
 import { generateRestaurantSlug } from '../src/lib/auth/restaurant-slug.js'
 import { AR } from './seed-demo-dev/ar.mjs'
@@ -30,136 +12,12 @@ import { createPrisma, log } from './seed-demo-dev/db.mjs'
 import { seedMenu } from './seed-demo-dev/ensure-menu.mjs'
 import { ensureRecipes } from './seed-demo-dev/ensure-recipes.mjs'
 import { ensureStockItems } from './seed-demo-dev/ensure-stock.mjs'
->>>>>>> Stashed changes
 
 const DEMO_EMAIL = 'demo@hisaabiipos.com'
 const DEMO_PASSWORD = 'Demo@123'
 const DEMO_NAME = 'Demo Owner'
 const DEMO_VAT = '300000000000003'
 
-<<<<<<< Updated upstream
-/** @param {string} raw */
-function connectionStringForPool(raw) {
-  const s = raw.replace(/([?&])sslmode=[^&]*/gi, '$1')
-  return s.replace(/\?&/, '?').replace(/[?&]$/, '')
-}
-
-function createPrisma() {
-  const connectionString = process.env.DATABASE_URL?.trim()
-  if (!connectionString) throw new Error('DATABASE_URL is not set')
-  const useSsl =
-    process.env.DATABASE_SSL === 'true' || /sslmode=/i.test(connectionString)
-  const pool = new Pool({
-    connectionString: connectionStringForPool(connectionString),
-    ssl: useSsl ? { rejectUnauthorized: false } : undefined,
-  })
-  return new PrismaClient({ adapter: new PrismaPg(pool) })
-}
-
-function log(msg) {
-  console.info(`[seed-demo-dev] ${msg}`)
-}
-
-/** @type {{ nameAr: string, nameEn: string, sortOrder: number, items: Array<{ nameAr: string, nameEn: string, price: string, sortOrder: number, variants?: Array<{ nameAr: string, nameEn: string, options: Array<{ nameAr: string, nameEn: string, priceChange: string, isDefault?: boolean }> }>, customizations?: Array<{ nameAr: string, nameEn: string, priceChange: string }> }> }}[]} */
-const MENU = [
-  {
-    nameAr: 'وجبات',
-    nameEn: 'Meals',
-    sortOrder: 0,
-    items: [
-      {
-        nameAr: 'بروست دجاج',
-        nameEn: 'Chicken Broast',
-        price: '28.00',
-        sortOrder: 0,
-        variants: [
-          {
-            nameAr: 'الحجم',
-            nameEn: 'Size',
-            options: [
-              { nameAr: 'عادي', nameEn: 'Regular', priceChange: '0', isDefault: true },
-              { nameAr: 'كبير', nameEn: 'Large', priceChange: '8.00' },
-            ],
-          },
-        ],
-        customizations: [
-          { nameAr: 'صلصة إضافية', nameEn: 'Extra sauce', priceChange: '2.00' },
-        ],
-      },
-      {
-        nameAr: 'برجر لحم',
-        nameEn: 'Beef Burger',
-        price: '32.00',
-        sortOrder: 1,
-        customizations: [
-          { nameAr: 'جبنة إضافية', nameEn: 'Extra cheese', priceChange: '3.00' },
-        ],
-      },
-      {
-        nameAr: 'شاورما دجاج',
-        nameEn: 'Chicken Shawarma',
-        price: '18.00',
-        sortOrder: 2,
-      },
-    ],
-  },
-  {
-    nameAr: 'مشروبات',
-    nameEn: 'Drinks',
-    sortOrder: 1,
-    items: [
-      {
-        nameAr: 'ماء',
-        nameEn: 'Water',
-        price: '2.00',
-        sortOrder: 0,
-      },
-      {
-        nameAr: 'مشروب غازي',
-        nameEn: 'Soft Drink',
-        price: '5.00',
-        sortOrder: 1,
-        variants: [
-          {
-            nameAr: 'الحجم',
-            nameEn: 'Size',
-            options: [
-              { nameAr: 'علبة', nameEn: 'Can', priceChange: '0', isDefault: true },
-              { nameAr: 'كبير', nameEn: 'Large', priceChange: '2.00' },
-            ],
-          },
-        ],
-      },
-      {
-        nameAr: 'عصير طازج',
-        nameEn: 'Fresh Juice',
-        price: '12.00',
-        sortOrder: 2,
-      },
-    ],
-  },
-  {
-    nameAr: 'إضافات',
-    nameEn: 'Sides',
-    sortOrder: 2,
-    items: [
-      {
-        nameAr: 'بطاطس مقلية',
-        nameEn: 'French Fries',
-        price: '10.00',
-        sortOrder: 0,
-      },
-      {
-        nameAr: 'صلصة رانش',
-        nameEn: 'Ranch Sauce',
-        price: '3.00',
-        sortOrder: 1,
-      },
-    ],
-  },
-]
-
-=======
 /**
  * @param {import('../src/generated/prisma/client.ts').PrismaClient} prisma
  * @param {{ businessProfileId: string, userId: string }} opts
@@ -187,18 +45,11 @@ async function seedStockAndRecipes(prisma, { businessProfileId, userId }) {
   )
 }
 
->>>>>>> Stashed changes
 async function main() {
   const prisma = createPrisma()
   try {
     const existing = await prisma.user.findUnique({
       where: { email: DEMO_EMAIL },
-<<<<<<< Updated upstream
-      select: { id: true },
-    })
-    if (existing) {
-      log(`Already seeded — skipping. email=${DEMO_EMAIL}`)
-=======
       select: {
         id: true,
         activeBusinessProfileId: true,
@@ -218,16 +69,12 @@ async function main() {
         userId: existing.id,
       })
       log('Done — stock + recipes (no sales).')
->>>>>>> Stashed changes
       return
     }
 
     const passwordHash = hashPassword(DEMO_PASSWORD)
-<<<<<<< Updated upstream
-=======
     /** @type {{ userId: string, profileId: string }} */
     let created = { userId: '', profileId: '' }
->>>>>>> Stashed changes
 
     await prisma.$transaction(
       async (tx) => {
@@ -244,19 +91,6 @@ async function main() {
         const profile = await tx.businessProfile.create({
           data: {
             ownerUserId: user.id,
-<<<<<<< Updated upstream
-            companyNameAr: 'مطعم تجريبي',
-            companyNameEn: 'Demo Restaurant',
-            crNumber: '1010000000',
-            vatNumber: DEMO_VAT,
-            addressAr: 'الرياض، المملكة العربية السعودية',
-            addressEn: 'Riyadh, Saudi Arabia',
-            streetAr: 'طريق الملك فهد',
-            streetEn: 'King Fahd Road',
-            districtAr: 'العليا',
-            districtEn: 'Olaya',
-            cityAr: 'الرياض',
-=======
             companyNameAr: AR.company,
             companyNameEn: 'Demo Restaurant',
             crNumber: '1010000000',
@@ -268,7 +102,6 @@ async function main() {
             districtAr: AR.district,
             districtEn: 'Olaya',
             cityAr: AR.city,
->>>>>>> Stashed changes
             cityEn: 'Riyadh',
             buildingNumber: '1234',
             postalCode: '12211',
@@ -288,83 +121,6 @@ async function main() {
         })
 
         await tx.businessMembership.create({
-<<<<<<< Updated upstream
-          data: {
-            userId: user.id,
-            businessProfileId: profile.id,
-          },
-        })
-
-        await tx.businessSettings.create({
-          data: { businessProfileId: profile.id },
-        })
-
-        for (const cat of MENU) {
-          const category = await tx.menuCategory.create({
-            data: {
-              businessProfileId: profile.id,
-              nameAr: cat.nameAr,
-              nameEn: cat.nameEn,
-              sortOrder: cat.sortOrder,
-              active: true,
-            },
-          })
-
-          for (const item of cat.items) {
-            const menuItem = await tx.menuItem.create({
-              data: {
-                businessProfileId: profile.id,
-                categoryId: category.id,
-                nameAr: item.nameAr,
-                nameEn: item.nameEn,
-                price: item.price,
-                vatPreset: 'standard',
-                active: true,
-                sortOrder: item.sortOrder,
-              },
-            })
-
-            let vgOrder = 0
-            for (const group of item.variants ?? []) {
-              const vg = await tx.menuItemVariantGroup.create({
-                data: {
-                  menuItemId: menuItem.id,
-                  nameAr: group.nameAr,
-                  nameEn: group.nameEn,
-                  sortOrder: vgOrder++,
-                },
-              })
-              let optOrder = 0
-              for (const opt of group.options) {
-                await tx.menuItemVariantOption.create({
-                  data: {
-                    groupId: vg.id,
-                    nameAr: opt.nameAr,
-                    nameEn: opt.nameEn,
-                    priceChange: opt.priceChange,
-                    isDefault: opt.isDefault === true,
-                    sortOrder: optOrder++,
-                  },
-                })
-              }
-            }
-
-            let custOrder = 0
-            for (const cust of item.customizations ?? []) {
-              await tx.menuItemCustomization.create({
-                data: {
-                  menuItemId: menuItem.id,
-                  nameAr: cust.nameAr,
-                  nameEn: cust.nameEn,
-                  priceChange: cust.priceChange,
-                  sortOrder: custOrder++,
-                },
-              })
-            }
-          }
-        }
-
-=======
           data: { userId: user.id, businessProfileId: profile.id },
         })
 
@@ -388,20 +144,15 @@ async function main() {
         })
 
         created = { userId: user.id, profileId: profile.id }
->>>>>>> Stashed changes
         log(`Created owner userId=${user.id} profileId=${profile.id}`)
       },
       { maxWait: 20_000, timeout: 120_000 },
     )
 
-<<<<<<< Updated upstream
-    log('Done — owner + menu seeded (no roles).')
-=======
     log(
       `Done — owner + menu + stock + recipes (no sales). Login ${DEMO_EMAIL} / ${DEMO_PASSWORD}`,
     )
     log(`userId=${created.userId} profileId=${created.profileId}`)
->>>>>>> Stashed changes
   } finally {
     await prisma.$disconnect()
   }

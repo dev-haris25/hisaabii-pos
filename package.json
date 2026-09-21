@@ -15,10 +15,7 @@
     "print-bridge": "bun scripts/print-bridge-server.mjs",
     "db:seed-haris-orders": "bun scripts/seed-haris-orders.mjs",
     "db:seed-demo-dev": "bun scripts/seed-demo-dev.mjs",
-<<<<<<< Updated upstream
-=======
     "db:seed-mvp2-demo": "bun scripts/seed-mvp2-demo.mjs",
->>>>>>> Stashed changes
     "db:one-off-brittania-exvat": "bun scripts/one-off-brittania-owner-email-and-exvat-menu.mjs",
     "lint": "bunx eslint .",
     "desktop": "bun --cwd desktop start",
