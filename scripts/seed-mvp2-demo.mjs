@@ -1,5 +1,6 @@
 /**
- * Reseed muhammedharisnadeem@gmail.com for deduct-on-ready + day-end reports.
+ * Reseed the owner account for deduct-on-ready + day-end reports.
+ * Email: SEED_DEMO_EMAIL, or muhammedharisnadeem@gmail.com when unset.
  *
  * PRESERVES: email, password, menu, ZATCA device
  * RESETS: sales, day-end reports, stock items/movements/recipes
@@ -26,7 +27,8 @@ import { ensureStockItems } from './seed-demo-dev/ensure-stock.mjs'
 import { ensureKarahiMenuItem } from './seed-demo-dev/ensure-karahi.mjs'
 import { seedFullKitchenFlow } from './seed-demo-dev/seed-full-kitchen-flow.mjs'
 
-const DEMO_EMAIL = 'muhammedharisnadeem@gmail.com'
+const DEMO_EMAIL =
+  process.env.SEED_DEMO_EMAIL?.trim() || 'muhammedharisnadeem@gmail.com'
 const SEED_NOTE = 'SEED_KITCHEN_STOCK_V1'
 
 function parseQty(v) {

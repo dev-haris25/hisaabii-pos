@@ -118,7 +118,7 @@ jobs:
 
           # Same local demo seed: keep login, menu, and ZATCA; add Karahi if missing;
           # Arabic recipe steps; week of sales, day-end reports, and Gemini.
-          bun run db:seed-mvp2-demo || { echo "db:seed-mvp2-demo failed"; exit 1; }
+          SEED_DEMO_EMAIL=demo@hisaabiipos.com bun run db:seed-mvp2-demo || { echo "db:seed-mvp2-demo failed"; exit 1; }
 
           # Clean stale build output before production build
           rm -rf .next
