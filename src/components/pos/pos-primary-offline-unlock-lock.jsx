@@ -4,6 +4,7 @@ import { ShieldAlert } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useEffect, useId, useRef } from 'react'
 
+import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
 import { cn } from '@/lib/utils'
 
 /**
@@ -14,6 +15,7 @@ import { cn } from '@/lib/utils'
  *   open: boolean
  *   isAdmin: boolean
  *   unlocking?: boolean
+ *   loggingOut?: boolean
  *   onLogout: () => void
  *   onUnlock?: () => void
  *   error?: string | null
@@ -23,6 +25,7 @@ export function PosPrimaryOfflineUnlockLock({
   open,
   isAdmin,
   unlocking = false,
+  loggingOut = false,
   onLogout,
   onUnlock,
   error = null,
@@ -109,9 +112,12 @@ export function PosPrimaryOfflineUnlockLock({
               ) : null}
               <button
                 type="button"
+                disabled={loggingOut}
+                aria-busy={loggingOut}
                 onClick={onLogout}
-                className="type-label-md text-hisabi-on-surface-variant hover:bg-hisabi-surface-container rounded-lg px-hisabi-lg py-hisabi-sm font-bold"
+                className="bg-hisabi-primary text-hisabi-on-primary type-label-md inline-flex items-center justify-center gap-hisabi-xs rounded-lg px-hisabi-lg py-hisabi-sm font-bold disabled:opacity-60"
               >
+                {loggingOut ? <AuthButtonSpinner /> : null}
                 {t('logout')}
               </button>
             </div>

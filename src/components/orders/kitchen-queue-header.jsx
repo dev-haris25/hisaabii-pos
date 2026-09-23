@@ -7,9 +7,12 @@ import { useTranslations } from 'next-intl'
 import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { DesktopOfflineBadge } from '@/components/desktop/desktop-offline-badge'
+import { useCloudConnectivity } from '@/hooks/use-cloud-connectivity'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { Link, useRouter } from '@/i18n/navigation'
 import { authPost } from '@/lib/api/auth-client'
 import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth'
+import { getHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
 import { useAuthStore } from '@/stores/auth-store'
 
 /**
@@ -30,12 +33,22 @@ export function KitchenQueueHeader({
   const router = useRouter()
   const queryClient = useQueryClient()
   const setUser = useAuthStore((s) => s.setUser)
+  const desktop = useIsHisabiDesktop()
+  const { cloudOnline } = useCloudConnectivity()
 
   const logoutMutation = useMutation({
     mutationFn: () => logoutOnlineOrOffline(),
     onSuccess: () => {
       setUser(null)
       queryClient.clear()
+      // Client-side navigation to /login needs a network round-trip for its
+      // RSC payload. While offline that hangs and the "no user" sync-gate
+      // overlay never clears. Force a main-process reload instead so
+      // Electron falls back to the bundled offline shell's login screen.
+      if (desktop && !cloudOnline && getHisabiDesktop()?.retryLoadApp) {
+        getHisabiDesktop().retryLoadApp()
+        return
+      }
       router.replace('/login')
     },
   })
