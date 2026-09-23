@@ -35,7 +35,7 @@ import {
 } from '@/components/row-actions/action-icon-button'
 import { usePathname, useRouter, Link } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
-import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { printDocument } from '@/lib/print/print-document'
 import {
   invoiceReceiptActionLabel,
@@ -117,6 +117,7 @@ export function InvoicesListView({
   const tList = useTranslations('ListViews')
   const tPos = useTranslations('Pos')
   const tErr = useTranslations('AuthErrors')
+  const desktop = useIsHisabiDesktop()
   const locale = useLocale()
   const router = useRouter()
   const pathname = usePathname()
@@ -567,12 +568,12 @@ export function InvoicesListView({
                         </ActionIconLink>
                         {row.status !== 'voided' && row.hasQr ? (
                           <ActionIconButton
-                            label={invoiceReceiptActionLabel(t)}
+                            label={invoiceReceiptActionLabel(t, desktop)}
                             disabled={printingId === row.id}
                             className="hover:text-hisabi-primary"
                             onClick={() => printMutation.mutate(row.id)}
                           >
-                            {isHisabiDesktop() ? (
+                            {desktop ? (
                               <Printer className="size-5" aria-hidden />
                             ) : (
                               <Download className="size-5" aria-hidden />
@@ -872,7 +873,7 @@ export function InvoicesListView({
                   pending={modalPrintMutation.isPending}
                   onClick={() => modalPrintMutation.mutate()}
                 >
-                  {receiptActionLabel(tPos)}
+                  {receiptActionLabel(tPos, desktop)}
                 </AuthSubmitButton>
               ) : (
                 <p className="type-body-sm text-hisabi-on-surface-variant text-center">

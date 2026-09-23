@@ -15,6 +15,7 @@ import { PageBackButton } from '@/components/shared/page-back-button'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { useGeminiArSuggestion } from '@/hooks/use-gemini-ar-suggestion'
 import { useGeminiEnSuggestion } from '@/hooks/use-gemini-en-suggestion'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPatch, authPost } from '@/lib/api/auth-client'
 import { printDocument } from '@/lib/print/print-document'
@@ -97,6 +98,7 @@ export function InvoiceEditView({
   const isRepair = mode === 'repair'
   const t = useTranslations('Invoices')
   const tPos = useTranslations('Pos')
+  const desktop = useIsHisabiDesktop()
   const tBi = useTranslations('BilingualInvoiceCompany')
   const tErr = useTranslations('AuthErrors')
   const locale = useLocale()
@@ -766,7 +768,7 @@ export function InvoiceEditView({
                   pending={printMutation.isPending}
                   onClick={() => printMutation.mutate()}
                 >
-                  {receiptActionLabel(tPos)}
+                  {receiptActionLabel(tPos, desktop)}
                 </AuthSubmitButton>
               ) : (
                 <p className="type-body-sm text-hisabi-on-surface-variant text-center">

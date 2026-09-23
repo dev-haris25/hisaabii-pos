@@ -6,7 +6,7 @@ import {
   CLOUD_CONNECTIVITY_POLL_MS,
   probeCloudReachable,
 } from '@/lib/desktop/cloud-connectivity'
-import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 
 /**
  * Polls cloud API reachability. On non-desktop, assumes online (browser uses live APIs).
@@ -18,9 +18,9 @@ import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
  * }}
  */
 export function useCloudConnectivity() {
-  const desktop = isHisabiDesktop()
-  const [cloudOnline, setCloudOnline] = useState(!desktop ? true : true)
-  const [checking, setChecking] = useState(desktop)
+  const desktop = useIsHisabiDesktop()
+  const [cloudOnline, setCloudOnline] = useState(true)
+  const [checking, setChecking] = useState(false)
 
   const refresh = useCallback(async () => {
     if (!desktop) {

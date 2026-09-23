@@ -1,17 +1,17 @@
 'use client'
 
-import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
-
 /**
  * @param {(key: string) => string} t
+ * @param {boolean} [isDesktop]
  */
-export function receiptActionLabel(t) {
-  return isHisabiDesktop() ? t('printReceipt') : t('downloadReceipt')
+export function receiptActionLabel(t, isDesktop = false) {
+  return isDesktop ? t('printReceipt') : t('downloadReceipt')
 }
 
 /**
  * @param {(key: string) => string} t
+ * @param {boolean} [isDesktop]
  */
-export function invoiceReceiptActionLabel(t) {
-  return isHisabiDesktop() ? t('actionPrint') : t('downloadReceipt')
+export function invoiceReceiptActionLabel(t, isDesktop = false) {
+  return isDesktop ? t('actionPrint') : t('downloadReceipt')
 }

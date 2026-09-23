@@ -27,11 +27,11 @@ import {
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authDelete, authPatch } from '@/lib/api/auth-client'
 import { isInternetRequiredError } from '@/lib/desktop/assert-cloud-write-allowed'
-import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
 import {
   authGetMenuCategoriesPreferOffline,
   authGetMenuItemsPreferOffline,
 } from '@/lib/desktop/local-pos-api'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { useRequireCloudForWrite } from '@/hooks/use-require-cloud-for-write'
 import { bulkDeleteRows } from '@/lib/list-views/bulk-delete-rows'
 import { buildPaginationItems } from '@/lib/list-views/build-pagination-items'
@@ -77,7 +77,7 @@ export function MenuListView({ items, categories, pagination, filters }) {
   const queryClient = useQueryClient()
   const ability = useAppAbility()
   const { canWrite, guardWrite, cloudOnline } = useRequireCloudForWrite()
-  const desktop = isHisabiDesktop()
+  const desktop = useIsHisabiDesktop()
   const desktopOffline = desktop && !cloudOnline
   const canCreateItem = ability.can('create', 'MenuItem')
   const canUpdateItem = ability.can('update', 'MenuItem')

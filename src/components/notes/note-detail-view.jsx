@@ -13,6 +13,7 @@ import { ZatcaStatusBadge } from '@/components/invoices/zatca-status-badge'
 import { PageBackButton } from '@/components/shared/page-back-button'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { printDocument } from '@/lib/print/print-document'
 import { invoiceReceiptActionLabel } from '@/lib/print/receipt-action-label'
 import { toastPrintError } from '@/lib/print/toast-print-error'
@@ -67,6 +68,7 @@ export function NoteDetailView({ documentNature, note, logoUrl = null }) {
   const t = useTranslations(ns)
   const tInv = useTranslations('Invoices')
   const tErr = useTranslations('AuthErrors')
+  const desktop = useIsHisabiDesktop()
   const router = useRouter()
   const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -183,7 +185,7 @@ export function NoteDetailView({ documentNature, note, logoUrl = null }) {
               onClick={() => printMutation.mutate()}
             >
               <Printer className="size-4" aria-hidden />
-              {invoiceReceiptActionLabel(tInv)}
+              {invoiceReceiptActionLabel(tInv, desktop)}
             </AuthSubmitButton>
           ) : !canRepair ? (
             <p className="type-body-sm text-hisabi-on-surface-variant">

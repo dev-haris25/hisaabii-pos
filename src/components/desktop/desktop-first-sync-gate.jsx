@@ -5,15 +5,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { AppLoader } from '@/components/app-loader'
 import { AuthApiError } from '@/lib/api/auth-client'
-import {
-  getDesktopLocalStatus,
-  isHisabiDesktop,
-} from '@/lib/desktop/hisabi-desktop'
+import { getDesktopLocalStatus } from '@/lib/desktop/hisabi-desktop'
 import {
   runDesktopFullSync,
   runDesktopIncrementalSync,
 } from '@/lib/desktop/run-desktop-sync'
 import { useDesktopTillHeartbeat } from '@/hooks/use-desktop-till-heartbeat'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { useAuthStore } from '@/stores/auth-store'
 
 /**
@@ -25,8 +23,9 @@ export function DesktopFirstSyncGate({ children }) {
   const t = useTranslations('AppShell')
   const user = useAuthStore((s) => s.user)
   const activeBusinessProfileId = user?.activeBusinessProfileId ?? null
-  const desktop = isHisabiDesktop()
-  const [ready, setReady] = useState(!desktop)
+  // Must stay false until after mount so SSR HTML matches Electron hydrate.
+  const desktop = useIsHisabiDesktop()
+  const [ready, setReady] = useState(true)
   const [percent, setPercent] = useState(0)
   const [phase, setPhase] = useState('')
   const [error, setError] = useState(/** @type {string | null} */ (null))
@@ -46,6 +45,7 @@ export function DesktopFirstSyncGate({ children }) {
     }
     setBusy(true)
     setError(null)
+    setReady(false)
     try {
       const status = await getDesktopLocalStatus()
       const localBiz =
@@ -71,7 +71,6 @@ export function DesktopFirstSyncGate({ children }) {
         return
       }
 
-      setReady(false)
       const result = await runDesktopFullSync((p) => {
         setPercent(p.percent)
         setPhase(p.phase)
@@ -100,6 +99,7 @@ export function DesktopFirstSyncGate({ children }) {
       setReady(false)
       return
     }
+    setReady(false)
     void runSync()
   }, [desktop, user, activeBusinessProfileId, runSync])
 

@@ -11,8 +11,8 @@ import {
 
 import { InternetRequiredModal } from '@/components/desktop/internet-required-modal'
 import { useCloudConnectivity } from '@/hooks/use-cloud-connectivity'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { INTERNET_REQUIRED_EVENT } from '@/lib/desktop/internet-required-bus'
-import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
 
 const InternetRequiredContext = createContext(
   /** @type {{
@@ -36,7 +36,7 @@ const InternetRequiredContext = createContext(
  * Shell-level connectivity + Internet required modal for desktop write gates.
  */
 export function InternetRequiredProvider({ children }) {
-  const desktop = isHisabiDesktop()
+  const desktop = useIsHisabiDesktop()
   const { cloudOnline, checking, refresh } = useCloudConnectivity()
   const [open, setOpen] = useState(false)
 

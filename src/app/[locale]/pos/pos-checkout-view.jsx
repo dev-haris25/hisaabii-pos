@@ -32,10 +32,11 @@ import {
 import { PosItemModifiersFlow } from '@/components/pos/pos-item-modifiers-flow'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { useCloudConnectivity } from '@/hooks/use-cloud-connectivity'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
 import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth'
-import { getHisabiDesktop, isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
+import { getHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
 import { localPosCheckout } from '@/lib/desktop/local-pos-api'
 import { fetchLocalTillPrimaryStatus } from '@/lib/desktop/local-till-primary'
 import {
@@ -228,7 +229,7 @@ export function PosCheckoutView({
   const discountCap = menuQuery.data?.discountCap ?? null
   const discountCapLimit = parseDiscountCap(discountCap)
   const keypadEnabled = menuQuery.data?.posOnScreenKeypad === true
-  const desktop = isHisabiDesktop()
+  const desktop = useIsHisabiDesktop()
   const { cloudOnline, checking: connectivityChecking } = useCloudConnectivity()
 
   const tillQuery = useQuery({
@@ -1267,7 +1268,7 @@ export function PosCheckoutView({
                   pending={printMutation.isPending}
                   onClick={() => printMutation.mutate()}
                 >
-                  {receiptActionLabel(t)}
+                  {receiptActionLabel(t, desktop)}
                 </AuthSubmitButton>
               ) : (
                 <p className="type-body-sm text-hisabi-on-surface-variant text-center">

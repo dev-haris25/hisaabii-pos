@@ -26,7 +26,8 @@ import {
   authPatch,
   authPost,
 } from '@/lib/api/auth-client'
-import { getHisabiDesktop, isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
+import { getHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import {
   openTillCashDrawer,
   writeTillCustomerDisplay,
@@ -106,7 +107,7 @@ export function SettingsTillPageClient() {
   const tErr = useTranslations('AuthErrors')
   const ability = useAppAbility()
   const queryClient = useQueryClient()
-  const desktop = isHisabiDesktop()
+  const desktop = useIsHisabiDesktop()
   const canRead =
     hasFullAccess(ability) || ability.can('read', 'BusinessSettings')
   const canUpdate =

@@ -14,6 +14,7 @@ import { ZatcaStatusBadge } from '@/components/invoices/zatca-status-badge'
 import { PageBackButton } from '@/components/shared/page-back-button'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authPost } from '@/lib/api/auth-client'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { printDocument } from '@/lib/print/print-document'
 import { invoiceReceiptActionLabel } from '@/lib/print/receipt-action-label'
 import { toastPrintError } from '@/lib/print/toast-print-error'
@@ -102,6 +103,7 @@ import { canReportNoteToZatca } from '@/lib/notes/map-note-json'
 export function InvoiceDetailView({ invoice, logoUrl = null }) {
   const t = useTranslations('Invoices')
   const tErr = useTranslations('AuthErrors')
+  const desktop = useIsHisabiDesktop()
   const router = useRouter()
   const [cancelOpen, setCancelOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -226,7 +228,7 @@ export function InvoiceDetailView({ invoice, logoUrl = null }) {
               onClick={() => printMutation.mutate()}
             >
               <Printer className="size-4" aria-hidden />
-              {invoiceReceiptActionLabel(t)}
+              {invoiceReceiptActionLabel(t, desktop)}
             </AuthSubmitButton>
           ) : isVoided ? null : (
             <p className="type-body-sm text-hisabi-on-surface-variant">
@@ -313,6 +315,7 @@ export function InvoiceDetailView({ invoice, logoUrl = null }) {
 function LinkedNoteCard({ note, logoUrl, documentLabel }) {
   const t = useTranslations('Invoices')
   const tErr = useTranslations('AuthErrors')
+  const desktop = useIsHisabiDesktop()
   const router = useRouter()
 
   const apiSegment =
@@ -389,7 +392,7 @@ function LinkedNoteCard({ note, logoUrl, documentLabel }) {
             onClick={() => printMutation.mutate()}
           >
             <Printer className="size-4" aria-hidden />
-            {invoiceReceiptActionLabel(t)}
+            {invoiceReceiptActionLabel(t, desktop)}
           </AuthSubmitButton>
         ) : null}
       </div>

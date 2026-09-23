@@ -29,8 +29,8 @@ import { StockAdjustSheet } from './stock-adjust-sheet'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authDelete } from '@/lib/api/auth-client'
 import { isInternetRequiredError } from '@/lib/desktop/assert-cloud-write-allowed'
-import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
 import { authGetStockItemsPreferOffline } from '@/lib/desktop/local-pos-api'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { useRequireCloudForWrite } from '@/hooks/use-require-cloud-for-write'
 import { buildPaginationItems } from '@/lib/list-views/build-pagination-items'
 import { LIST_PAGE_HEADER_ACTIONS } from '@/lib/list-views/list-page-toolbar-styles'
@@ -83,7 +83,7 @@ export function StockItemsListView({ items, pagination, filters }) {
   const queryClient = useQueryClient()
   const ability = useAppAbility()
   const { canWrite, guardWrite, cloudOnline } = useRequireCloudForWrite()
-  const desktop = isHisabiDesktop()
+  const desktop = useIsHisabiDesktop()
   const desktopOffline = desktop && !cloudOnline
 
   const [offlineSearch, setOfflineSearch] = useState(
