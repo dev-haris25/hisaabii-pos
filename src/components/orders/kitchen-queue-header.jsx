@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 
 import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
+import { DesktopOfflineBadge } from '@/components/desktop/desktop-offline-badge'
 import { Link, useRouter } from '@/i18n/navigation'
 import { authPost } from '@/lib/api/auth-client'
 import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth'
@@ -66,6 +67,7 @@ export function KitchenQueueHeader({
         <span />
       )}
       <div className="flex min-w-0 items-center justify-end gap-hisabi-sm justify-self-end">
+        <DesktopOfflineBadge />
         <AuthLocaleToggle />
         <button
           type="button"

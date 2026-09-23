@@ -551,6 +551,7 @@ function finalizeFullSync(input) {
        business_profile_id = ?,
        pull_cursor = ?,
        offline_ready = 1,
+       offline_checkout_unlocked = 0,
        last_full_sync_at = datetime('now'),
        last_pull_at = datetime('now'),
        updated_at = datetime('now')
@@ -562,6 +563,8 @@ function finalizeFullSync(input) {
 
 /**
  * Incremental pull finished — update cursor, keep offlineReady.
+ * Also clears the admin offline-checkout unlock so the next outage
+ * requires a fresh unlock.
  * @param {{ pullCursor: string | null }} input
  */
 function finalizeIncrementalSync(input) {
@@ -569,6 +572,7 @@ function finalizeIncrementalSync(input) {
   db.prepare(
     `UPDATE sync_state SET
        pull_cursor = ?,
+       offline_checkout_unlocked = 0,
        last_pull_at = datetime('now'),
        updated_at = datetime('now')
      WHERE id = 1`,

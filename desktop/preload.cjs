@@ -56,4 +56,11 @@ contextBridge.exposeInMainWorld('hisabiDesktop', {
     ipcRenderer.invoke('auth:getOfflineSessionToken'),
   setOfflineSessionToken: (token) =>
     ipcRenderer.invoke('auth:setOfflineSessionToken', token),
+  getOfflineCheckoutUnlock: () =>
+    ipcRenderer.invoke('local:getOfflineCheckoutUnlock'),
+  unlockOfflineCheckout: () =>
+    ipcRenderer.invoke('local:unlockOfflineCheckout'),
+  clearOfflineCheckoutUnlock: () =>
+    ipcRenderer.invoke('local:clearOfflineCheckoutUnlock'),
+  getAppConfig: () => ipcRenderer.invoke('app:getConfig'),
 })

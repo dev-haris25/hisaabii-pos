@@ -351,6 +351,7 @@
     "NO_RESTAURANT_ACCESS": "This account is not allowed on this restaurant till.",
     "OFFLINE_NOT_READY": "This till must finish its first sync while online before offline sign-in works.",
     "PRIMARY_TILL_REQUIRED": "Only the primary till can take sales while offline.",
+    "OFFLINE_MODE_LOCKED": "Ask an admin to log in and enable offline mode for this till.",
     "PRIMARY_TILL_OFFLINE": "The current primary till is offline or not reachable.",
     "PRIMARY_TILL_SYNCING": "The primary till still has data waiting to sync.",
     "INTERNET_REQUIRED": "Making changes needs an internet connection.",
@@ -737,6 +738,7 @@
     "desktopSyncFailed": "Could not finish syncing. Check your connection and try again.",
     "desktopSyncNeedLogin": "Sign in again to sync this till.",
     "desktopSyncRetry": "Try again",
+    "desktopOfflineBadge": "Offline",
     "navDashboard": "Dashboard",
     "navMenu": "Menu",
     "subMenuList": "Menu list",
@@ -1548,7 +1550,13 @@
     "lineNote": "Note",
     "lineNotePlaceholder": "Optional note for kitchen",
     "nonPrimaryOfflineTitle": "No internet connection",
-    "nonPrimaryOfflineBody": "This till can't take sales while offline. Please use the primary till until you're back online."
+    "nonPrimaryOfflineBody": "This till can't take sales while offline. Please use the primary till until you're back online.",
+    "offlineModeLockedTitle": "Offline mode locked",
+    "offlineModeLockedBody": "Ask an admin to log in and enable offline mode for this till.",
+    "offlineModeLockedAdminBody": "Enable offline mode to take sales on this primary till while offline. Other tills should stay online.",
+    "offlineModeEnable": "Enable offline mode",
+    "offlineModeUnlocking": "Enabling…",
+    "offlineModeUnlockFailed": "Could not enable offline mode. Try again."
   },
   "KitchenQueue": {
     "kitchenMetaTitle": "Kitchen board | Hisabi POS",

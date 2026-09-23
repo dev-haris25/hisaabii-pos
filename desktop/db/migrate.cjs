@@ -7,11 +7,16 @@ const {
   applyOfflineCheckoutSchema,
   version: V3,
 } = require('./migrations/003_offline_checkout.cjs')
+const {
+  applyOfflineCheckoutUnlockSchema,
+  version: V4,
+} = require('./migrations/004_offline_checkout_unlock.cjs')
 
 const MIGRATIONS = [
   { version: V1, apply: applyInitialSchema },
   { version: V2, apply: applyAuthOfflineSchema },
   { version: V3, apply: applyOfflineCheckoutSchema },
+  { version: V4, apply: applyOfflineCheckoutUnlockSchema },
 ]
 
 /**
@@ -58,4 +63,4 @@ function runMigrations(db) {
   return getSchemaVersion(db)
 }
 
-module.exports = { runMigrations, getSchemaVersion, LATEST_VERSION: V3 }
+module.exports = { runMigrations, getSchemaVersion, LATEST_VERSION: V4 }

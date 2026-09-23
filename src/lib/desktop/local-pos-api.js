@@ -203,6 +203,30 @@ export async function authGetMenuItemsPreferOffline(path = '/menu/items') {
 }
 
 /**
+ * Combined POS menu (categories + items + settings) — cloud first, local when offline.
+ * Matches GET /api/auth/pos/menu.
+ */
+export async function authGetPosMenuPreferOffline() {
+  const online = await probeCloudReachable({ timeoutMs: 2500 })
+  if (online) {
+    try {
+      return await authGet('/pos/menu')
+    } catch (err) {
+      void err
+    }
+  }
+  const { res, data } = await localFetch('/v1/pos/menu')
+  if (!res.ok || data.ok === false) {
+    throw new AuthApiError(
+      res.status || 500,
+      typeof data.code === 'string' ? data.code : 'SERVER_ERROR',
+      typeof data.message === 'string' ? data.message : undefined,
+    )
+  }
+  return data
+}
+
+/**
  * Menu categories — cloud first, local SQLite when offline.
  */
 export async function authGetMenuCategoriesPreferOffline(

@@ -21,9 +21,11 @@ import { AppLoader } from '@/components/app-loader'
 import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
+import { DesktopOfflineBadge } from '@/components/desktop/desktop-offline-badge'
 import { PosThermalReceiptPreview } from '@/components/invoices/pos-thermal-receipt-preview'
 import { LineModifierSummary } from '@/components/pos/line-modifier-summary'
 import { PosNonPrimaryOfflineLock } from '@/components/pos/pos-non-primary-offline-lock'
+import { PosPrimaryOfflineUnlockLock } from '@/components/pos/pos-primary-offline-unlock-lock'
 import {
   PosMoneyField,
   PosOnScreenNumpad,
@@ -37,7 +39,14 @@ import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
 import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth'
 import { getHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
-import { localPosCheckout } from '@/lib/desktop/local-pos-api'
+import {
+  authGetPosMenuPreferOffline,
+  localPosCheckout,
+} from '@/lib/desktop/local-pos-api'
+import {
+  fetchOfflineCheckoutUnlockStatus,
+  unlockOfflineCheckoutMode,
+} from '@/lib/desktop/offline-unlock-client'
 import { fetchLocalTillPrimaryStatus } from '@/lib/desktop/local-till-primary'
 import {
   openTillCashDrawer,
@@ -165,6 +174,7 @@ export function PosCheckoutView({
   const router = useRouter()
   const queryClient = useQueryClient()
   const setUser = useAuthStore((s) => s.setUser)
+  const user = useAuthStore((s) => s.user)
   const activeBusinessProfileId = useAuthStore(
     (s) => s.user?.activeBusinessProfileId ?? s.user?.businessProfileId ?? null,
   )
@@ -204,7 +214,7 @@ export function PosCheckoutView({
 
   const menuQuery = useQuery({
     queryKey: ['pos', 'menu', activeBusinessProfileId],
-    queryFn: () => authGet('/pos/menu'),
+    queryFn: () => authGetPosMenuPreferOffline(),
     enabled: Boolean(activeBusinessProfileId),
     staleTime: 0,
     refetchOnMount: 'always',
@@ -279,6 +289,46 @@ export function PosCheckoutView({
     !cloudOnline &&
     tillQuery.isFetched &&
     !isPrimaryTill
+
+  const unlockQuery = useQuery({
+    queryKey: ['pos', 'offline-unlock'],
+    enabled: desktop && !cloudOnline && isPrimaryTill,
+    queryFn: () => fetchOfflineCheckoutUnlockStatus(),
+    staleTime: 5_000,
+    refetchInterval: 5_000,
+  })
+
+  const [unlockError, setUnlockError] = useState(/** @type {string | null} */ (null))
+  const unlockMutation = useMutation({
+    mutationFn: () => unlockOfflineCheckoutMode(),
+    onSuccess: async () => {
+      setUnlockError(null)
+      await unlockQuery.refetch()
+    },
+    onError: (err) => {
+      setUnlockError(
+        err instanceof AuthApiError && err.message
+          ? err.message
+          : t('offlineModeUnlockFailed'),
+      )
+    },
+  })
+
+  const isAdminUser =
+    user?.isRestaurantOwner === true ||
+    user?.roleName === 'Admin' ||
+    user?.roleName === 'Owner' ||
+    (Array.isArray(user?.roleNames) &&
+      (user.roleNames.includes('Admin') || user.roleNames.includes('Owner')))
+
+  const primaryOfflineUnlockLock =
+    desktop &&
+    !connectivityChecking &&
+    !cloudOnline &&
+    tillQuery.isFetched &&
+    isPrimaryTill &&
+    unlockQuery.isFetched &&
+    unlockQuery.data?.unlocked !== true
 
   const filteredItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase()
@@ -742,6 +792,7 @@ export function PosCheckoutView({
             </p>
           )}
           <div className="flex min-w-0 items-center justify-end gap-hisabi-sm justify-self-end">
+            <DesktopOfflineBadge />
             <AuthLocaleToggle />
             <button
               type="button"
@@ -1342,6 +1393,14 @@ export function PosCheckoutView({
       />
 
       <PosNonPrimaryOfflineLock open={nonPrimaryOfflineLock} />
+      <PosPrimaryOfflineUnlockLock
+        open={Boolean(primaryOfflineUnlockLock)}
+        isAdmin={Boolean(isAdminUser)}
+        unlocking={unlockMutation.isPending}
+        error={unlockError}
+        onLogout={() => logoutMutation.mutate()}
+        onUnlock={() => unlockMutation.mutate()}
+      />
     </div>
   )
 }

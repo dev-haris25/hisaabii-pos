@@ -185,8 +185,77 @@ function listLocalStockItems(opts = {}) {
   }
 }
 
+/**
+ * Combined POS catalog (matches cloud GET /api/auth/pos/menu).
+ */
+function listLocalPosMenu() {
+  const cats = listLocalMenuCategories()
+  if (!cats.ok) return cats
+
+  const itemsResult = listLocalMenuItems({
+    active: 'true',
+    page: 1,
+    limit: 100,
+  })
+  if (!itemsResult.ok) return itemsResult
+
+  // Fetch all active items (listLocalMenuItems paginates; re-query unpaged)
+  const status = getLocalStatus()
+  const biz = status.businessProfileId
+  const db = getLocalDb()
+  const rows = db
+    .prepare(
+      `SELECT id, category_id, active, payload_json
+       FROM menu_items WHERE business_profile_id = ?`,
+    )
+    .all(biz)
+
+  const items = rows
+    .map((row) => {
+      const payload = parsePayload(row.payload_json)
+      const item = asItem(payload, row.id)
+      if (item.active == null) item.active = row.active === 1
+      if (item.categoryId == null && row.category_id) {
+        item.categoryId = row.category_id
+      }
+      return item
+    })
+    .filter((item) => item.active === true)
+    .sort((a, b) => {
+      const so = Number(a.sortOrder || 0) - Number(b.sortOrder || 0)
+      if (so !== 0) return so
+      return String(a.nameAr || '').localeCompare(String(b.nameAr || ''))
+    })
+
+  let discountCap = null
+  let posOnScreenKeypad = false
+  try {
+    const settingsRow = db
+      .prepare(
+        `SELECT payload_json FROM business_settings WHERE business_profile_id = ?`,
+      )
+      .get(biz)
+    const settings = parsePayload(settingsRow?.payload_json)
+    if (settings && typeof settings === 'object') {
+      discountCap = settings.discountCap ?? null
+      posOnScreenKeypad = settings.posOnScreenKeypad === true
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return {
+    ok: true,
+    categories: (cats.categories || []).filter((c) => c.active !== false),
+    items,
+    discountCap,
+    posOnScreenKeypad,
+  }
+}
+
 module.exports = {
   listLocalMenuItems,
   listLocalMenuCategories,
   listLocalStockItems,
+  listLocalPosMenu,
 }

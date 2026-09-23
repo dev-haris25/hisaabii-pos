@@ -257,122 +257,6 @@ function loadingPageHtml() {
 }
 
 /**
- * @param {'offline' | 'slow'} kind
- * @param {{ offlineReady?: boolean }} [opts]
- */
-function offlinePageHtml(kind, opts = {}) {
-  const offlineReady = opts.offlineReady === true
-  const title =
-    kind === 'slow' ? 'Connection is too slow' : 'Internet not available'
-  const body = offlineReady
-    ? 'You can sign in offline on this till with a synced account. Sales offline use the primary till.'
-    : kind === 'slow'
-      ? 'Hisabi POS could not finish loading. Check your connection and try again.'
-      : 'Hisabi POS needs an internet connection to open. Check the network and try again.'
-  const loginBlock = offlineReady
-    ? `
-    <form id="offline-login" class="login">
-      <label>Email<input id="email" type="email" autocomplete="username" required placeholder="you@restaurant.com" /></label>
-      <label>Password<input id="password" type="password" autocomplete="current-password" required placeholder="••••••••" /></label>
-      <p id="err" class="err" hidden></p>
-      <button type="submit" id="signin">Sign in offline</button>
-    </form>
-    <p id="ok" class="ok" hidden>Signed in offline. Retry loading when the network is back, or continue when offline POS is available.</p>
-    `
-    : ''
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hisabi POS</title>
-  <style>
-    html, body { height: 100%; margin: 0; }
-    body {
-      display: grid;
-      place-items: center;
-      background: #ffffff;
-      font-family: system-ui, Segoe UI, sans-serif;
-      color: #1a1a1a;
-      padding: 24px;
-      box-sizing: border-box;
-    }
-    .wrap { max-width: 26rem; text-align: center; width: 100%; }
-    h1 { margin: 0 0 10px; font-size: 1.35rem; color: ${BRAND_GREEN}; }
-    p { margin: 0 0 22px; font-size: 0.95rem; line-height: 1.45; color: #44554f; }
-    button {
-      appearance: none;
-      border: 0;
-      border-radius: 10px;
-      background: ${BRAND_GREEN};
-      color: #fff;
-      font-size: 0.95rem;
-      font-weight: 700;
-      padding: 12px 22px;
-      cursor: pointer;
-    }
-    button:hover { filter: brightness(1.08); }
-    .login { display: grid; gap: 12px; text-align: start; margin: 0 0 18px; }
-    .login label { display: grid; gap: 6px; font-size: 0.85rem; color: #44554f; font-weight: 600; }
-    .login input {
-      border: 1px solid #c5d0cb; border-radius: 10px; padding: 10px 12px; font-size: 0.95rem;
-    }
-    .err { color: #b42318; margin: 0; }
-    .ok { color: ${BRAND_GREEN}; font-weight: 600; }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>${title}</h1>
-    <p>${body}</p>
-    ${loginBlock}
-    <div class="actions">
-      <button type="button" id="retry">Try again</button>
-    </div>
-  </div>
-  <script>
-    document.getElementById('retry').addEventListener('click', function () {
-      if (window.hisabiDesktop && window.hisabiDesktop.retryLoadApp) {
-        window.hisabiDesktop.retryLoadApp()
-      }
-    })
-    var form = document.getElementById('offline-login')
-    if (form && window.hisabiDesktop && window.hisabiDesktop.offlineLogin) {
-      form.addEventListener('submit', async function (e) {
-        e.preventDefault()
-        var err = document.getElementById('err')
-        var ok = document.getElementById('ok')
-        err.hidden = true
-        ok.hidden = true
-        try {
-          var result = await window.hisabiDesktop.offlineLogin({
-            email: document.getElementById('email').value,
-            password: document.getElementById('password').value,
-            remember: true,
-          })
-          if (!result || !result.ok) {
-            err.textContent = 'Invalid email or password, or no access on this till.'
-            err.hidden = false
-            return
-          }
-          if (result.token && window.hisabiDesktop.setOfflineSessionToken) {
-            await window.hisabiDesktop.setOfflineSessionToken(result.token)
-          }
-          ok.hidden = false
-          form.hidden = true
-        } catch (ex) {
-          err.textContent = 'Could not sign in offline. Finish first sync while online, then try again.'
-          err.hidden = false
-        }
-      })
-    }
-  </script>
-</body>
-</html>`
-}
-
-/**
  * @param {Electron.BrowserWindow} win
  * @param {'offline' | 'slow'} kind
  */
@@ -380,13 +264,28 @@ function showOfflinePage(win, kind) {
   if (win.isDestroyed()) return
   clearLoadTimeout(win)
   win.__shellPage = kind === 'slow' ? 'slow' : 'offline'
-  let offlineReady = false
-  try {
-    offlineReady = getLocalStatus().offlineReady === true
-  } catch {
-    offlineReady = false
+  const offlineAppIndex = join(__dirname, 'offline-app', 'dist', 'index.html')
+  const offlineAppDev = join(__dirname, 'offline-app', 'index.html')
+  const { existsSync } = require('node:fs')
+  const target = existsSync(offlineAppIndex)
+    ? offlineAppIndex
+    : existsSync(offlineAppDev)
+      ? offlineAppDev
+      : null
+  if (target) {
+    void win.loadFile(target, {
+      query: { reason: kind },
+    })
+    return
   }
-  void win.loadURL(dataHtmlUrl(offlinePageHtml(kind, { offlineReady })))
+  // Fallback if offline-app has not been built yet
+  void win.loadURL(
+    dataHtmlUrl(`<!doctype html><html><body style="font-family:system-ui;padding:2rem;text-align:center">
+      <h1 style="color:${BRAND_GREEN}">Internet not available</h1>
+      <p>Offline shell is missing. Build desktop/offline-app, then retry.</p>
+      <button onclick="window.hisabiDesktop&&window.hisabiDesktop.retryLoadApp()">Try again</button>
+    </body></html>`),
+  )
 }
 
 /**
@@ -463,6 +362,13 @@ function createWindow() {
       if (!isMainFrame) return
       if (errorCode === -3) return
       if (!validatedURL || validatedURL.startsWith('data:')) return
+      // Do not recurse when the offline shell (file://) itself fails to load.
+      if (
+        validatedURL.startsWith('file:') &&
+        validatedURL.includes('offline-app')
+      ) {
+        return
+      }
       void clearCacheOnceForSelfHeal()
       showOfflinePage(win, 'offline')
     },
@@ -627,6 +533,58 @@ ipcMain.handle('local:getStatus', () => {
 })
 
 ipcMain.handle('local:getApiBaseUrl', () => localApi?.baseUrl ?? null)
+
+ipcMain.handle('local:getOfflineCheckoutUnlock', () => {
+  try {
+    const {
+      getOfflineCheckoutUnlockStatus,
+    } = require('./local-api/offline-unlock.cjs')
+    return { ok: true, ...getOfflineCheckoutUnlockStatus() }
+  } catch (err) {
+    return {
+      ok: false,
+      unlocked: false,
+      offlineReady: false,
+      message: err instanceof Error ? err.message : String(err),
+    }
+  }
+})
+
+ipcMain.handle('local:unlockOfflineCheckout', () => {
+  try {
+    const { unlockOfflineCheckout } = require('./local-api/offline-unlock.cjs')
+    return unlockOfflineCheckout()
+  } catch (err) {
+    return {
+      ok: false,
+      code: 'UNLOCK_FAILED',
+      message: err instanceof Error ? err.message : String(err),
+    }
+  }
+})
+
+ipcMain.handle('local:clearOfflineCheckoutUnlock', () => {
+  try {
+    const {
+      clearOfflineCheckoutUnlock,
+    } = require('./local-api/offline-unlock.cjs')
+    return clearOfflineCheckoutUnlock()
+  } catch {
+    return { ok: true, unlocked: false }
+  }
+})
+
+ipcMain.handle('app:getConfig', () => {
+  try {
+    return { ok: true, appUrl: appUrl() }
+  } catch (err) {
+    return {
+      ok: false,
+      appUrl: null,
+      message: err instanceof Error ? err.message : String(err),
+    }
+  }
+})
 
 ipcMain.handle('local:applyPullBatch', (_e, batch) => {
   return applyPullBatch(batch || {})

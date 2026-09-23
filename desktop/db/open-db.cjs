@@ -57,6 +57,7 @@ function getLocalStatus() {
   const row = db
     .prepare(
       `SELECT business_profile_id, pull_cursor, offline_ready,
+              offline_checkout_unlocked,
               last_full_sync_at, last_pull_at, last_push_at
        FROM sync_state WHERE id = 1`,
     )
@@ -67,6 +68,7 @@ function getLocalStatus() {
 
   return {
     offlineReady: Boolean(row?.offline_ready),
+    offlineCheckoutUnlocked: Boolean(row?.offline_checkout_unlocked),
     businessProfileId: row?.business_profile_id ?? null,
     pullCursor: row?.pull_cursor ?? null,
     lastFullSyncAt: row?.last_full_sync_at ?? null,

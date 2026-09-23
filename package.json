@@ -20,7 +20,8 @@
     "db:one-off-brittania-exvat": "bun scripts/one-off-brittania-owner-email-and-exvat-menu.mjs",
     "lint": "bunx eslint .",
     "desktop": "bun --cwd desktop start",
-    "desktop:dist": "bun --cwd desktop dist"
+    "desktop:dist": "bun --cwd desktop dist",
+    "desktop:build-offline-app": "bun --cwd desktop run build:offline-app"
   },
   "dependencies": {
     "@casl/ability": "^7.0.1",

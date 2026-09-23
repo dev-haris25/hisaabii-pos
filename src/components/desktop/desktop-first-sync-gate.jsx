@@ -11,6 +11,7 @@ import {
   runDesktopIncrementalSync,
 } from '@/lib/desktop/run-desktop-sync'
 import { useDesktopTillHeartbeat } from '@/hooks/use-desktop-till-heartbeat'
+import { useDesktopBackgroundSync } from '@/hooks/use-desktop-background-sync'
 import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -27,12 +28,13 @@ export function DesktopFirstSyncGate({ children }) {
   const desktop = useIsHisabiDesktop()
   const [ready, setReady] = useState(true)
   const [percent, setPercent] = useState(0)
-  const [phase, setPhase] = useState('')
+  const [, setPhase] = useState('')
   const [error, setError] = useState(/** @type {string | null} */ (null))
   const [busy, setBusy] = useState(false)
   const lastSyncedProfileRef = useRef(/** @type {string | null} */ (null))
 
   useDesktopTillHeartbeat(desktop && ready && Boolean(user))
+  useDesktopBackgroundSync(desktop && ready && Boolean(user))
 
   const runSync = useCallback(async () => {
     if (!desktop) {
@@ -143,11 +145,6 @@ export function DesktopFirstSyncGate({ children }) {
                   }}
                 />
               </div>
-            ) : null}
-            {user && !error && phase ? (
-              <p className="type-body-sm text-hisabi-on-surface-variant mt-hisabi-xs">
-                {t('desktopSyncPhase', { phase })}
-              </p>
             ) : null}
             {user && error ? (
               <button

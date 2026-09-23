@@ -13,7 +13,13 @@ const {
   listLocalMenuItems,
   listLocalMenuCategories,
   listLocalStockItems,
+  listLocalPosMenu,
 } = require('../catalog/local-catalog-read.cjs')
+const {
+  getOfflineCheckoutUnlockStatus,
+  unlockOfflineCheckout,
+  clearOfflineCheckoutUnlock,
+} = require('./offline-unlock.cjs')
 
 const DEFAULT_PORT = 3911
 const HOST = '127.0.0.1'
@@ -164,6 +170,65 @@ function startLocalApi(preferredPort = DEFAULT_PORT) {
           return
         }
 
+        if (req.method === 'GET' && path === '/v1/pos/offline-unlock') {
+          sendJson(res, { ok: true, ...getOfflineCheckoutUnlockStatus() })
+          return
+        }
+
+        if (req.method === 'POST' && path === '/v1/pos/offline-unlock') {
+          const me = localMe(bearerToken(req))
+          if (!me.ok) {
+            sendJson(
+              res,
+              { ok: false, code: me.code, message: me.message },
+              me.status || 401,
+            )
+            return
+          }
+          const isAdmin =
+            me.user?.isRestaurantOwner === true ||
+            me.user?.roleName === 'Admin' ||
+            me.user?.roleName === 'Owner' ||
+            (Array.isArray(me.user?.roleNames) &&
+              (me.user.roleNames.includes('Admin') ||
+                me.user.roleNames.includes('Owner')))
+          if (!isAdmin) {
+            sendJson(
+              res,
+              {
+                ok: false,
+                code: 'FORBIDDEN',
+                message: 'Only an admin can enable offline mode',
+              },
+              403,
+            )
+            return
+          }
+          const result = unlockOfflineCheckout()
+          sendJson(res, result, result.ok ? 200 : result.status || 400)
+          return
+        }
+
+        if (req.method === 'DELETE' && path === '/v1/pos/offline-unlock') {
+          sendJson(res, clearOfflineCheckoutUnlock())
+          return
+        }
+
+        if (req.method === 'GET' && path === '/v1/pos/menu') {
+          const me = localMe(bearerToken(req))
+          if (!me.ok) {
+            sendJson(
+              res,
+              { ok: false, code: me.code, message: me.message },
+              me.status || 401,
+            )
+            return
+          }
+          const result = listLocalPosMenu()
+          sendJson(res, result, result.ok ? 200 : result.status || 400)
+          return
+        }
+
         if (req.method === 'POST' && path === '/v1/pos/checkout') {
           let body
           try {
@@ -190,6 +255,7 @@ function startLocalApi(preferredPort = DEFAULT_PORT) {
                 : result.code === 'ZATCA_SIGN_ERROR'
                   ? 502
                   : result.code === 'PRIMARY_TILL_REQUIRED' ||
+                      result.code === 'OFFLINE_MODE_LOCKED' ||
                       result.code === 'BUSINESS_PROFILE_REQUIRED' ||
                       result.code === 'ZATCA_NOT_ONBOARDED'
                     ? 403

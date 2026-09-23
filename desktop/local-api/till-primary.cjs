@@ -47,8 +47,8 @@ function getLocalTillPrimaryStatus(tillId) {
 }
 
 /**
- * Reject offline checkout when this till is not primary.
- * Used by local checkout stub (Step 5) and full path (Step 6).
+ * Reject offline checkout when this till is not primary, or when
+ * an admin has not unlocked offline mode for this outage.
  *
  * @param {{ tillId?: string | null }} [input]
  * @returns {{ ok: true, tillId: string, primaryPosTillId: string | null } | { ok: false, status: number, code: string, message: string }}
@@ -75,6 +75,19 @@ function assertLocalOfflineCheckoutAllowed(input = {}) {
       status: 403,
       code: 'PRIMARY_TILL_REQUIRED',
       message: 'Only the primary till can take sales while offline',
+    }
+  }
+
+  const {
+    isOfflineCheckoutUnlocked,
+  } = require('./offline-unlock.cjs')
+  if (!isOfflineCheckoutUnlocked()) {
+    return {
+      ok: false,
+      status: 403,
+      code: 'OFFLINE_MODE_LOCKED',
+      message:
+        'Ask an admin to log in and enable offline mode for this till',
     }
   }
 

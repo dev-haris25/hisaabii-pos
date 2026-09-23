@@ -5,8 +5,9 @@
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win nsis",
-    "dist:dir": "electron-builder --win dir",
+    "build:offline-app": "bun --cwd offline-app install && bun --cwd offline-app run build",
+    "dist": "bun run build:offline-app && electron-builder --win nsis",
+    "dist:dir": "bun run build:offline-app && electron-builder --win dir",
     "postinstall": "electron-builder install-app-deps",
     "smoke:packaging": "node scripts/smoke-packaging-files.cjs"
   },
@@ -37,7 +38,8 @@
       "pos/**/*",
       "stock/**/*",
       "catalog/**/*",
-      "zatca/**/*"
+      "zatca/**/*",
+      "offline-app/dist/**/*"
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*",

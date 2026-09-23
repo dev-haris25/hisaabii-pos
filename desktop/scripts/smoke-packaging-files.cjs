@@ -41,6 +41,7 @@ const mustInclude = [
   'zatca/**/*',
   'db/**/*',
   'local-api/**/*',
+  'offline-app/dist/**/*',
 ]
 for (const pattern of mustInclude) {
   if (!files.includes(pattern)) {
