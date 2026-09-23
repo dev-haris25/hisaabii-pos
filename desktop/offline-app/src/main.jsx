@@ -6,6 +6,7 @@ import { Toaster } from 'sonner'
 
 import { OfflineNavProvider } from './shims/i18n-navigation.jsx'
 import { OfflineApp } from './OfflineApp.jsx'
+import { OfflineErrorBoundary } from './ErrorBoundary.jsx'
 import './styles.css'
 
 import enMessages from '../../../messages/en.json'
@@ -59,7 +60,9 @@ function Root() {
             path={path}
             setPath={setPath}
           >
-            <OfflineApp path={path} setPath={setPath} />
+            <OfflineErrorBoundary>
+              <OfflineApp path={path} setPath={setPath} />
+            </OfflineErrorBoundary>
             <Toaster richColors position="top-center" />
           </OfflineNavProvider>
         </NextIntlClientProvider>

@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo } from 'react'
+import { createContext, useContext, useMemo, useRef } from 'react'
 
 /**
  * Minimal hash-router shim for next-intl createNavigation APIs
@@ -30,25 +30,42 @@ export function usePathname() {
 
 export function useRouter() {
   const { setPath, setLocale, path, locale } = useOfflineNav()
-  return {
-    push(href, opts) {
-      if (opts?.locale) setLocale(opts.locale)
-      setPath(typeof href === 'string' ? href : path)
-    },
-    replace(href, opts) {
-      if (opts?.locale) setLocale(opts.locale)
-      setPath(typeof href === 'string' ? href : path)
-    },
-    refresh() {
-      /* no-op in offline shell */
-    },
-    back() {
-      setPath('/pos')
-    },
-    prefetch() {
-      return Promise.resolve()
-    },
+  // Keep the latest nav state in a ref so the returned router object has a
+  // STABLE identity across renders (matching real Next.js `useRouter()`
+  // semantics). Returning a fresh object literal every call — as this used
+  // to do — makes any `useEffect([..., router])` re-fire on every render,
+  // which combined with setState calls inside the effect causes an infinite
+  // render loop (React error #185 / "Maximum update depth exceeded").
+  const stateRef = useRef({ setPath, setLocale, path, locale })
+  stateRef.current = { setPath, setLocale, path, locale }
+
+  const routerRef = useRef(
+    /** @type {ReturnType<typeof useRouter> | null} */ (null),
+  )
+  if (!routerRef.current) {
+    routerRef.current = {
+      push(href, opts) {
+        const { setLocale: setL, setPath: setP, path: p } = stateRef.current
+        if (opts?.locale) setL(opts.locale)
+        setP(typeof href === 'string' ? href : p)
+      },
+      replace(href, opts) {
+        const { setLocale: setL, setPath: setP, path: p } = stateRef.current
+        if (opts?.locale) setL(opts.locale)
+        setP(typeof href === 'string' ? href : p)
+      },
+      refresh() {
+        /* no-op in offline shell */
+      },
+      back() {
+        stateRef.current.setPath('/pos')
+      },
+      prefetch() {
+        return Promise.resolve()
+      },
+    }
   }
+  return routerRef.current
 }
 
 export function Link({ href, children, className, ...rest }) {
