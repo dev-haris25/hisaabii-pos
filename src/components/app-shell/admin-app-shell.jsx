@@ -28,6 +28,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { useIsRtl } from '@/components/auth/use-is-rtl'
+import { DesktopFirstSyncGate } from '@/components/desktop/desktop-first-sync-gate'
 import { GlobalSearch } from '@/components/app-shell/global-search'
 import { NotificationsBell } from '@/components/app-shell/notifications-bell'
 import { NotificationToastListener } from '@/components/app-shell/notification-toast-listener'
@@ -37,6 +38,7 @@ import { ProductTourProvider } from '@/components/product-tour/product-tour-prov
 import { AbilityProvider, useOptionalAppAbility } from '@/components/rbac/ability-provider'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
 import { authGet, authPost } from '@/lib/api/auth-client'
+import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth'
 import { resolveActiveSidebarChildHref } from '@/lib/app-shell/sidebar-nav'
 import { tourIdForSidebarHref } from '@/lib/product-tour/tour-dom-ids'
 import { hasFullAccess } from '@/lib/rbac/ability-utils'
@@ -101,18 +103,20 @@ export function AdminAppShell({
 }) {
   return (
     <AbilityProvider rules={abilityRules}>
-      <AdminAppShellInner
-        userName={userName}
-        userEmail={userEmail}
-        contentClassName={contentClassName}
-        hasBusinessProfile={hasBusinessProfile}
-        zatcaOnboardingSkippedEffective={zatcaOnboardingSkippedEffective}
-        accessibleBusinessProfileCount={accessibleBusinessProfileCount}
-        roleName={roleName}
-        isRestaurantOwner={isRestaurantOwner}
-      >
-        {children}
-      </AdminAppShellInner>
+      <DesktopFirstSyncGate>
+        <AdminAppShellInner
+          userName={userName}
+          userEmail={userEmail}
+          contentClassName={contentClassName}
+          hasBusinessProfile={hasBusinessProfile}
+          zatcaOnboardingSkippedEffective={zatcaOnboardingSkippedEffective}
+          accessibleBusinessProfileCount={accessibleBusinessProfileCount}
+          roleName={roleName}
+          isRestaurantOwner={isRestaurantOwner}
+        >
+          {children}
+        </AdminAppShellInner>
+      </DesktopFirstSyncGate>
     </AbilityProvider>
   )
 }
@@ -431,7 +435,7 @@ function AdminAppShellInner({
     'type-body-sm focus:ring-hisabi-teal-container w-full min-w-0 rounded-xl border-0 bg-hisabi-surface-container py-2.5 pe-hisabi-md ps-11 text-hisabi-on-surface outline-none ring-1 ring-hisabi-outline-variant/40 focus:ring-2'
 
   const logoutMutation = useMutation({
-    mutationFn: () => authPost('/logout'),
+    mutationFn: () => logoutOnlineOrOffline(),
     onSuccess: () => {
       setUser(null)
       queryClient.clear()

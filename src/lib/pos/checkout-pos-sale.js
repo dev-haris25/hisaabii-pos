@@ -53,6 +53,10 @@ export const posCheckoutBodySchema = z.object({
   allowMainStockIfNoKitchenStock: z.boolean().optional(),
   /** @deprecated use allowMainStockIfNoKitchenStock */
   allowMainStockIfNoAllotment: z.boolean().optional(),
+  /** Desktop till id (required when desktopOffline). */
+  tillId: z.string().trim().min(1).max(64).optional().nullable(),
+  /** True when Electron POS is offline and claiming an offline sale path. */
+  desktopOffline: z.boolean().optional(),
 })
 
 /**

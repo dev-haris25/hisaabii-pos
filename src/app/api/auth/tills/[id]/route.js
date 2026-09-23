@@ -3,6 +3,7 @@ import { handleRouteError } from '@/lib/api/route-error'
 import { prisma } from '@/lib/prisma'
 import { authorizeBusinessRequest } from '@/lib/rbac/authorize-api-request'
 import { mapTillToJson } from '@/lib/tills/map-till-json'
+import { reassignPrimaryAfterTillDelete } from '@/lib/tills/primary-pos-till'
 import { tillPatchSchema } from '@/lib/tills/till-body-schema'
 
 export async function GET(request, context) {
@@ -11,11 +12,20 @@ export async function GET(request, context) {
     if (auth.error) return auth.error
 
     const { id } = await context.params
-    const row = await prisma.posTill.findFirst({
-      where: { id, businessProfileId: auth.profile.id },
-    })
+    const [row, profile] = await Promise.all([
+      prisma.posTill.findFirst({
+        where: { id, businessProfileId: auth.profile.id },
+      }),
+      prisma.businessProfile.findUnique({
+        where: { id: auth.profile.id },
+        select: { primaryPosTillId: true },
+      }),
+    ])
     if (!row) return jsonError(404, 'NOT_FOUND', 'Till not found')
-    return jsonOk({ till: mapTillToJson(row) })
+    return jsonOk({
+      primaryPosTillId: profile?.primaryPosTillId ?? null,
+      till: mapTillToJson(row, profile?.primaryPosTillId),
+    })
   } catch (err) {
     return handleRouteError(err, 'GET /api/auth/tills/:id')
   }
@@ -62,11 +72,20 @@ export async function PATCH(request, context) {
     if (d.lanPrinters !== undefined) data.lanPrinters = d.lanPrinters
     if (d.usbPrinters !== undefined) data.usbPrinters = d.usbPrinters
 
-    const row = await prisma.posTill.update({
-      where: { id },
-      data,
+    const [row, profile] = await Promise.all([
+      prisma.posTill.update({
+        where: { id },
+        data,
+      }),
+      prisma.businessProfile.findUnique({
+        where: { id: auth.profile.id },
+        select: { primaryPosTillId: true },
+      }),
+    ])
+    return jsonOk({
+      primaryPosTillId: profile?.primaryPosTillId ?? null,
+      till: mapTillToJson(row, profile?.primaryPosTillId),
     })
-    return jsonOk({ till: mapTillToJson(row) })
   } catch (err) {
     return handleRouteError(err, 'PATCH /api/auth/tills/:id')
   }
@@ -84,7 +103,14 @@ export async function DELETE(request, context) {
     })
     if (!existing) return jsonError(404, 'NOT_FOUND', 'Till not found')
 
-    await prisma.posTill.delete({ where: { id } })
+    await prisma.$transaction(async (tx) => {
+      await tx.businessProfile.updateMany({
+        where: { id: auth.profile.id, primaryPosTillId: id },
+        data: { primaryPosTillId: null },
+      })
+      await tx.posTill.delete({ where: { id } })
+      await reassignPrimaryAfterTillDelete(auth.profile.id, id, tx)
+    })
     return jsonOk({ deleted: true })
   } catch (err) {
     return handleRouteError(err, 'DELETE /api/auth/tills/:id')

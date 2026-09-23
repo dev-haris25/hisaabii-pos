@@ -5,9 +5,14 @@
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "dist:dir": "electron-builder --win dir",
+    "postinstall": "electron-builder install-app-deps",
+    "smoke:packaging": "node scripts/smoke-packaging-files.cjs"
   },
   "dependencies": {
+    "@talha7k/zatca": "^0.13.0",
+    "better-sqlite3": "^11.9.1",
     "serialport": "^13.0.0"
   },
   "devDependencies": {
@@ -24,12 +29,38 @@
       "main.cjs",
       "preload.cjs",
       "app-config.json",
-      "icon.png"
+      "icon.png",
+      "db/**/*",
+      "local-api/**/*",
+      "sync/**/*",
+      "auth/**/*",
+      "pos/**/*",
+      "stock/**/*",
+      "catalog/**/*",
+      "zatca/**/*"
     ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/serialport/**/*",
+      "node_modules/@serialport/**/*",
+      "node_modules/bindings/**/*",
+      "node_modules/file-uri-to-path/**/*"
+    ],
+    "npmRebuild": true,
     "icon": "icon.png",
     "win": {
-      "target": "nsis",
+      "target": [
+        "nsis",
+        "dir"
+      ],
       "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Hisabi POS"
     }
   }
 }

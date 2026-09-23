@@ -28,9 +28,18 @@ export async function printDocument(body) {
   let invoice = body.invoice
   let logoUrl = body.logoUrl ?? null
   if (!invoice && body.invoiceId) {
-    const data = await authGet(`/invoices/${body.invoiceId}`)
-    invoice = data.invoice
-    logoUrl = data.logoUrl ?? logoUrl
+    try {
+      const data = await authGet(`/invoices/${body.invoiceId}`)
+      invoice = data.invoice
+      logoUrl = data.logoUrl ?? logoUrl
+    } catch {
+      if (isHisabiDesktop()) {
+        const { fetchLocalInvoice } = await import('@/lib/desktop/local-pos-api')
+        invoice = await fetchLocalInvoice(body.invoiceId)
+      } else {
+        throw new AuthApiError(404, 'NOT_FOUND', 'Invoice not found')
+      }
+    }
   }
   if (!invoice && body.noteId && body.noteType) {
     const path =

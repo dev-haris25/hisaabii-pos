@@ -11,11 +11,13 @@ import {
 } from '@/lib/auth/require-invoice-restaurant'
 import { prisma } from '@/lib/prisma'
 import { emitZatcaReportFailed } from '@/lib/notifications/emit-zatca-report-failed'
-import { humanizeZatcaError } from '@/lib/zatca/humanize-zatca-error'
-import { runInvoiceZatcaSend } from '@/lib/zatca/run-invoice-zatca-send'
+import { emitZatcaReportSuccess } from '@/lib/notifications/emit-zatca-report-success'
+import { reportInvoiceToZatca } from '@/lib/zatca/report-invoice-to-zatca'
+import { zatcaAttemptErrorSummary } from '@/lib/zatca/zatca-attempt-error-summary'
 
 /**
  * Manual "Report to ZATCA" for pending/failed invoices (rules.md #19).
+ * Reuses pre-signed hash/UUID when present (offline sales); otherwise signs.
  */
 export async function POST(_request, context) {
   try {
@@ -64,10 +66,11 @@ export async function POST(_request, context) {
     }
 
     try {
-      await runInvoiceZatcaSend({
+      await reportInvoiceToZatca({
         invoice,
         device,
         selectedEnvironment: profile?.zatcaEnvironment,
+        withTransientRetry: false,
       })
       await prisma.invoice.update({
         where: { id: invoice.id },
@@ -76,6 +79,12 @@ export async function POST(_request, context) {
           zatcaLastAttemptAt: new Date(),
           zatcaLastError: null,
         },
+      })
+      void emitZatcaReportSuccess({
+        businessProfileId: auth.profileId,
+        actorUserId: auth.session?.id,
+        documentId: invoice.id,
+        documentNumber: invoice.invoiceNumber,
       })
       const reported = await prisma.invoice.findFirst({
         where: { id: invoice.id, ...WHERE_NOT_DELETED },
@@ -92,21 +101,14 @@ export async function POST(_request, context) {
         invoice: mapInvoiceDetailToJson(reported),
       })
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      const humanized = humanizeZatcaError(msg)
-      const first = humanized.issues?.[0]
-      const summary = first?.message
-        ? [first.title, first.message, first.actionHint]
-            .filter(Boolean)
-            .join(' — ')
-        : msg
+      const summary = zatcaAttemptErrorSummary(err)
       await prisma.invoice.update({
         where: { id: invoice.id },
         data: {
           zatcaStatus: 'failed',
           zatcaReportAttempts: { increment: 1 },
           zatcaLastAttemptAt: new Date(),
-          zatcaLastError: summary.slice(0, 1000),
+          zatcaLastError: summary,
         },
       })
       void emitZatcaReportFailed({
@@ -116,7 +118,7 @@ export async function POST(_request, context) {
         documentId: invoice.id,
         documentNumber: invoice.invoiceNumber,
       })
-      console.error('[invoices/send] ZATCA_ERROR:', msg)
+      console.error('[invoices/send] ZATCA_ERROR:', summary)
       return jsonError(502, 'ZATCA_ERROR', 'Could not report the invoice to ZATCA')
     }
   } catch (err) {

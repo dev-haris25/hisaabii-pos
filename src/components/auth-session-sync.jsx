@@ -6,6 +6,8 @@ import { useEffect } from 'react'
 import { authGet } from '@/lib/api/auth-client'
 import { isAuthUserRbacLoaded } from '@/lib/auth/is-auth-user-rbac-loaded'
 import { syncAuthMeSession } from '@/lib/auth/sync-auth-me-session'
+import { authGetMePreferOffline } from '@/lib/desktop/desktop-auth'
+import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
 import { useAuthStore } from '@/stores/auth-store'
 
 export function AuthSessionSync() {
@@ -13,7 +15,8 @@ export function AuthSessionSync() {
 
   const { data } = useQuery({
     queryKey: ['auth', 'me'],
-    queryFn: () => authGet('/me'),
+    queryFn: () =>
+      isHisabiDesktop() ? authGetMePreferOffline() : authGet('/me'),
     staleTime: 60_000,
   })
 

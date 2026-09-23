@@ -23,6 +23,7 @@ import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { PosThermalReceiptPreview } from '@/components/invoices/pos-thermal-receipt-preview'
 import { LineModifierSummary } from '@/components/pos/line-modifier-summary'
+import { PosNonPrimaryOfflineLock } from '@/components/pos/pos-non-primary-offline-lock'
 import {
   PosMoneyField,
   PosOnScreenNumpad,
@@ -30,9 +31,13 @@ import {
 } from '@/components/pos/pos-on-screen-numpad'
 import { PosItemModifiersFlow } from '@/components/pos/pos-item-modifiers-flow'
 import { RequiredMark } from '@/components/ui/required-mark'
+import { useCloudConnectivity } from '@/hooks/use-cloud-connectivity'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
+import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth'
 import { getHisabiDesktop, isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
+import { localPosCheckout } from '@/lib/desktop/local-pos-api'
+import { fetchLocalTillPrimaryStatus } from '@/lib/desktop/local-till-primary'
 import {
   openTillCashDrawer,
   writeTillCustomerDisplay,
@@ -224,18 +229,55 @@ export function PosCheckoutView({
   const discountCapLimit = parseDiscountCap(discountCap)
   const keypadEnabled = menuQuery.data?.posOnScreenKeypad === true
   const desktop = isHisabiDesktop()
+  const { cloudOnline, checking: connectivityChecking } = useCloudConnectivity()
 
   const tillQuery = useQuery({
     queryKey: ['pos', 'bound-till'],
     enabled: desktop,
     queryFn: async () => {
       const tillId = await getHisabiDesktop()?.getTillId?.()
-      if (!tillId) return { till: null }
-      return authGet(`/pos/till?id=${encodeURIComponent(tillId)}`)
+      if (!tillId) return { till: null, isPrimary: false }
+
+      try {
+        const data = await authGet(
+          `/pos/till?id=${encodeURIComponent(tillId)}`,
+        )
+        return {
+          till: data.till ?? null,
+          isPrimary: data.till?.isPrimary === true,
+          primaryPosTillId: data.primaryPosTillId ?? null,
+        }
+      } catch {
+        /* cloud unreachable — use local SQLite */
+      }
+
+      const local = await fetchLocalTillPrimaryStatus()
+      if (!local) {
+        return { till: { id: tillId }, isPrimary: false }
+      }
+      return {
+        till: { id: local.tillId || tillId, isPrimary: local.isPrimary },
+        isPrimary: local.isPrimary,
+        primaryPosTillId: local.primaryPosTillId,
+      }
     },
     staleTime: 15_000,
   })
   const boundTill = tillQuery.data?.till ?? null
+  const isPrimaryTill =
+    tillQuery.data?.isPrimary === true || boundTill?.isPrimary === true
+
+  useEffect(() => {
+    if (!desktop) return
+    void tillQuery.refetch()
+  }, [cloudOnline, desktop]) // eslint-disable-line react-hooks/exhaustive-deps -- refetch when connectivity flips
+
+  const nonPrimaryOfflineLock =
+    desktop &&
+    !connectivityChecking &&
+    !cloudOnline &&
+    tillQuery.isFetched &&
+    !isPrimaryTill
 
   const filteredItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase()
@@ -319,7 +361,7 @@ export function PosCheckoutView({
   }, [embedded, cart, discount, paymentMethod, amountTendered])
 
   const logoutMutation = useMutation({
-    mutationFn: () => authPost('/logout'),
+    mutationFn: () => logoutOnlineOrOffline(),
     onSuccess: () => {
       setUser(null)
       queryClient.clear()
@@ -328,7 +370,7 @@ export function PosCheckoutView({
   })
 
   const checkoutMutation = useMutation({
-    mutationFn: (
+    mutationFn: async (
       /** @type {{ allowNegativeStock?: boolean, allowMainStockIfNoKitchenStock?: boolean } | void} */ opts,
     ) => {
       const options = opts && typeof opts === 'object' ? opts : {}
@@ -355,6 +397,21 @@ export function PosCheckoutView({
       }
       if (options.allowMainStockIfNoKitchenStock) {
         body.allowMainStockIfNoKitchenStock = true
+      }
+      if (desktop) {
+        let tillId = boundTill?.id ? String(boundTill.id) : null
+        if (!tillId) {
+          const fromBridge = await getHisabiDesktop()?.getTillId?.()
+          tillId =
+            typeof fromBridge === 'string' && fromBridge.trim()
+              ? fromBridge.trim()
+              : null
+        }
+        if (tillId) body.tillId = tillId
+        if (!cloudOnline) body.desktopOffline = true
+      }
+      if (desktop && !cloudOnline) {
+        return localPosCheckout(body)
       }
       return authPost('/pos/checkout', body)
     },
@@ -586,9 +643,13 @@ export function PosCheckoutView({
     setReceipt(null)
   }
 
-  const canCheckout = cart.length > 0 && !checkoutMutation.isPending
+  const canCheckout =
+    cart.length > 0 &&
+    !checkoutMutation.isPending &&
+    !nonPrimaryOfflineLock
 
   function handleCheckout() {
+    if (nonPrimaryOfflineLock) return
     const nextErrors = { discount: '', tendered: '' }
     const disc = discount.trim()
     if (disc) {
@@ -1278,6 +1339,8 @@ export function PosCheckoutView({
         }}
         onSecondary={() => setStockConfirm(null)}
       />
+
+      <PosNonPrimaryOfflineLock open={nonPrimaryOfflineLock} />
     </div>
   )
 }

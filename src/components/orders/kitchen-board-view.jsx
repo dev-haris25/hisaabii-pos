@@ -9,7 +9,13 @@ import { toast } from 'sonner'
 import { AppLoader } from '@/components/app-loader'
 import { KitchenOrderCard } from '@/components/orders/kitchen-order-card'
 import { KitchenQueueHeader } from '@/components/orders/kitchen-queue-header'
-import { AuthApiError, authGet, authPatch } from '@/lib/api/auth-client'
+import { AuthApiError, authPatch } from '@/lib/api/auth-client'
+import {
+  authGetKitchenBoardPreferOffline,
+  localKitchenStatusByInvoice,
+} from '@/lib/desktop/local-pos-api'
+import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
+import { probeCloudReachable } from '@/lib/desktop/cloud-connectivity'
 import { formatKitchenAverage } from '@/lib/orders/kitchen-wait-time'
 import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
@@ -48,7 +54,7 @@ export function KitchenBoardView({
 
   const query = useQuery({
     queryKey: ['kitchen-board', profileId],
-    queryFn: () => authGet('/orders/board?view=kitchen'),
+    queryFn: () => authGetKitchenBoardPreferOffline('/orders/board?view=kitchen'),
     refetchInterval: POLL_MS,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
@@ -65,8 +71,15 @@ export function KitchenBoardView({
   )
 
   const statusMutation = useMutation({
-    mutationFn: ({ invoiceId, status }) =>
-      authPatch(`/orders/${invoiceId}/status`, { status }),
+    mutationFn: async ({ invoiceId, status }) => {
+      if (isHisabiDesktop()) {
+        const online = await probeCloudReachable({ timeoutMs: 2500 })
+        if (!online) {
+          return localKitchenStatusByInvoice(invoiceId, { status })
+        }
+      }
+      return authPatch(`/orders/${invoiceId}/status`, { status })
+    },
     onMutate: async ({ invoiceId, status }) => {
       await queryClient.cancelQueries({ queryKey: ['kitchen-board', profileId] })
       const previous = queryClient.getQueryData(['kitchen-board', profileId])

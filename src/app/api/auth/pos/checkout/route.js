@@ -1,6 +1,7 @@
 import { jsonError, jsonOk } from '@/lib/api/json-response'
 import { handleRouteError } from '@/lib/api/route-error'
 import { requirePosRestaurant } from '@/lib/auth/require-pos-app-user'
+import { assertOfflineCheckoutAllowed } from '@/lib/pos/assert-offline-checkout-allowed'
 import {
   checkoutPosSale,
   posCheckoutBodySchema,
@@ -21,6 +22,14 @@ export async function POST(request) {
     const parsed = posCheckoutBodySchema.safeParse(body)
     if (!parsed.success) {
       return jsonError(400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.issues)
+    }
+
+    const offlineGate = await assertOfflineCheckoutAllowed(auth.profileId, {
+      tillId: parsed.data.tillId,
+      desktopOffline: parsed.data.desktopOffline === true,
+    })
+    if (offlineGate) {
+      return jsonError(403, offlineGate.code, offlineGate.message)
     }
 
     try {
@@ -66,6 +75,9 @@ export async function POST(request) {
     } catch (e) {
       const code =
         e && typeof e === 'object' && 'code' in e ? String(e.code) : ''
+      if (code === 'PRIMARY_TILL_REQUIRED') {
+        return jsonError(403, code, 'Only the primary till can take sales while offline')
+      }
       if (code === 'BUSINESS_PROFILE_REQUIRED') {
         return jsonError(403, code, 'Complete restaurant profile first')
       }

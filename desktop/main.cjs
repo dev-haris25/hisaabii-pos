@@ -5,7 +5,64 @@ const { join } = require('node:path')
 const { promisify } = require('node:util')
 const net = require('node:net')
 
+const { openLocalDb, getLocalStatus, closeLocalDb } = require('./db/open-db.cjs')
+const { startLocalApi } = require('./local-api/server.cjs')
+const {
+  applyPullBatch,
+  finalizeFullSync,
+  finalizeIncrementalSync,
+} = require('./sync/apply-pull.cjs')
+const {
+  storeZatcaSecrets,
+  loadZatcaSecrets,
+  testSafeStorageRoundTrip,
+} = require('./sync/zatca-secrets-store.cjs')
+const {
+  buildPushEvents,
+  markOutboxSynced,
+  markOutboxAttempt,
+  pendingOutboxCount,
+  finalizePush,
+} = require('./sync/push-outbox.cjs')
+const {
+  localLogin,
+  localMe,
+  localLogout,
+  upsertLocalUserFromCloud,
+  mintOfflineSessionForUser,
+} = require('./auth/local-login.cjs')
+
 const execFileAsync = promisify(execFile)
+
+/** @type {{ server: import('node:http').Server, port: number, baseUrl: string } | null} */
+let localApi = null
+
+function offlineTokenPath() {
+  return join(app.getPath('userData'), 'secure', 'offline-session-token.txt')
+}
+
+function readOfflineSessionToken() {
+  try {
+    const t = readFileSync(offlineTokenPath(), 'utf8').trim()
+    return t || null
+  } catch {
+    return null
+  }
+}
+
+function writeOfflineSessionToken(token) {
+  mkdirSync(join(app.getPath('userData'), 'secure'), { recursive: true })
+  if (token && String(token).trim()) {
+    writeFileSync(offlineTokenPath(), String(token).trim(), 'utf8')
+  } else {
+    try {
+      require('node:fs').unlinkSync(offlineTokenPath())
+    } catch {
+      /* ignore */
+    }
+  }
+  return readOfflineSessionToken()
+}
 
 function loadParentEnv() {
   try {
@@ -33,9 +90,6 @@ function loadParentEnv() {
 
 loadParentEnv()
 
-/** Shipped with the installer — used when no env override is set. */
-const PACKAGED_DEFAULT_APP_URL = 'https://pos.hisaabii.com'
-
 const TILL_STORE = () => join(app.getPath('userData'), 'till.json')
 
 function readStore() {
@@ -51,23 +105,27 @@ function writeStore(data) {
   writeFileSync(TILL_STORE(), JSON.stringify(data, null, 2), 'utf8')
 }
 
-function readPackagedAppUrl() {
-  try {
-    const cfg = JSON.parse(readFileSync(join(__dirname, 'app-config.json'), 'utf8'))
-    const url = typeof cfg?.appUrl === 'string' ? cfg.appUrl.trim() : ''
-    return url || null
-  } catch {
-    return null
-  }
-}
-
+/**
+ * Shell URL comes only from desktop/app-config.json (`appUrl`).
+ * No env overrides and no hardcoded fallback.
+ */
 function appUrl() {
-  return (
-    process.env.HISABI_APP_URL?.trim() ||
-    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    readPackagedAppUrl() ||
-    PACKAGED_DEFAULT_APP_URL
-  )
+  const cfgPath = join(__dirname, 'app-config.json')
+  let cfg
+  try {
+    cfg = JSON.parse(readFileSync(cfgPath, 'utf8'))
+  } catch (err) {
+    throw new Error(
+      `Could not read app-config.json at ${cfgPath}: ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+  const url = typeof cfg?.appUrl === 'string' ? cfg.appUrl.trim() : ''
+  if (!url) {
+    throw new Error(
+      'app-config.json must set a non-empty "appUrl" (no env or default fallback)',
+    )
+  }
+  return url
 }
 
 const BRAND_GREEN = '#00342b'
@@ -122,14 +180,28 @@ function loadingPageHtml() {
 
 /**
  * @param {'offline' | 'slow'} kind
+ * @param {{ offlineReady?: boolean }} [opts]
  */
-function offlinePageHtml(kind) {
+function offlinePageHtml(kind, opts = {}) {
+  const offlineReady = opts.offlineReady === true
   const title =
     kind === 'slow' ? 'Connection is too slow' : 'Internet not available'
-  const body =
-    kind === 'slow'
+  const body = offlineReady
+    ? 'You can sign in offline on this till with a synced account. Sales offline use the primary till.'
+    : kind === 'slow'
       ? 'Hisabi POS could not finish loading. Check your connection and try again.'
       : 'Hisabi POS needs an internet connection to open. Check the network and try again.'
+  const loginBlock = offlineReady
+    ? `
+    <form id="offline-login" class="login">
+      <label>Email<input id="email" type="email" autocomplete="username" required placeholder="you@restaurant.com" /></label>
+      <label>Password<input id="password" type="password" autocomplete="current-password" required placeholder="••••••••" /></label>
+      <p id="err" class="err" hidden></p>
+      <button type="submit" id="signin">Sign in offline</button>
+    </form>
+    <p id="ok" class="ok" hidden>Signed in offline. Retry loading when the network is back, or continue when offline POS is available.</p>
+    `
+    : ''
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -147,7 +219,7 @@ function offlinePageHtml(kind) {
       padding: 24px;
       box-sizing: border-box;
     }
-    .wrap { max-width: 26rem; text-align: center; }
+    .wrap { max-width: 26rem; text-align: center; width: 100%; }
     h1 { margin: 0 0 10px; font-size: 1.35rem; color: ${BRAND_GREEN}; }
     p { margin: 0 0 22px; font-size: 0.95rem; line-height: 1.45; color: #44554f; }
     button {
@@ -162,13 +234,24 @@ function offlinePageHtml(kind) {
       cursor: pointer;
     }
     button:hover { filter: brightness(1.08); }
+    .login { display: grid; gap: 12px; text-align: start; margin: 0 0 18px; }
+    .login label { display: grid; gap: 6px; font-size: 0.85rem; color: #44554f; font-weight: 600; }
+    .login input {
+      border: 1px solid #c5d0cb; border-radius: 10px; padding: 10px 12px; font-size: 0.95rem;
+    }
+    .err { color: #b42318; margin: 0; }
+    .ok { color: ${BRAND_GREEN}; font-weight: 600; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>${title}</h1>
     <p>${body}</p>
-    <button type="button" id="retry">Try again</button>
+    ${loginBlock}
+    <div class="actions">
+      <button type="button" id="retry">Try again</button>
+    </div>
   </div>
   <script>
     document.getElementById('retry').addEventListener('click', function () {
@@ -176,6 +259,36 @@ function offlinePageHtml(kind) {
         window.hisabiDesktop.retryLoadApp()
       }
     })
+    var form = document.getElementById('offline-login')
+    if (form && window.hisabiDesktop && window.hisabiDesktop.offlineLogin) {
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault()
+        var err = document.getElementById('err')
+        var ok = document.getElementById('ok')
+        err.hidden = true
+        ok.hidden = true
+        try {
+          var result = await window.hisabiDesktop.offlineLogin({
+            email: document.getElementById('email').value,
+            password: document.getElementById('password').value,
+            remember: true,
+          })
+          if (!result || !result.ok) {
+            err.textContent = 'Invalid email or password, or no access on this till.'
+            err.hidden = false
+            return
+          }
+          if (result.token && window.hisabiDesktop.setOfflineSessionToken) {
+            await window.hisabiDesktop.setOfflineSessionToken(result.token)
+          }
+          ok.hidden = false
+          form.hidden = true
+        } catch (ex) {
+          err.textContent = 'Could not sign in offline. Finish first sync while online, then try again.'
+          err.hidden = false
+        }
+      })
+    }
   </script>
 </body>
 </html>`
@@ -189,7 +302,13 @@ function showOfflinePage(win, kind) {
   if (win.isDestroyed()) return
   clearLoadTimeout(win)
   win.__shellPage = kind === 'slow' ? 'slow' : 'offline'
-  void win.loadURL(dataHtmlUrl(offlinePageHtml(kind)))
+  let offlineReady = false
+  try {
+    offlineReady = getLocalStatus().offlineReady === true
+  } catch {
+    offlineReady = false
+  }
+  void win.loadURL(dataHtmlUrl(offlinePageHtml(kind, { offlineReady })))
 }
 
 /**
@@ -278,15 +397,174 @@ function createWindow() {
   startAppLoad(win)
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('sa.hisabi.pos')
   }
+
+  try {
+    const safe = testSafeStorageRoundTrip()
+    console.info(
+      '[hisabi-desktop] safeStorage',
+      `available=${safe.encryptionAvailable}`,
+      `roundTrip=${safe.roundTrip}`,
+      safe.error ? `error=${safe.error}` : '',
+    )
+    if (!safe.ok) {
+      console.warn(
+        '[hisabi-desktop] CSID safeStorage self-test failed — offline ZATCA signing may be unavailable until encryption works on this machine',
+      )
+    }
+  } catch (err) {
+    console.warn('[hisabi-desktop] safeStorage self-test threw', err)
+  }
+
+  try {
+    openLocalDb(app.getPath('userData'))
+    localApi = await startLocalApi()
+    console.info('[hisabi-desktop] local API', localApi.baseUrl)
+  } catch (err) {
+    console.error('[hisabi-desktop] local DB/API failed to start', err)
+    // Remote cloud shell can still load; offline features need local API.
+  }
+
   createWindow()
 })
+
+app.on('before-quit', () => {
+  try {
+    localApi?.server?.close()
+  } catch {
+    /* ignore */
+  }
+  localApi = null
+  closeLocalDb()
+})
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+ipcMain.handle('local:getStatus', () => {
+  try {
+    return {
+      ok: true,
+      localApiBaseUrl: localApi?.baseUrl ?? null,
+      ...getLocalStatus(),
+    }
+  } catch {
+    return {
+      ok: false,
+      localApiBaseUrl: localApi?.baseUrl ?? null,
+      offlineReady: false,
+      pendingOutboxCount: 0,
+      schemaVersion: 0,
+      latestSchemaVersion: 0,
+      dbPath: null,
+      businessProfileId: null,
+    }
+  }
+})
+
+ipcMain.handle('local:getApiBaseUrl', () => localApi?.baseUrl ?? null)
+
+ipcMain.handle('local:applyPullBatch', (_e, batch) => {
+  return applyPullBatch(batch || {})
+})
+
+ipcMain.handle('local:finalizeFullSync', (_e, payload) => {
+  return finalizeFullSync(payload || {})
+})
+
+ipcMain.handle('local:finalizeIncrementalSync', (_e, payload) => {
+  return finalizeIncrementalSync(payload || {})
+})
+
+ipcMain.handle('local:buildPushBatch', (_e, opts) => {
+  const limit = Number(opts?.limit) || 40
+  const raw = buildPushEvents(limit)
+  const events = []
+  const skipped = []
+  for (const row of raw) {
+    if (row._skip) {
+      skipped.push({ outboxId: row._outboxId, reason: row._skip })
+      continue
+    }
+    events.push({
+      outboxId: row._outboxId,
+      eventId: row.eventId,
+      eventType: row.eventType,
+      payload: row.payload,
+      invoice: row.invoice,
+      lines: row.lines,
+      kitchenOrder: row.kitchenOrder,
+      movement: row.movement,
+      tip: row.tip,
+    })
+  }
+  return {
+    ok: true,
+    events,
+    skipped,
+    pendingUploadCount: pendingOutboxCount(),
+  }
+})
+
+ipcMain.handle('local:markOutboxSynced', (_e, payload) => {
+  const ids = Array.isArray(payload?.outboxIds) ? payload.outboxIds : []
+  markOutboxSynced(ids)
+  finalizePush()
+  return { ok: true, pendingUploadCount: pendingOutboxCount() }
+})
+
+ipcMain.handle('local:markOutboxAttempt', (_e, payload) => {
+  const failures = Array.isArray(payload?.failures) ? payload.failures : []
+  markOutboxAttempt(failures)
+  return { ok: true, pendingUploadCount: pendingOutboxCount() }
+})
+
+ipcMain.handle('local:storeZatcaSecrets', (_e, payload) => {
+  return storeZatcaSecrets(
+    String(payload?.businessProfileId || ''),
+    payload?.secrets ?? null,
+  )
+})
+
+ipcMain.handle('local:hasZatcaSecrets', () => {
+  const loaded = loadZatcaSecrets()
+  return {
+    ok: true,
+    hasSecrets: Boolean(loaded?.secrets),
+    businessProfileId: loaded?.businessProfileId ?? null,
+  }
+})
+
+ipcMain.handle('local:safeStorageSelfTest', () => {
+  return testSafeStorageRoundTrip()
+})
+
+ipcMain.handle('auth:offlineLogin', (_e, body) => localLogin(body || {}))
+ipcMain.handle('auth:offlineMe', (_e, token) =>
+  localMe(typeof token === 'string' ? token : readOfflineSessionToken()),
+)
+ipcMain.handle('auth:offlineLogout', (_e, token) => {
+  const t = typeof token === 'string' ? token : readOfflineSessionToken()
+  localLogout(t)
+  writeOfflineSessionToken(null)
+  return { ok: true }
+})
+ipcMain.handle('auth:upsertLocalUser', (_e, user) =>
+  upsertLocalUserFromCloud(user || {}),
+)
+ipcMain.handle('auth:mintOfflineSession', (_e, body) =>
+  mintOfflineSessionForUser(body?.userId, {
+    remember: Boolean(body?.remember),
+  }),
+)
+ipcMain.handle('auth:getOfflineSessionToken', () => readOfflineSessionToken())
+ipcMain.handle('auth:setOfflineSessionToken', (_e, token) =>
+  writeOfflineSessionToken(token),
+)
 
 ipcMain.handle('app:retryLoad', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender) || mainWindow

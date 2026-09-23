@@ -9,9 +9,10 @@ import { AuthSplitShell } from '@/components/auth/auth-split-shell'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { useIsRtl } from '@/components/auth/use-is-rtl'
-import { AuthApiError, authPost } from '@/lib/api/auth-client'
+import { AuthApiError } from '@/lib/api/auth-client'
 import { getPostAuthLandingPath } from '@/lib/auth/post-auth-landing-path'
 import { hrefWithNext } from '@/lib/auth/safe-next-path'
+import { loginOnlineOrOffline } from '@/lib/desktop/desktop-auth'
 import { Link, useRouter } from '@/i18n/navigation'
 import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { cn } from '@/lib/utils'
@@ -41,7 +42,8 @@ export function LoginView({ nextPath = null }) {
   const [fieldErrors, setFieldErrors] = useState({ email: '', password: '' })
 
   const login = useMutation({
-    mutationFn: () => authPost('/login', { email, password, remember }),
+    mutationFn: () =>
+      loginOnlineOrOffline({ email, password, remember }),
     onSuccess: (data) => {
       const user = data.user
       if (user) {

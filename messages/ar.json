@@ -347,6 +347,16 @@
     "REPLACE_CARD_RECOVERY_AMOUNT_UNKNOWN": "تم حفظ طريقة الدفع الجديدة، لكن تعذّر تحديد المبلغ المستحق. تواصل مع الدعم.",
     "REPLACE_CARD_RECOVERY_APPLY_FAILED": "نجح الدفع لكن تعذّر استعادة الوصول. حدّث صفحة الفوترة أو تواصل مع الدعم.",
     "ACCOUNT_DISABLED": "هذا الحساب معطّل. تواصل مع مدير المطعم.",
+    "NO_RESTAURANT_ACCESS": "هذا الحساب غير مسموح له على نقطة البيع لهذا المطعم.",
+    "OFFLINE_NOT_READY": "يجب أن تُكمل هذه النقطة المزامنة الأولى أثناء الاتصال قبل تسجيل الدخول دون اتصال.",
+    "PRIMARY_TILL_REQUIRED": "يمكن لنقطة البيع الأساسية فقط تسجيل المبيعات أثناء عدم الاتصال.",
+    "PRIMARY_TILL_OFFLINE": "نقطة البيع الأساسية الحالية غير متصلة أو غير متاحة.",
+    "PRIMARY_TILL_SYNCING": "لا تزال نقطة البيع الأساسية تحتوي على بيانات بانتظار المزامنة.",
+    "INTERNET_REQUIRED": "إجراء التعديلات يتطلب اتصالاً بالإنترنت.",
+    "OFFLINE_CHECKOUT_NOT_READY": "إتمام البيع دون اتصال غير متاح بعد على هذه النقطة.",
+    "LOCAL_API_UNAVAILABLE": "خدمة البيع دون اتصال على هذه النقطة غير شغّالة. أعد تشغيل تطبيق سطح المكتب ثم حاول مرة أخرى.",
+    "ZATCA_SIGN_ERROR": "تعذر توقيع الفاتورة للبيع دون اتصال. تحقق من إعداد هيئة الزكاة على هذه النقطة ثم حاول مرة أخرى.",
+    "ZATCA_NOT_ONBOARDED": "أكمل إعداد هيئة الزكاة أولاً.",
     "INSUFFICIENT_TENDER": "المبلغ المستلم أقل من الإجمالي المستحق.",
     "DISCOUNT_EXCEEDS_CAP": "الخصم أعلى من الحد الأقصى للمطعم.",
     "INVALID_MENU_ITEM": "صنف واحد أو أكثر في السلة لم يعد متاحًا. حدّث القائمة وحاول مرة أخرى.",
@@ -713,9 +723,20 @@
     "loadingList": "جاري التحميل…",
     "records": "سجل"
   },
+  "Offline": {
+    "internetRequiredTitle": "يلزم الاتصال بالإنترنت",
+    "internetRequiredBody": "يمكنك عرض هذه البيانات دون اتصال، لكن إجراء التعديلات يتطلب اتصالاً بالإنترنت.",
+    "internetRequiredOk": "حسناً"
+  },
   "AppShell": {
     "brand": "حسابي",
     "suiteTagline": "حزمة المؤسسات",
+    "desktopSyncTitle": "جارٍ تجهيز هذه النقطة",
+    "desktopSyncBody": "جارٍ مزامنة بيانات المطعم للاستخدام دون اتصال… {percent}%",
+    "desktopSyncPhase": "الخطوة: {phase}",
+    "desktopSyncFailed": "تعذّر إكمال المزامنة. تحقق من الاتصال ثم حاول مرة أخرى.",
+    "desktopSyncNeedLogin": "سجّل الدخول مرة أخرى لمزامنة هذه النقطة.",
+    "desktopSyncRetry": "حاول مرة أخرى",
     "navDashboard": "لوحة التحكم",
     "navMenu": "القائمة",
     "subMenuList": "قائمة الأصناف",
@@ -1518,7 +1539,9 @@
     "updateCart": "تحديث",
     "modalClose": "إغلاق",
     "lineNote": "ملاحظة",
-    "lineNotePlaceholder": "ملاحظة اختيارية للمطبخ"
+    "lineNotePlaceholder": "ملاحظة اختيارية للمطبخ",
+    "nonPrimaryOfflineTitle": "لا يوجد اتصال بالإنترنت",
+    "nonPrimaryOfflineBody": "لا يمكن لهذه النقطة تسجيل المبيعات أثناء عدم الاتصال. يرجى استخدام نقطة البيع الأساسية حتى يعود الاتصال بالإنترنت."
   },
   "KitchenQueue": {
     "kitchenMetaTitle": "لوحة المطبخ | حسابي POS",
@@ -1774,6 +1797,18 @@
     "tillCreated": "تم إنشاء الصندوق.",
     "tillSaved": "تم حفظ الصندوق.",
     "tillBindHint": "أنشئ صندوقًا أدناه لاستخدامه على هذا الجهاز.",
+    "tillPrimarySectionTitle": "نقطة البيع الأساسية دون اتصال",
+    "tillPrimarySectionHint": "عند انقطاع الإنترنت، يمكن لهذه النقطة فقط تسجيل المبيعات. يمكن تحديث حالة المطبخ من أي نقطة.",
+    "tillPrimaryBadge": "هذه هي نقطة البيع دون اتصال",
+    "tillPrimaryOnlyTillHint": "يوجد صندوق واحد لهذا المطعم، لذلك هو نقطة البيع الأساسية دون اتصال بشكل افتراضي.",
+    "tillPrimarySelectAria": "تعيين {name} كنقطة البيع الأساسية دون اتصال",
+    "tillPrimarySaved": "تم تحديث نقطة البيع الأساسية دون اتصال.",
+    "tillPrimaryEmpty": "أنشئ صندوقًا أولًا، ثم اختر أيه يمكنه البيع دون اتصال.",
+    "tillPrimarySyncTitle": "جارٍ المزامنة",
+    "tillPrimarySyncBody": "لا تزال نقطة البيع الأساسية تحتوي على بيانات بانتظار المزامنة. انتظر حتى تكتمل المزامنة، ثم حاول مرة أخرى.",
+    "tillPrimaryOfflineTitle": "نقطة البيع الأساسية غير متصلة",
+    "tillPrimaryOfflineBody": "نقطة البيع الأساسية الحالية غير متصلة أو غير متاحة. شغّلها، وصلها بالإنترنت، وتأكد من اكتمال مزامنتها مع الخادم، ثم حاول تغيير نقطة البيع الأساسية مرة أخرى.",
+    "tillPrimaryBlockOk": "حسناً",
     "tillFieldName": "اسم الصندوق",
     "tillNameRequired": "أدخل اسم الصندوق.",
     "tillEnabled": "مفعّل",
@@ -2567,7 +2602,13 @@
   },
   "InAppNotifications": {
     "zatca_report_failed": {
-      "title": "فشل إبلاغ الزكاة"
+      "title": "فشل الإبلاغ إلى ZATCA"
+    },
+    "zatca_report_success": {
+      "title": "تم الإبلاغ عن الفاتورة إلى ZATCA"
+    },
+    "zatca_report_still_failed": {
+      "title": "ما زال الإبلاغ إلى ZATCA فاشلاً"
     },
     "zatca_report_pending": {
       "title": "اقتراب مهلة إبلاغ الزكاة"

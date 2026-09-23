@@ -13,6 +13,7 @@
     "start": "next start -p 4517",
     "start:prod": "pm2 start ecosystem.config.cjs",
     "print-bridge": "bun scripts/print-bridge-server.mjs",
+    "zatca-worker": "bun scripts/zatca-background-worker.mjs",
     "db:seed-haris-orders": "bun scripts/seed-haris-orders.mjs",
     "db:seed-demo-dev": "bun scripts/seed-demo-dev.mjs",
     "db:seed-mvp2-demo": "bun scripts/seed-mvp2-demo.mjs",

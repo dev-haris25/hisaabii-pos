@@ -348,6 +348,16 @@
     "REPLACE_CARD_RECOVERY_AMOUNT_UNKNOWN": "Your new payment method was saved, but we could not resolve the amount owed. Contact support.",
     "REPLACE_CARD_RECOVERY_APPLY_FAILED": "Payment succeeded but access could not be restored. Refresh billing or contact support.",
     "ACCOUNT_DISABLED": "This account is disabled. Contact your restaurant manager.",
+    "NO_RESTAURANT_ACCESS": "This account is not allowed on this restaurant till.",
+    "OFFLINE_NOT_READY": "This till must finish its first sync while online before offline sign-in works.",
+    "PRIMARY_TILL_REQUIRED": "Only the primary till can take sales while offline.",
+    "PRIMARY_TILL_OFFLINE": "The current primary till is offline or not reachable.",
+    "PRIMARY_TILL_SYNCING": "The primary till still has data waiting to sync.",
+    "INTERNET_REQUIRED": "Making changes needs an internet connection.",
+    "OFFLINE_CHECKOUT_NOT_READY": "Offline checkout is not available yet on this till.",
+    "LOCAL_API_UNAVAILABLE": "This till's local offline service is not running. Restart the desktop app and try again.",
+    "ZATCA_SIGN_ERROR": "Could not sign the invoice for offline sale. Check ZATCA onboarding on this till, then try again.",
+    "ZATCA_NOT_ONBOARDED": "Complete ZATCA onboarding first.",
     "INSUFFICIENT_TENDER": "Amount received is less than the total due.",
     "DISCOUNT_EXCEEDS_CAP": "Discount is above the restaurant maximum.",
     "INVALID_MENU_ITEM": "One or more cart items are no longer available. Refresh the menu and try again.",
@@ -713,9 +723,20 @@
     "loadingList": "Loading…",
     "records": "records"
   },
+  "Offline": {
+    "internetRequiredTitle": "Internet required",
+    "internetRequiredBody": "You can view this while offline, but making changes needs an internet connection.",
+    "internetRequiredOk": "OK"
+  },
   "AppShell": {
     "brand": "Hisabi POS",
     "suiteTagline": "Restaurant POS",
+    "desktopSyncTitle": "Preparing this till",
+    "desktopSyncBody": "Syncing restaurant data for offline use… {percent}%",
+    "desktopSyncPhase": "Step: {phase}",
+    "desktopSyncFailed": "Could not finish syncing. Check your connection and try again.",
+    "desktopSyncNeedLogin": "Sign in again to sync this till.",
+    "desktopSyncRetry": "Try again",
     "navDashboard": "Dashboard",
     "navMenu": "Menu",
     "subMenuList": "Menu list",
@@ -1525,7 +1546,9 @@
     "updateCart": "Update",
     "modalClose": "Close",
     "lineNote": "Note",
-    "lineNotePlaceholder": "Optional note for kitchen"
+    "lineNotePlaceholder": "Optional note for kitchen",
+    "nonPrimaryOfflineTitle": "No internet connection",
+    "nonPrimaryOfflineBody": "This till can't take sales while offline. Please use the primary till until you're back online."
   },
   "KitchenQueue": {
     "kitchenMetaTitle": "Kitchen board | Hisabi POS",
@@ -1781,6 +1804,18 @@
     "tillCreated": "Till created.",
     "tillSaved": "Till saved.",
     "tillBindHint": "Create a till below to use on this PC.",
+    "tillPrimarySectionTitle": "Primary offline till",
+    "tillPrimarySectionHint": "When the internet is down, only this till can take sales. Kitchen status can still be updated on any till.",
+    "tillPrimaryBadge": "This is your offline till",
+    "tillPrimaryOnlyTillHint": "This restaurant has one till, so it is the primary offline till by default.",
+    "tillPrimarySelectAria": "Set {name} as the primary offline till",
+    "tillPrimarySaved": "Primary offline till updated.",
+    "tillPrimaryEmpty": "Create a till first, then choose which one can sell offline.",
+    "tillPrimarySyncTitle": "Sync still in progress",
+    "tillPrimarySyncBody": "The primary till still has data waiting to sync. Wait until sync finishes, then try again.",
+    "tillPrimaryOfflineTitle": "Primary till is offline",
+    "tillPrimaryOfflineBody": "The current primary till is offline or not reachable. Turn it on, connect it to the internet, and make sure it is fully synced with the server. Then try changing the primary till again.",
+    "tillPrimaryBlockOk": "OK",
     "tillFieldName": "Till name",
     "tillNameRequired": "Enter a till name.",
     "tillEnabled": "Enabled",
@@ -2574,7 +2609,13 @@
   },
   "InAppNotifications": {
     "zatca_report_failed": {
-      "title": "ZATCA reporting failed"
+      "title": "ZATCA report failed"
+    },
+    "zatca_report_success": {
+      "title": "Invoice reported to ZATCA"
+    },
+    "zatca_report_still_failed": {
+      "title": "ZATCA report still failing"
     },
     "zatca_report_pending": {
       "title": "ZATCA deadline approaching"

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronLeft,
   ChevronRight,
@@ -26,6 +26,13 @@ import {
 } from '@/components/row-actions/action-icon-button'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authDelete, authPatch } from '@/lib/api/auth-client'
+import { isInternetRequiredError } from '@/lib/desktop/assert-cloud-write-allowed'
+import { isHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
+import {
+  authGetMenuCategoriesPreferOffline,
+  authGetMenuItemsPreferOffline,
+} from '@/lib/desktop/local-pos-api'
+import { useRequireCloudForWrite } from '@/hooks/use-require-cloud-for-write'
 import { bulkDeleteRows } from '@/lib/list-views/bulk-delete-rows'
 import { buildPaginationItems } from '@/lib/list-views/build-pagination-items'
 import {
@@ -69,6 +76,9 @@ export function MenuListView({ items, categories, pagination, filters }) {
   const pathname = usePathname()
   const queryClient = useQueryClient()
   const ability = useAppAbility()
+  const { canWrite, guardWrite, cloudOnline } = useRequireCloudForWrite()
+  const desktop = isHisabiDesktop()
+  const desktopOffline = desktop && !cloudOnline
   const canCreateItem = ability.can('create', 'MenuItem')
   const canUpdateItem = ability.can('update', 'MenuItem')
   const canDeleteItem = ability.can('delete', 'MenuItem')
@@ -80,9 +90,78 @@ export function MenuListView({ items, categories, pagination, filters }) {
   const { searchInput, setSearchInput, debouncedSearch, lastPushedSearch } =
     useUrlSyncedSearchInput(filters.search)
 
+  const [offlineFilterOverride, setOfflineFilterOverride] = useState(
+    /** @type {null | { search: string, active: string, categoryId: string, page: number, limit: number }} */ (
+      null
+    ),
+  )
+
+  const effectiveFilters = desktopOffline && offlineFilterOverride
+    ? {
+        search: offlineFilterOverride.search,
+        active: offlineFilterOverride.active,
+        categoryId: offlineFilterOverride.categoryId,
+      }
+    : filters
+  const effectivePage =
+    desktopOffline && offlineFilterOverride
+      ? offlineFilterOverride.page
+      : pagination.page
+  const effectiveLimit =
+    desktopOffline && offlineFilterOverride
+      ? offlineFilterOverride.limit
+      : pagination.limit
+
+  const offlineListQuery = useQuery({
+    queryKey: [
+      'menu',
+      'items',
+      'offline',
+      effectiveFilters.search,
+      effectiveFilters.active,
+      effectiveFilters.categoryId,
+      effectivePage,
+      effectiveLimit,
+    ],
+    queryFn: () => {
+      const params = new URLSearchParams()
+      params.set('page', String(effectivePage ?? 1))
+      params.set('limit', String(effectiveLimit ?? 10))
+      if (effectiveFilters.search) params.set('search', effectiveFilters.search)
+      if (effectiveFilters.active && effectiveFilters.active !== 'all') {
+        params.set('active', effectiveFilters.active)
+      }
+      if (effectiveFilters.categoryId) {
+        params.set('categoryId', effectiveFilters.categoryId)
+      }
+      return authGetMenuItemsPreferOffline(`/menu/items?${params.toString()}`)
+    },
+    enabled: desktopOffline,
+  })
+
+  const offlineCategoriesQuery = useQuery({
+    queryKey: ['menu', 'categories', 'offline'],
+    queryFn: () => authGetMenuCategoriesPreferOffline(),
+    enabled: desktopOffline,
+  })
+
+  const displayItems = desktopOffline
+    ? /** @type {Array<Record<string, unknown>>} */ (
+        offlineListQuery.data?.items ?? items
+      )
+    : items
+  const displayCategories = desktopOffline
+    ? /** @type {Array<Record<string, unknown>>} */ (
+        offlineCategoriesQuery.data?.categories ?? categories
+      )
+    : categories
+  const displayPagination = desktopOffline
+    ? offlineListQuery.data?.pagination ?? pagination
+    : pagination
+
   const selectableRows = useMemo(
-    () => items.filter((item) => item.active === true),
-    [items],
+    () => displayItems.filter((item) => item.active === true),
+    [displayItems],
   )
   const {
     selectedIds,
@@ -101,12 +180,22 @@ export function MenuListView({ items, categories, pagination, filters }) {
     filters.search,
     filters.active,
     filters.categoryId,
-    pagination.page,
-    pagination.limit,
+    displayPagination.page,
+    displayPagination.limit,
     clearSelection,
   ])
 
   function pushFilters(next) {
+    if (desktopOffline) {
+      setOfflineFilterOverride({
+        search: next.search ?? '',
+        active: next.active ?? 'all',
+        categoryId: next.categoryId ?? '',
+        page: next.page ?? 1,
+        limit: next.limit ?? effectiveLimit ?? 10,
+      })
+      return
+    }
     const params = new URLSearchParams()
     params.set('page', String(next.page ?? 1))
     params.set('limit', String(next.limit ?? pagination.limit ?? 10))
@@ -126,7 +215,7 @@ export function MenuListView({ items, categories, pagination, filters }) {
       search: debouncedSearch,
       active: filters.active,
       categoryId: filters.categoryId,
-      limit: pagination.limit,
+      limit: displayPagination.limit,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- URL sync from debounced search only
   }, [debouncedSearch])
@@ -142,6 +231,7 @@ export function MenuListView({ items, categories, pagination, filters }) {
       router.refresh()
     },
     onError: (err) => {
+      if (isInternetRequiredError(err)) return
       const code = err instanceof AuthApiError ? err.code : undefined
       toast.error(code ? tErr(code) : tErr('generic'))
     },
@@ -161,17 +251,17 @@ export function MenuListView({ items, categories, pagination, filters }) {
       ? t('emptyFiltered')
       : t('empty')
 
-  const safePage = Math.max(1, pagination.page || 1)
-  const totalPages = Math.max(1, pagination.totalPages || 1)
-  const total = pagination.total || 0
-  const pageSize = pagination.limit || 10
+  const safePage = Math.max(1, displayPagination.page || 1)
+  const totalPages = Math.max(1, displayPagination.totalPages || 1)
+  const total = displayPagination.total || 0
+  const pageSize = displayPagination.limit || 10
   const start = total === 0 ? 0 : (safePage - 1) * pageSize
   const paginationItems = useMemo(
     () => buildPaginationItems(safePage, totalPages),
     [safePage, totalPages],
   )
 
-  const listBusy = isPending
+  const listBusy = isPending || (desktopOffline && offlineListQuery.isFetching)
 
   async function handleBulkDelete() {
     setBulkDeletePending(true)
@@ -260,6 +350,11 @@ export function MenuListView({ items, categories, pagination, filters }) {
             <Link
               href="/menu/items/new"
               className="type-label-md inline-flex min-h-[44px] shrink-0 cursor-pointer items-center justify-center gap-hisabi-sm rounded-xl border-none bg-hisabi-gold-muted px-hisabi-lg py-2.5 font-bold text-hisabi-on-secondary-container shadow-sm transition-all hover:bg-hisabi-gold-muted-hover active:scale-[0.98]"
+              onClick={(e) => {
+                if (canWrite) return
+                e.preventDefault()
+                guardWrite(() => {})
+              }}
             >
               <Plus className="size-5 shrink-0" aria-hidden />
               {t('addItem')}
@@ -273,7 +368,7 @@ export function MenuListView({ items, categories, pagination, filters }) {
           summary={
             listBusy
               ? t('loadingList')
-              : t('showingCount', { shown: items.length, total })
+              : t('showingCount', { shown: displayItems.length, total })
           }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
@@ -295,7 +390,7 @@ export function MenuListView({ items, categories, pagination, filters }) {
             className={listTableToolbarSelectClass()}
           >
             <option value="">{t('filterCategoryAll')}</option>
-            {categories.map((c) => (
+            {displayCategories.map((c) => (
               <option key={c.id} value={c.id}>
                 {locale === 'ar' ? c.nameAr : c.nameEn?.trim() || c.nameAr}
               </option>
@@ -353,7 +448,7 @@ export function MenuListView({ items, categories, pagination, filters }) {
               </tr>
             </thead>
             <tbody className={LIST_TABLE_BODY}>
-              {items.length === 0 ? (
+              {displayItems.length === 0 ? (
                 <tr>
                   <td
                     colSpan={
@@ -365,7 +460,7 @@ export function MenuListView({ items, categories, pagination, filters }) {
                   </td>
                 </tr>
               ) : (
-                items.map((item) => {
+                displayItems.map((item) => {
                   const name =
                     locale === 'ar'
                       ? item.nameAr
@@ -479,8 +574,10 @@ export function MenuListView({ items, categories, pagination, filters }) {
                             {canUpdateItem ? (
                               <ActionIconButton
                                 label={item.active ? t('deactivate') : t('activate')}
-                                disabled={toggleMutation.isPending}
-                                onClick={() => toggleMutation.mutate(item)}
+                              disabled={toggleMutation.isPending || !canWrite}
+                              onClick={() =>
+                                guardWrite(() => toggleMutation.mutate(item))
+                              }
                                 className={
                                   item.active
                                     ? 'hover:text-hisabi-error'
@@ -532,7 +629,7 @@ export function MenuListView({ items, categories, pagination, filters }) {
                 ? t('rangeEmpty')
                 : t('range', {
                     from: start + 1,
-                    to: start + items.length,
+                    to: start + displayItems.length,
                     total,
                   })}
             </span>

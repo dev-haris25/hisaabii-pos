@@ -8,6 +8,7 @@ import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { Link, useRouter } from '@/i18n/navigation'
 import { authPost } from '@/lib/api/auth-client'
+import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth'
 import { useAuthStore } from '@/stores/auth-store'
 
 /**
@@ -30,7 +31,7 @@ export function KitchenQueueHeader({
   const setUser = useAuthStore((s) => s.setUser)
 
   const logoutMutation = useMutation({
-    mutationFn: () => authPost('/logout'),
+    mutationFn: () => logoutOnlineOrOffline(),
     onSuccess: () => {
       setUser(null)
       queryClient.clear()

@@ -118,6 +118,7 @@ const ROUTE_PERMISSIONS = [
       GET: { action: 'read', subject: 'BusinessSettings' },
       POST: { action: 'update', subject: 'BusinessSettings' },
       PATCH: { action: 'update', subject: 'BusinessSettings' },
+      DELETE: { action: 'update', subject: 'BusinessSettings' },
     },
   },
   {

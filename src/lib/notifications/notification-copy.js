@@ -12,12 +12,36 @@ export function normalizeNotificationLocale(locale) {
 const COPY = {
   zatca_report_failed: {
     en: {
-      title: 'ZATCA reporting failed',
-      message: '{detail}',
+      title: 'ZATCA report failed',
+      message:
+        'Invoice {invoiceNumber} could not be reported. We’ll retry automatically. Check the invoice for details.',
     },
     ar: {
-      title: 'فشل إبلاغ الزكاة',
-      message: '{detail}',
+      title: 'فشل الإبلاغ إلى ZATCA',
+      message:
+        'تعذر الإبلاغ عن الفاتورة {invoiceNumber}. سنعيد المحاولة تلقائياً. راجع الفاتورة للتفاصيل.',
+    },
+  },
+  zatca_report_success: {
+    en: {
+      title: 'Invoice reported to ZATCA',
+      message: 'Invoice {invoiceNumber} was reported successfully.',
+    },
+    ar: {
+      title: 'تم الإبلاغ عن الفاتورة إلى ZATCA',
+      message: 'تم الإبلاغ عن الفاتورة {invoiceNumber} بنجاح.',
+    },
+  },
+  zatca_report_still_failed: {
+    en: {
+      title: 'ZATCA report still failing',
+      message:
+        'Invoice {invoiceNumber} failed again after retry. Please review it and fix the issue.',
+    },
+    ar: {
+      title: 'ما زال الإبلاغ إلى ZATCA فاشلاً',
+      message:
+        'فشلت الفاتورة {invoiceNumber} مرة أخرى بعد إعادة المحاولة. يرجى مراجعتها ومعالجة المشكلة.',
     },
   },
   zatca_report_pending: {

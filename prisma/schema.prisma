@@ -104,11 +104,15 @@ model BusinessProfile {
   salarySlips           SalarySlip[]
   employeePayments      EmployeePayment[]
   businessSettings      BusinessSettings?
-  posTills              PosTill[]
+  posTills              PosTill[] @relation("BusinessPosTills")
+  /// Till allowed to sell when the restaurant is offline (one per restaurant).
+  primaryPosTillId      String?   @unique
+  primaryPosTill        PosTill?  @relation("BusinessPrimaryPosTill", fields: [primaryPosTillId], references: [id], onDelete: SetNull)
   stockItems            StockItem[]
   stockMovements        StockMovement[]
   kitchenStockAllocations KitchenStockAllocation[]
   stockDayEndReports    StockDayEndReport[]
+  syncProcessedEvents   SyncProcessedEvent[]
 
   @@index([ownerUserId])
   @@map("business_profiles")
@@ -118,7 +122,7 @@ model BusinessProfile {
 model PosTill {
   id                String          @id @default(cuid())
   businessProfileId String
-  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  businessProfile   BusinessProfile @relation("BusinessPosTills", fields: [businessProfileId], references: [id], onDelete: Cascade)
   name              String
 
   displayEnabled  Boolean @default(true)
@@ -137,11 +141,37 @@ model PosTill {
   /// [{ id, kind, label }] kind = serial | winprinter
   usbPrinters  Json   @default("[]")
 
+  /// Last successful sync heartbeat from this desktop till (Step 8).
+  lastHeartbeatAt    DateTime?
+  /// Local outbox rows still waiting to upload (Step 7/8).
+  pendingUploadCount Int      @default(0)
+
+  /// Inverse of BusinessProfile.primaryPosTill (at most one profile points here).
+  primaryForProfile BusinessProfile? @relation("BusinessPrimaryPosTill")
+  syncProcessedEvents SyncProcessedEvent[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([businessProfileId])
   @@map("pos_tills")
+}
+
+/// Idempotent outbox event ids from desktop tills (Step 7 sync push).
+model SyncProcessedEvent {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  eventId           String
+  eventType         String
+  posTillId         String?
+  posTill           PosTill?        @relation(fields: [posTillId], references: [id], onDelete: SetNull)
+  processedAt       DateTime        @default(now())
+
+  @@unique([businessProfileId, eventId])
+  @@index([businessProfileId, processedAt])
+  @@index([posTillId])
+  @@map("sync_processed_events")
 }
 
 /// Extra LAN thermal printers for a restaurant (same receipt printed to each).

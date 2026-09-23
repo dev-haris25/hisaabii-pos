@@ -47,5 +47,17 @@ module.exports = {
       exec_mode: "fork",
       env: sharedEnv,
     },
+    {
+      name: "hisabi-pos-zatca-worker",
+      script: "scripts/zatca-background-worker.mjs",
+      interpreter: "bun",
+      cwd: "./",
+      instances: 1,
+      exec_mode: "fork",
+      env: {
+        ...sharedEnv,
+        ZATCA_WORKER_POLL_MS: process.env.ZATCA_WORKER_POLL_MS || "60000",
+      },
+    },
   ],
 };
