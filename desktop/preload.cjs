@@ -1,6 +1,23 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
+/**
+ * Diagnostics only: production Next.js/React strips error messages from the
+ * console (shows a bare "Uncaught Error"). `contextIsolation` gives preload
+ * its own JS realm, so `window.addEventListener('error')` here would never
+ * see exceptions thrown by the page's own scripts — this function is called
+ * from the MAIN WORLD (see main.cjs, injected via executeJavaScript) so it
+ * can forward the real message/stack before React/Next can obscure it.
+ */
+function reportRendererCrash(detail) {
+  try {
+    ipcRenderer.send('diagnostics:rendererCrash', { ...detail, url: location.href })
+  } catch {
+    /* ignore */
+  }
+}
+
 contextBridge.exposeInMainWorld('hisabiDesktop', {
+  __reportCrash: reportRendererCrash,
   isDesktop: true,
   retryLoadApp: () => ipcRenderer.invoke('app:retryLoad'),
   getTillId: () => ipcRenderer.invoke('till:getId'),

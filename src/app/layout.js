@@ -1,8 +1,6 @@
 import { IBM_Plex_Sans_Arabic, Inter, Manrope } from 'next/font/google'
 import { getLocale } from 'next-intl/server'
 
-import { AppProviders } from '@/components/app-providers'
-
 import './globals.css'
 
 const inter = Inter({
@@ -41,7 +39,7 @@ export default async function RootLayout({ children }) {
         className={`${inter.variable} ${manrope.variable} ${ibmPlexArabic.variable} antialiased`}
         suppressHydrationWarning
       >
-        <AppProviders>{children}</AppProviders>
+        {children}
       </body>
     </html>
   )

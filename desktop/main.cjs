@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, session } = require('electron')
 const { execFile } = require('node:child_process')
 const { readFileSync, writeFileSync, mkdirSync } = require('node:fs')
 const { join } = require('node:path')
@@ -33,6 +33,27 @@ const {
 } = require('./auth/local-login.cjs')
 
 const execFileAsync = promisify(execFile)
+
+/**
+ * Prevent two processes (e.g. old + new install, or a double-launch) from
+ * sharing the same userData/cache directory at once — the main cause of
+ * Windows "Access is denied" cache corruption seen when Chromium's disk
+ * cache is mid-write from another instance.
+ */
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+}
+
+/**
+ * DIAGNOSTIC (temporary): this machine's Chromium GPU disk cache repeatedly
+ * fails to initialize ("Access is denied" / "Gpu Cache Creation failed"),
+ * which can cascade into GPU-process crash loops. Disabling hardware
+ * acceleration removes Chromium's GPU process entirely so we can tell
+ * whether that failure class is what's causing the app to exit / fail to
+ * render, independent of any Next.js/React bug.
+ */
+app.disableHardwareAcceleration()
 
 /** @type {{ server: import('node:http').Server, port: number, baseUrl: string } | null} */
 let localApi = null
@@ -89,6 +110,63 @@ function loadParentEnv() {
 }
 
 loadParentEnv()
+
+function appVersionMarkerPath() {
+  return join(app.getPath('userData'), 'app-version.txt')
+}
+
+/**
+ * Clears only the disposable Chromium caches (HTTP, code, GPU shader cache)
+ * — never `local-db/`, `secure/`, or `till.json` — so a fresh install or an
+ * upgrade never inherits a stale/corrupted cache from a previous version.
+ * Safe to call every launch: it is a no-op once the version marker matches.
+ */
+async function clearStaleCacheIfUpgraded() {
+  const markerPath = appVersionMarkerPath()
+  let previousVersion = ''
+  try {
+    previousVersion = readFileSync(markerPath, 'utf8').trim()
+  } catch {
+    /* first launch on this machine, or marker missing */
+  }
+  const currentVersion = app.getVersion()
+  if (previousVersion === currentVersion) return
+
+  try {
+    await session.defaultSession.clearCache()
+    console.info(
+      '[hisabi-desktop] cleared stale Chromium cache',
+      `previousVersion=${previousVersion || '(none)'}`,
+      `currentVersion=${currentVersion}`,
+    )
+  } catch (err) {
+    console.warn('[hisabi-desktop] cache clear on upgrade failed', err)
+  }
+
+  try {
+    mkdirSync(app.getPath('userData'), { recursive: true })
+    writeFileSync(markerPath, currentVersion, 'utf8')
+  } catch (err) {
+    console.warn('[hisabi-desktop] could not write app-version marker', err)
+  }
+}
+
+/**
+ * Self-heal: if the shell fails to load, clear Chromium's disk cache once
+ * before showing the offline page, in case a locked/corrupted cache (e.g.
+ * Windows "Access is denied" cache_util errors) is the actual cause rather
+ * than a real network outage.
+ */
+let didSelfHealCacheThisSession = false
+async function clearCacheOnceForSelfHeal() {
+  if (didSelfHealCacheThisSession) return
+  didSelfHealCacheThisSession = true
+  try {
+    await session.defaultSession.clearCache()
+  } catch {
+    /* best-effort */
+  }
+}
 
 const TILL_STORE = () => join(app.getPath('userData'), 'till.json')
 
@@ -374,13 +452,82 @@ function createWindow() {
 
   win.webContents.on(
     'did-fail-load',
-    (_event, errorCode, _errorDescription, validatedURL, isMainFrame) => {
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      console.error(
+        '[hisabi-desktop] did-fail-load',
+        `code=${errorCode}`,
+        `desc=${errorDescription}`,
+        `url=${validatedURL}`,
+        `mainFrame=${isMainFrame}`,
+      )
       if (!isMainFrame) return
       if (errorCode === -3) return
       if (!validatedURL || validatedURL.startsWith('data:')) return
+      void clearCacheOnceForSelfHeal()
       showOfflinePage(win, 'offline')
     },
   )
+
+  // Forward renderer console output (including the real Next.js/React error
+  // that DevTools shows as an opaque "Uncaught Error") to this terminal, so
+  // load-time crashes are diagnosable without manually opening DevTools.
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const levelName = ['log', 'warn', 'error', 'debug'][level] || String(level)
+    console.log(`[renderer:${levelName}]`, message, `(${sourceId}:${line})`)
+  })
+
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[hisabi-desktop] render-process-gone', JSON.stringify(details))
+  })
+
+  win.webContents.ipc.on('diagnostics:rendererCrash', (_event, payload) => {
+    console.error(
+      '[hisabi-desktop] RENDERER CRASH DETAIL',
+      JSON.stringify(payload, null, 2),
+    )
+  })
+
+  // Install the real crash listener in the PAGE's own JS world (not
+  // preload's isolated world — `contextIsolation` means preload never sees
+  // page-thrown exceptions). `window.hisabiDesktop` is reachable here
+  // because contextBridge exposes it into this exact world.
+  win.webContents.on('dom-ready', () => {
+    void win.webContents.executeJavaScript(
+      `(() => {
+        if (window.__hisabiCrashHookInstalled) return
+        window.__hisabiCrashHookInstalled = true
+        window.addEventListener('error', (event) => {
+          try {
+            window.hisabiDesktop && window.hisabiDesktop.__reportCrash({
+              kind: 'window-error',
+              message: event.message,
+              stack: event.error && event.error.stack,
+              filename: event.filename,
+              lineno: event.lineno,
+              colno: event.colno,
+            })
+          } catch {}
+        })
+        window.addEventListener('unhandledrejection', (event) => {
+          try {
+            var reason = event.reason
+            window.hisabiDesktop && window.hisabiDesktop.__reportCrash({
+              kind: 'unhandled-rejection',
+              message: reason && reason.message,
+              stack: reason && reason.stack,
+              value: typeof reason === 'string' ? reason : undefined,
+            })
+          } catch {}
+        })
+      })()`,
+    ).catch((err) => {
+      console.warn('[hisabi-desktop] could not install crash hook', err)
+    })
+  })
+
+  win.webContents.on('unresponsive', () => {
+    console.warn('[hisabi-desktop] renderer unresponsive')
+  })
 
   win.webContents.on('did-finish-load', () => {
     const url = win.webContents.getURL()
@@ -390,17 +537,30 @@ function createWindow() {
     }
   })
 
+  win.on('close', () => {
+    console.error('[hisabi-desktop] window "close" event — stack:', new Error().stack)
+  })
+
   win.on('closed', () => {
+    console.error('[hisabi-desktop] window "closed" event fired')
     if (mainWindow === win) mainWindow = null
   })
 
   startAppLoad(win)
 }
 
+app.on('second-instance', () => {
+  if (!mainWindow) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.focus()
+})
+
 app.whenReady().then(async () => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('sa.hisabi.pos')
   }
+
+  await clearStaleCacheIfUpgraded()
 
   try {
     const safe = testSafeStorageRoundTrip()
