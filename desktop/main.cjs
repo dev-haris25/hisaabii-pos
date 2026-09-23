@@ -5,7 +5,12 @@ const { join } = require('node:path')
 const { promisify } = require('node:util')
 const net = require('node:net')
 
-const { openLocalDb, getLocalStatus, closeLocalDb } = require('./db/open-db.cjs')
+const {
+  openLocalDb,
+  getLocalDb,
+  getLocalStatus,
+  closeLocalDb,
+} = require('./db/open-db.cjs')
 const { startLocalApi } = require('./local-api/server.cjs')
 const {
   applyPullBatch,
@@ -692,8 +697,38 @@ ipcMain.handle('app:retryLoad', (event) => {
 })
 
 ipcMain.handle('till:getId', () => {
-  const id = readStore().tillId
-  return typeof id === 'string' ? id : null
+  const store = readStore()
+  const id =
+    typeof store.tillId === 'string' && store.tillId.trim()
+      ? store.tillId.trim()
+      : null
+  if (id) return id
+
+  // This machine was never taken through Settings > Till while online to
+  // bind it to a specific till row, so it has no tillId locally. Without
+  // this, the till is permanently treated as non-primary while offline
+  // (blocking sales) even on a single-till setup where there's no real
+  // ambiguity. Auto-bind when local SQLite has exactly one synced till for
+  // this business — but never guess when there's more than one, since
+  // picking the wrong physical till would misattribute ZATCA invoices.
+  try {
+    const status = getLocalStatus()
+    if (!status?.businessProfileId) return null
+    const rows = getLocalDb()
+      .prepare(
+        `SELECT id FROM pos_tills WHERE business_profile_id = ?`,
+      )
+      .all(status.businessProfileId)
+    if (rows.length === 1) {
+      const autoId = rows[0].id
+      store.tillId = autoId
+      writeStore(store)
+      return autoId
+    }
+  } catch {
+    /* local db not ready / no synced tills yet — fall through to null */
+  }
+  return null
 })
 
 ipcMain.handle('till:setId', (_e, id) => {
@@ -701,6 +736,31 @@ ipcMain.handle('till:setId', (_e, id) => {
   store.tillId = typeof id === 'string' && id.trim() ? id.trim() : null
   writeStore(store)
   return store.tillId
+})
+
+/**
+ * List locally synced tills for this business — used by the offline shell
+ * to let staff bind this machine to a till when it has never been bound via
+ * the (online-only) Settings > Till page and auto-bind can't resolve it
+ * unambiguously (more than one till synced locally).
+ */
+ipcMain.handle('till:list', () => {
+  try {
+    const status = getLocalStatus()
+    if (!status?.businessProfileId) return []
+    const rows = getLocalDb()
+      .prepare(
+        `SELECT id, name, is_primary FROM pos_tills WHERE business_profile_id = ? ORDER BY is_primary DESC, name ASC`,
+      )
+      .all(status.businessProfileId)
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name || row.id,
+      isPrimary: Boolean(row.is_primary),
+    }))
+  } catch {
+    return []
+  }
 })
 
 ipcMain.handle('hw:listPorts', async () => {

@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('hisabiDesktop', {
   retryLoadApp: () => ipcRenderer.invoke('app:retryLoad'),
   getTillId: () => ipcRenderer.invoke('till:getId'),
   setTillId: (id) => ipcRenderer.invoke('till:setId', id),
+  listTills: () => ipcRenderer.invoke('till:list'),
   listSerialPorts: () => ipcRenderer.invoke('hw:listPorts'),
   listPrintDevices: () => ipcRenderer.invoke('hw:listPrintDevices'),
   writeCustomerDisplay: (payload) =>

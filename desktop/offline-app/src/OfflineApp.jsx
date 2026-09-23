@@ -48,6 +48,70 @@ function OfflineBadge() {
   )
 }
 
+function TillSelectScreen({ tills, onSelected }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(/** @type {string | null} */ (null))
+
+  async function selectTill(id) {
+    setBusy(true)
+    setError(null)
+    try {
+      const desktop = getDesktop()
+      await desktop?.setTillId?.(id)
+      onSelected(id)
+    } catch {
+      setError('Could not save till selection. Try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="bg-hisabi-background flex min-h-dvh flex-col">
+      <header className="border-hisabi-outline-variant/40 shadow-hisabi-1 sticky top-0 z-30 flex min-h-14 items-center justify-between gap-hisabi-md border-b bg-hisabi-surface-container-lowest px-hisabi-md py-2 md:px-hisabi-lg">
+        <OfflineBadge />
+        <p className="type-label-md font-bold text-hisabi-teal">Hisabi POS</p>
+        <AuthLocaleToggle />
+      </header>
+      <div className="flex flex-1 items-center justify-center p-hisabi-lg">
+        <div className="w-full max-w-sm rounded-xl border border-hisabi-outline-variant/50 bg-hisabi-surface-container-lowest p-hisabi-lg shadow-hisabi-2">
+          <h1 className="type-headline-md text-hisabi-on-surface mb-hisabi-sm font-bold">
+            Which till is this?
+          </h1>
+          <p className="type-body-sm text-hisabi-on-surface-variant mb-hisabi-md">
+            This machine hasn&apos;t been bound to a till yet. Select which
+            till this device is so offline sales can be attributed
+            correctly.
+          </p>
+          {error ? (
+            <p className="type-body-sm text-hisabi-error mb-hisabi-sm">
+              {error}
+            </p>
+          ) : null}
+          <div className="flex flex-col gap-hisabi-sm">
+            {tills.map((till) => (
+              <button
+                key={till.id}
+                type="button"
+                disabled={busy}
+                onClick={() => selectTill(till.id)}
+                className="border-hisabi-outline-variant hover:bg-hisabi-surface-container type-label-md flex items-center justify-between rounded-lg border px-hisabi-lg py-hisabi-sm text-start font-bold text-hisabi-on-surface disabled:opacity-60"
+              >
+                <span>{till.name}</span>
+                {till.isPrimary ? (
+                  <span className="type-label-sm text-hisabi-secondary font-bold">
+                    Primary
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LoginScreen({ onLoggedIn, statusMessage }) {
   const t = useTranslations('Pos')
   const [email, setEmail] = useState('')
@@ -186,8 +250,14 @@ export function OfflineApp({ path, setPath }) {
   const [booting, setBooting] = useState(true)
   const [offlineReady, setOfflineReady] = useState(false)
   const [appUrl, setAppUrl] = useState(/** @type {string | null} */ (null))
+  const [tillsNeedingSelection, setTillsNeedingSelection] = useState(
+    /** @type {Array<{ id: string, name: string, isPrimary: boolean }> | null} */ (
+      null
+    ),
+  )
 
   const restoreSession = useCallback(async () => {
+    setBooting(true)
     const desktop = getDesktop()
     if (!desktop) {
       setBooting(false)
@@ -198,6 +268,20 @@ export function OfflineApp({ path, setPath }) {
       setOfflineReady(Boolean(status?.offlineReady))
       const cfg = await desktop.getAppConfig?.()
       if (cfg?.appUrl) setAppUrl(String(cfg.appUrl))
+
+      // If this machine has never been bound to a till (main process could
+      // only auto-resolve the single-till case), ask which till it is
+      // before doing anything else — till identity affects offline sales
+      // attribution/ZATCA regardless of who signs in.
+      const boundTillId = await desktop.getTillId?.()
+      if (!boundTillId) {
+        const tills = (await desktop.listTills?.()) || []
+        if (tills.length > 1) {
+          setTillsNeedingSelection(tills)
+          setBooting(false)
+          return
+        }
+      }
 
       const token = await desktop.getOfflineSessionToken?.()
       if (token && desktop.offlineMe) {
@@ -253,6 +337,18 @@ export function OfflineApp({ path, setPath }) {
       <div className="bg-hisabi-background flex min-h-dvh items-center justify-center">
         <p className="type-body-md text-hisabi-on-surface-variant">Loading…</p>
       </div>
+    )
+  }
+
+  if (tillsNeedingSelection) {
+    return (
+      <TillSelectScreen
+        tills={tillsNeedingSelection}
+        onSelected={() => {
+          setTillsNeedingSelection(null)
+          void restoreSession()
+        }}
+      />
     )
   }
 
