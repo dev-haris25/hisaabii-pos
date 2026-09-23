@@ -36,6 +36,7 @@ import { RestaurantSwitcher } from '@/components/app-shell/restaurant-switcher'
 import { ZatcaOnboardingModal } from '@/components/app-shell/zatca-onboarding-modal'
 import { ProductTourProvider } from '@/components/product-tour/product-tour-provider'
 import { AbilityProvider, useOptionalAppAbility } from '@/components/rbac/ability-provider'
+import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
 import { authGet, authPost } from '@/lib/api/auth-client'
 import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth'
@@ -149,6 +150,7 @@ function AdminAppShellInner({
   const pathname = usePathname()
   const router = useRouter()
   const queryClient = useQueryClient()
+  const desktop = useIsHisabiDesktop()
   const setUser = useAuthStore((s) => s.setUser)
   const liveZatcaSkipped = useAuthStore(
     (s) => s.user?.zatcaOnboardingSkippedEffective,
@@ -600,6 +602,7 @@ function AdminAppShellInner({
                           <Link
                             key={child.href}
                             href={child.href}
+                            prefetch={desktop ? false : undefined}
                             data-tour={tourId}
                             className={subNavClass(childActive)}
                             onClick={() => setMobileNavOpen(false)}
@@ -638,6 +641,7 @@ function AdminAppShellInner({
               <Link
                 key={item.id}
                 href={item.href}
+                prefetch={desktop ? false : undefined}
                 data-tour={tourId}
                 className={navLinkClass(active)}
                 target={item.id === 'queue' ? '_blank' : undefined}

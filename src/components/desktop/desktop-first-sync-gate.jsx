@@ -15,9 +15,9 @@ import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { useAuthStore } from '@/stores/auth-store'
 
 /**
- * Blocks the desktop shell until first full sync completes (offlineReady).
- * Also runs a quiet incremental pull when already ready and online.
- * Re-runs full sync when the active restaurant changes on this till.
+ * Blocks interaction until first full sync completes (offlineReady).
+ * Always keeps `children` mounted so Electron does not abort in-flight Next.js
+ * RSC prefetches (that crash React with "Connection closed" / Next global error).
  */
 export function DesktopFirstSyncGate({ children }) {
   const t = useTranslations('AppShell')
@@ -103,48 +103,51 @@ export function DesktopFirstSyncGate({ children }) {
     void runSync()
   }, [desktop, user, activeBusinessProfileId, runSync])
 
-  if (!desktop) {
-    return children
-  }
+  const showGate = desktop && (!user || !ready)
 
-  if (!user || !ready) {
-    return (
-      <div className="bg-hisabi-surface relative flex min-h-dvh flex-col items-center justify-center gap-hisabi-lg px-hisabi-lg py-hisabi-xxl">
-        <AppLoader />
-        <div className="max-w-md text-center">
-          <h1 className="type-headline-md font-bold text-hisabi-primary">
-            {t('desktopSyncTitle')}
-          </h1>
-          <p className="type-body-md text-hisabi-on-surface-variant mt-hisabi-sm">
-            {!user
-              ? t('desktopSyncBody', { percent: 0 })
-              : error
-                ? error
-                : t('desktopSyncBody', {
-                    percent: Math.max(0, Math.min(100, percent)),
-                  })}
-          </p>
-          {user && !error && phase ? (
-            <p className="type-body-sm text-hisabi-on-surface-variant mt-hisabi-xs">
-              {t('desktopSyncPhase', { phase })}
+  return (
+    <>
+      {children}
+      {showGate ? (
+        <div
+          className="bg-hisabi-surface fixed inset-0 z-[200] flex flex-col items-center justify-center gap-hisabi-lg px-hisabi-lg py-hisabi-xxl"
+          role="status"
+          aria-live="polite"
+        >
+          <AppLoader />
+          <div className="max-w-md text-center">
+            <h1 className="type-headline-md font-bold text-hisabi-primary">
+              {t('desktopSyncTitle')}
+            </h1>
+            <p className="type-body-md text-hisabi-on-surface-variant mt-hisabi-sm">
+              {!user
+                ? t('desktopSyncBody', { percent: 0 })
+                : error
+                  ? error
+                  : t('desktopSyncBody', {
+                      percent: Math.max(0, Math.min(100, percent)),
+                    })}
             </p>
-          ) : null}
-          {user && error ? (
-            <button
-              type="button"
-              className="bg-hisabi-primary text-hisabi-on-primary type-label-md mt-hisabi-lg rounded-lg px-hisabi-lg py-hisabi-sm font-bold disabled:opacity-60"
-              disabled={busy}
-              onClick={() => {
-                void runSync()
-              }}
-            >
-              {t('desktopSyncRetry')}
-            </button>
-          ) : null}
+            {user && !error && phase ? (
+              <p className="type-body-sm text-hisabi-on-surface-variant mt-hisabi-xs">
+                {t('desktopSyncPhase', { phase })}
+              </p>
+            ) : null}
+            {user && error ? (
+              <button
+                type="button"
+                className="bg-hisabi-primary text-hisabi-on-primary type-label-md mt-hisabi-lg rounded-lg px-hisabi-lg py-hisabi-sm font-bold disabled:opacity-60"
+                disabled={busy}
+                onClick={() => {
+                  void runSync()
+                }}
+              >
+                {t('desktopSyncRetry')}
+              </button>
+            ) : null}
+          </div>
         </div>
-      </div>
-    )
-  }
-
-  return children
+      ) : null}
+    </>
+  )
 }
