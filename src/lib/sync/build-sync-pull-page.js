@@ -178,7 +178,7 @@ export async function buildSyncPullPage(businessProfileId, cursorRaw) {
             updatedAt: true,
           },
         },
-        employeeRoles: { select: { roleId: true, membershipId: true } },
+        employeeRoles: { select: { roleId: true, businessMembershipId: true } },
       },
       orderBy: { createdAt: 'asc' },
       skip: offset,
@@ -240,7 +240,7 @@ export async function buildSyncPullPage(businessProfileId, cursorRaw) {
     }))
     entities.employeeRoles = memberships.flatMap((m) =>
       m.employeeRoles.map((er) => ({
-        membershipId: er.membershipId,
+        membershipId: er.businessMembershipId,
         roleId: er.roleId,
       })),
     )
@@ -694,7 +694,7 @@ async function buildIncrementalPull(businessProfileId, sinceIso) {
     }))
     entities.employeeRoles = memberships.flatMap((m) =>
       m.employeeRoles.map((er) => ({
-        membershipId: er.membershipId,
+        membershipId: er.businessMembershipId,
         roleId: er.roleId,
       })),
     )

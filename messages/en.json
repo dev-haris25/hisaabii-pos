@@ -731,7 +731,7 @@
   "AppShell": {
     "brand": "Hisabi POS",
     "suiteTagline": "Restaurant POS",
-    "desktopSyncTitle": "Preparing this till",
+    "desktopSyncTitle": "Syncing",
     "desktopSyncBody": "Syncing restaurant data for offline use… {percent}%",
     "desktopSyncPhase": "Step: {phase}",
     "desktopSyncFailed": "Could not finish syncing. Check your connection and try again.",

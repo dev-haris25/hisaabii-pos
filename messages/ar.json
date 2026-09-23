@@ -731,7 +731,7 @@
   "AppShell": {
     "brand": "حسابي",
     "suiteTagline": "حزمة المؤسسات",
-    "desktopSyncTitle": "جارٍ تجهيز هذه النقطة",
+    "desktopSyncTitle": "جارٍ المزامنة",
     "desktopSyncBody": "جارٍ مزامنة بيانات المطعم للاستخدام دون اتصال… {percent}%",
     "desktopSyncPhase": "الخطوة: {phase}",
     "desktopSyncFailed": "تعذّر إكمال المزامنة. تحقق من الاتصال ثم حاول مرة أخرى.",

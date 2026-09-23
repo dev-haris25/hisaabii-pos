@@ -115,7 +115,7 @@ export function DesktopFirstSyncGate({ children }) {
           aria-live="polite"
         >
           <AppLoader />
-          <div className="max-w-md text-center">
+          <div className="w-full max-w-md text-center">
             <h1 className="type-headline-md font-bold text-hisabi-primary">
               {t('desktopSyncTitle')}
             </h1>
@@ -128,6 +128,22 @@ export function DesktopFirstSyncGate({ children }) {
                       percent: Math.max(0, Math.min(100, percent)),
                     })}
             </p>
+            {user && !error ? (
+              <div
+                className="bg-hisabi-surface-container mt-hisabi-md h-2 w-full overflow-hidden rounded-full"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.max(0, Math.min(100, percent))}
+              >
+                <div
+                  className="bg-hisabi-primary h-full rounded-full transition-[width] duration-500 ease-out"
+                  style={{
+                    width: `${Math.max(4, Math.min(100, percent))}%`,
+                  }}
+                />
+              </div>
+            ) : null}
             {user && !error && phase ? (
               <p className="type-body-sm text-hisabi-on-surface-variant mt-hisabi-xs">
                 {t('desktopSyncPhase', { phase })}
