@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('hisabiDesktop', {
   __reportCrash: reportRendererCrash,
   isDesktop: true,
   retryLoadApp: () => ipcRenderer.invoke('app:retryLoad'),
+  showOfflineShell: () => ipcRenderer.invoke('app:showOfflineShell'),
   getTillId: () => ipcRenderer.invoke('till:getId'),
   setTillId: (id) => ipcRenderer.invoke('till:setId', id),
   listTills: () => ipcRenderer.invoke('till:list'),

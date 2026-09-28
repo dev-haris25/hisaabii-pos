@@ -259,3 +259,24 @@ export async function authGetStockItemsPreferOffline(path = '/stock/items') {
   const q = path.includes('?') ? path.slice(path.indexOf('?')) : ''
   return localCatalogGet(`/stock/items${q}`)
 }
+
+/**
+ * Read-only invoice list from the local SQLite cache (offline shell only).
+ * @param {{ search?: string, page?: number, limit?: number }} [opts]
+ */
+export async function localListInvoices(opts = {}) {
+  const params = new URLSearchParams()
+  if (opts.search) params.set('search', opts.search)
+  params.set('page', String(opts.page || 1))
+  params.set('limit', String(opts.limit || 10))
+  return localCatalogGet(`/invoices?${params.toString()}`)
+}
+
+/**
+ * Read-only invoice detail (incl. lines) from the local SQLite cache
+ * (offline shell only).
+ * @param {string} id
+ */
+export async function localGetInvoiceDetail(id) {
+  return localCatalogGet(`/invoices/${encodeURIComponent(id)}`)
+}

@@ -1,11 +1,21 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { WifiOff } from 'lucide-react'
+import { createMongoAbility } from '@casl/ability'
+import { LogOut, WifiOff } from 'lucide-react'
 
 import { PosCheckoutView } from '@/app/[locale]/pos/pos-checkout-view.jsx'
 import { KitchenBoardView } from '@/components/orders/kitchen-board-view.jsx'
+import { OfflineInvoicesScreen } from './OfflineInvoices.jsx'
 import { useAuthStore } from '@/stores/auth-store.js'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle.jsx'
+import { hasFullAccess } from '@/lib/rbac/ability-utils.js'
+import { fetchLocalTillPrimaryStatus } from '@/lib/desktop/local-till-primary.js'
+import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth.js'
+import {
+  fetchOfflineCheckoutUnlockStatus,
+  unlockOfflineCheckoutMode,
+} from '@/lib/desktop/offline-unlock-client.js'
+import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner.jsx'
 
 const PING_MS = 8_000
 
@@ -209,35 +219,162 @@ function LoginScreen({ onLoggedIn, statusMessage }) {
   )
 }
 
-function ShellNav({ path, setPath }) {
+function ShellNav({ path, setPath, showPos, showInvoices, showKitchen }) {
   return (
     <nav className="border-hisabi-outline-variant/40 flex shrink-0 gap-2 border-b bg-hisabi-surface-container-low px-hisabi-md py-2">
-      <button
-        type="button"
-        onClick={() => setPath('/pos')}
-        className={
-          path === '/pos'
-            ? 'bg-hisabi-primary text-hisabi-on-primary type-label-sm rounded-lg px-3 py-1.5 font-bold'
-            : 'type-label-sm text-hisabi-on-surface-variant rounded-lg px-3 py-1.5 font-bold'
-        }
-      >
-        POS
-      </button>
-      <button
-        type="button"
-        onClick={() => setPath('/kitchen')}
-        className={
-          path === '/kitchen'
-            ? 'bg-hisabi-primary text-hisabi-on-primary type-label-sm rounded-lg px-3 py-1.5 font-bold'
-            : 'type-label-sm text-hisabi-on-surface-variant rounded-lg px-3 py-1.5 font-bold'
-        }
-      >
-        Kitchen
-      </button>
+      {showPos ? (
+        <button
+          type="button"
+          onClick={() => setPath('/pos')}
+          className={
+            path === '/pos'
+              ? 'bg-hisabi-primary text-hisabi-on-primary type-label-sm rounded-lg px-3 py-1.5 font-bold'
+              : 'type-label-sm text-hisabi-on-surface-variant rounded-lg px-3 py-1.5 font-bold'
+          }
+        >
+          POS
+        </button>
+      ) : null}
+      {showInvoices ? (
+        <button
+          type="button"
+          onClick={() => setPath('/invoices')}
+          className={
+            path === '/invoices'
+              ? 'bg-hisabi-primary text-hisabi-on-primary type-label-sm rounded-lg px-3 py-1.5 font-bold'
+              : 'type-label-sm text-hisabi-on-surface-variant rounded-lg px-3 py-1.5 font-bold'
+          }
+        >
+          Invoices
+        </button>
+      ) : null}
+      {showKitchen ? (
+        <button
+          type="button"
+          onClick={() => setPath('/kitchen')}
+          className={
+            path === '/kitchen'
+              ? 'bg-hisabi-primary text-hisabi-on-primary type-label-sm rounded-lg px-3 py-1.5 font-bold'
+              : 'type-label-sm text-hisabi-on-surface-variant rounded-lg px-3 py-1.5 font-bold'
+          }
+        >
+          Kitchen
+        </button>
+      ) : null}
       <div className="ms-auto flex items-center">
         <OfflineBadge />
       </div>
     </nav>
+  )
+}
+
+/**
+ * Admin, primary till, offline mode still locked for this outage. Replaces
+ * the old modal-over-POS approach: admin lands here directly instead of
+ * seeing POS with a dialog stacked on top of it.
+ */
+function OfflineSettingsScreen({ onUnlocked, onSignOut, signingOut }) {
+  const [unlocking, setUnlocking] = useState(false)
+  const [error, setError] = useState(/** @type {string | null} */ (null))
+
+  async function handleUnlock() {
+    setUnlocking(true)
+    setError(null)
+    try {
+      await unlockOfflineCheckoutMode()
+      onUnlocked()
+    } catch (err) {
+      setError(
+        (err && typeof err === 'object' && 'message' in err && err.message) ||
+          'Could not enable offline sale. Try again.',
+      )
+    } finally {
+      setUnlocking(false)
+    }
+  }
+
+  return (
+    <div className="bg-hisabi-background flex min-h-dvh flex-col">
+      <header className="border-hisabi-outline-variant/40 shadow-hisabi-1 sticky top-0 z-30 flex min-h-14 items-center justify-between gap-hisabi-md border-b bg-hisabi-surface-container-lowest px-hisabi-md py-2 md:px-hisabi-lg">
+        <OfflineBadge />
+        <p className="type-label-md font-bold text-hisabi-teal">Hisabi POS</p>
+        <AuthLocaleToggle />
+      </header>
+      <div className="flex flex-1 items-center justify-center p-hisabi-lg">
+        <div className="w-full max-w-sm rounded-xl border border-hisabi-outline-variant/50 bg-hisabi-surface-container-lowest p-hisabi-lg text-center shadow-hisabi-2">
+          <h1 className="type-headline-md text-hisabi-on-surface mb-hisabi-sm font-bold">
+            Offline sale settings
+          </h1>
+          <p className="type-body-sm text-hisabi-on-surface-variant mb-hisabi-lg">
+            This till is offline. Enable offline sale so staff can take POS
+            orders until you&apos;re back online — this resets automatically
+            once the till reconnects and syncs.
+          </p>
+          {error ? (
+            <p className="type-body-sm text-hisabi-error mb-hisabi-sm">
+              {error}
+            </p>
+          ) : null}
+          <div className="flex flex-col gap-hisabi-sm">
+            <button
+              type="button"
+              disabled={unlocking}
+              aria-busy={unlocking}
+              onClick={handleUnlock}
+              className="bg-hisabi-primary text-hisabi-on-primary type-label-md inline-flex items-center justify-center gap-hisabi-xs rounded-lg px-hisabi-lg py-hisabi-sm font-bold disabled:opacity-60"
+            >
+              {unlocking ? <AuthButtonSpinner /> : null}
+              Enable offline sale
+            </button>
+            <button
+              type="button"
+              disabled={signingOut}
+              aria-busy={signingOut}
+              onClick={onSignOut}
+              className="type-label-md text-hisabi-on-surface-variant hover:bg-hisabi-surface-container rounded-lg px-hisabi-lg py-hisabi-sm font-bold disabled:opacity-60"
+            >
+              {signingOut ? <AuthButtonSpinner /> : null}
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Neither POS/Invoices (non-primary till) nor Kitchen board access. */
+function NoOfflineAccessScreen({ onSignOut, signingOut }) {
+  return (
+    <div className="bg-hisabi-background flex min-h-dvh flex-col">
+      <header className="border-hisabi-outline-variant/40 shadow-hisabi-1 sticky top-0 z-30 flex min-h-14 items-center justify-between gap-hisabi-md border-b bg-hisabi-surface-container-lowest px-hisabi-md py-2 md:px-hisabi-lg">
+        <OfflineBadge />
+        <p className="type-label-md font-bold text-hisabi-teal">Hisabi POS</p>
+        <AuthLocaleToggle />
+      </header>
+      <div className="flex flex-1 items-center justify-center p-hisabi-lg">
+        <div className="w-full max-w-sm rounded-xl border border-hisabi-outline-variant/50 bg-hisabi-surface-container-lowest p-hisabi-lg text-center shadow-hisabi-2">
+          <h1 className="type-headline-md text-hisabi-on-surface mb-hisabi-sm font-bold">
+            Nothing available offline
+          </h1>
+          <p className="type-body-sm text-hisabi-on-surface-variant mb-hisabi-lg">
+            While offline, this till only supports POS/Invoices (primary
+            till) and the Kitchen board (staff with kitchen access). Your
+            account doesn&apos;t have offline access on this till.
+          </p>
+          <button
+            type="button"
+            disabled={signingOut}
+            aria-busy={signingOut}
+            onClick={onSignOut}
+            className="bg-hisabi-primary text-hisabi-on-primary type-label-md mx-auto inline-flex items-center gap-hisabi-xs rounded-lg px-hisabi-lg py-hisabi-sm font-bold disabled:opacity-60"
+          >
+            <LogOut className="size-4 shrink-0" aria-hidden />
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -255,6 +392,8 @@ export function OfflineApp({ path, setPath }) {
       null
     ),
   )
+  const [isPrimaryTill, setIsPrimaryTill] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
 
   const restoreSession = useCallback(async () => {
     setBooting(true)
@@ -281,6 +420,15 @@ export function OfflineApp({ path, setPath }) {
           setBooting(false)
           return
         }
+      }
+
+      // Local SQLite (works fully offline) — decides whether POS/Invoices
+      // are in scope for this till, regardless of who signs in.
+      try {
+        const primaryStatus = await fetchLocalTillPrimaryStatus()
+        setIsPrimaryTill(Boolean(primaryStatus?.isPrimary))
+      } catch {
+        setIsPrimaryTill(false)
       }
 
       const token = await desktop.getOfflineSessionToken?.()
@@ -332,6 +480,65 @@ export function OfflineApp({ path, setPath }) {
     }
   }, [appUrl])
 
+  const hasKitchenAccess = useMemo(() => {
+    if (!user) return false
+    const ability = createMongoAbility(user.abilityRules ?? [])
+    return hasFullAccess(ability) || ability.can('read', 'KitchenBoard')
+  }, [user])
+
+  const isAdminUser = useMemo(() => {
+    if (!user) return false
+    return (
+      user.isRestaurantOwner === true ||
+      user.roleName === 'Admin' ||
+      user.roleName === 'Owner' ||
+      (Array.isArray(user.roleNames) &&
+        (user.roleNames.includes('Admin') || user.roleNames.includes('Owner')))
+    )
+  }, [user])
+
+  // Only relevant for admin on the primary till — decides whether they land
+  // on the offline-sale Settings gate instead of POS. `undefined` = not
+  // checked yet, `null` = not applicable to this user/till combination.
+  const [unlockStatus, setUnlockStatus] = useState(
+    /** @type {{ unlocked: boolean } | null | undefined} */ (null),
+  )
+
+  useEffect(() => {
+    if (!user || !isPrimaryTill || !isAdminUser) {
+      setUnlockStatus(null)
+      return undefined
+    }
+    let cancelled = false
+    setUnlockStatus(undefined)
+    ;(async () => {
+      const res = await fetchOfflineCheckoutUnlockStatus()
+      if (!cancelled) setUnlockStatus(res)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user, isPrimaryTill, isAdminUser])
+
+  // Non-primary tills don't have POS/Invoices in scope at all — always land
+  // staff with kitchen access straight on the Kitchen board.
+  useEffect(() => {
+    if (!user || isPrimaryTill) return
+    if (hasKitchenAccess && path !== '/kitchen') setPath('/kitchen')
+  }, [user, isPrimaryTill, hasKitchenAccess, path, setPath])
+
+  async function handleSignOut() {
+    setSigningOut(true)
+    try {
+      await logoutOnlineOrOffline()
+    } catch {
+      /* ignore — still clear local user state below */
+    } finally {
+      setUser(null)
+      setSigningOut(false)
+    }
+  }
+
   if (booting) {
     return (
       <div className="bg-hisabi-background flex min-h-dvh items-center justify-center">
@@ -365,14 +572,59 @@ export function OfflineApp({ path, setPath }) {
     )
   }
 
+  // Only POS/Invoices (primary till) and Kitchen board (kitchen access) are
+  // ever in scope offline — nothing else to fall back to for this account.
+  if (!isPrimaryTill && !hasKitchenAccess) {
+    return (
+      <NoOfflineAccessScreen onSignOut={handleSignOut} signingOut={signingOut} />
+    )
+  }
+
+  // Admin, primary till, offline mode not yet unlocked for this outage —
+  // land on the Settings gate instead of POS (replaces the old
+  // modal-over-POS approach for this specific case only; non-admin users
+  // still see PosPrimaryOfflineUnlockLock's blocking screen inside POS,
+  // unchanged). Once already unlocked, admin goes straight into POS.
+  if (isPrimaryTill && isAdminUser) {
+    if (unlockStatus === undefined) {
+      return (
+        <div className="bg-hisabi-background flex min-h-dvh items-center justify-center">
+          <p className="type-body-md text-hisabi-on-surface-variant">
+            Loading…
+          </p>
+        </div>
+      )
+    }
+    if (unlockStatus?.unlocked === false) {
+      return (
+        <OfflineSettingsScreen
+          onUnlocked={() => setUnlockStatus({ unlocked: true })}
+          onSignOut={handleSignOut}
+          signingOut={signingOut}
+        />
+      )
+    }
+  }
+
   const staffName = user.name || user.email || ''
   const showGoToDashboard = false
+  const showKitchenView =
+    (path === '/kitchen' || !isPrimaryTill) && path !== '/invoices'
+  const showInvoicesView = isPrimaryTill && path === '/invoices'
 
   return (
     <div className="bg-hisabi-background flex min-h-dvh flex-col">
-      <ShellNav path={path} setPath={setPath} />
-      <div className="min-h-0 flex-1">
-        {path === '/kitchen' ? (
+      <ShellNav
+        path={path}
+        setPath={setPath}
+        showPos={isPrimaryTill}
+        showInvoices={isPrimaryTill}
+        showKitchen={hasKitchenAccess}
+      />
+      <div className="flex min-h-0 flex-1 flex-col">
+        {showInvoicesView ? (
+          <OfflineInvoicesScreen />
+        ) : showKitchenView ? (
           <KitchenBoardView
             staffName={staffName}
             restaurantName=""

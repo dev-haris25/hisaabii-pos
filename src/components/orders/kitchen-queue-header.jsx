@@ -42,12 +42,18 @@ export function KitchenQueueHeader({
       setUser(null)
       queryClient.clear()
       // Client-side navigation to /login needs a network round-trip for its
-      // RSC payload. While offline that hangs and the "no user" sync-gate
-      // overlay never clears. Force a main-process reload instead so
-      // Electron falls back to the bundled offline shell's login screen.
-      if (desktop && !cloudOnline && getHisabiDesktop()?.retryLoadApp) {
-        getHisabiDesktop().retryLoadApp()
-        return
+      // RSC payload. While offline that hangs. Go straight to the offline
+      // shell login instead of retrying the remote app first.
+      if (desktop && !cloudOnline) {
+        const api = getHisabiDesktop()
+        if (api?.showOfflineShell) {
+          api.showOfflineShell()
+          return
+        }
+        if (api?.retryLoadApp) {
+          api.retryLoadApp()
+          return
+        }
       }
       router.replace('/login')
     },

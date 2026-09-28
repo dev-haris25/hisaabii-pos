@@ -12,6 +12,7 @@ const required = [
   'app-config.json',
   'db/open-db.cjs',
   'local-api/server.cjs',
+  'local-api/local-invoices-read.cjs',
   'sync/apply-pull.cjs',
   'sync/zatca-secrets-store.cjs',
   'auth/local-login.cjs',

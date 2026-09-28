@@ -418,13 +418,18 @@ export function PosCheckoutView({
       queryClient.clear()
       // Client-side navigation to /login fetches that route's RSC payload
       // from the remote server — while offline that request hangs/fails and
-      // the URL never changes, leaving DesktopFirstSyncGate's "no user"
-      // overlay stuck on screen with no way out. Force a main-process-driven
-      // reload instead: it fails fast and falls back to the bundled offline
-      // shell (which has its own working, network-free login screen).
-      if (desktop && !cloudOnline && getHisabiDesktop()?.retryLoadApp) {
-        getHisabiDesktop().retryLoadApp()
-        return
+      // the URL never changes. Go straight to the bundled offline shell
+      // (skip Reconnecting → fail → offline) so logout lands on its login.
+      if (desktop && !cloudOnline) {
+        const api = getHisabiDesktop()
+        if (api?.showOfflineShell) {
+          api.showOfflineShell()
+          return
+        }
+        if (api?.retryLoadApp) {
+          api.retryLoadApp()
+          return
+        }
       }
       router.replace('/login')
     },

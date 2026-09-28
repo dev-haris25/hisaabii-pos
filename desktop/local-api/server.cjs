@@ -20,6 +20,10 @@ const {
   unlockOfflineCheckout,
   clearOfflineCheckoutUnlock,
 } = require('./offline-unlock.cjs')
+const {
+  listLocalInvoices,
+  getLocalInvoiceDetail,
+} = require('./local-invoices-read.cjs')
 
 const DEFAULT_PORT = 3911
 const HOST = '127.0.0.1'
@@ -453,6 +457,49 @@ function startLocalApi(preferredPort = DEFAULT_PORT) {
           const result = listLocalMenuCategories()
           if (!result.ok) {
             sendJson(res, result, result.status || 400)
+            return
+          }
+          sendJson(res, result)
+          return
+        }
+
+        if (req.method === 'GET' && path === '/v1/invoices') {
+          const me = localMe(bearerToken(req))
+          if (!me.ok) {
+            sendJson(
+              res,
+              { ok: false, code: me.code, message: me.message },
+              me.status || 401,
+            )
+            return
+          }
+          const result = listLocalInvoices({
+            search: url.searchParams.get('search') || '',
+            page: Number(url.searchParams.get('page') || 1),
+            limit: Number(url.searchParams.get('limit') || 10),
+          })
+          if (!result.ok) {
+            sendJson(res, result, result.status || 400)
+            return
+          }
+          sendJson(res, result)
+          return
+        }
+
+        if (req.method === 'GET' && path.startsWith('/v1/invoices/')) {
+          const me = localMe(bearerToken(req))
+          if (!me.ok) {
+            sendJson(
+              res,
+              { ok: false, code: me.code, message: me.message },
+              me.status || 401,
+            )
+            return
+          }
+          const invoiceId = path.slice('/v1/invoices/'.length)
+          const result = getLocalInvoiceDetail(invoiceId)
+          if (!result.ok) {
+            sendJson(res, result, result.status || 404)
             return
           }
           sendJson(res, result)

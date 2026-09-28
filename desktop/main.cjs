@@ -221,7 +221,15 @@ function dataHtmlUrl(html) {
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
 }
 
-function loadingPageHtml() {
+/**
+ * @param {string} [caption] Small branded caption under the spinner — kept
+ * optional/short so this still reads as a native app transition, not a
+ * separate "error-ish" screen.
+ */
+function loadingPageHtml(caption) {
+  const captionHtml = caption
+    ? `<p class="caption">${caption.replace(/[<>&]/g, '')}</p>`
+    : ''
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -235,17 +243,30 @@ function loadingPageHtml() {
       place-items: center;
       background: #ffffff;
       color: ${BRAND_GREEN};
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }
+    .wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
     }
     .spinner {
       width: 2.75rem;
       height: 2.75rem;
       animation: spin 1s linear infinite;
     }
+    .caption {
+      margin: 0;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      opacity: 0.8;
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
-  <div role="status" aria-live="polite" aria-label="Loading">
+  <div class="wrap" role="status" aria-live="polite" aria-label="Loading">
     <!-- Same shape as Lucide Loader2 used by HisabiSpinner on the web app -->
     <svg class="spinner" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
@@ -256,18 +277,24 @@ function loadingPageHtml() {
         stroke-linejoin="round"
       />
     </svg>
+    ${captionHtml}
   </div>
 </body>
 </html>`
 }
 
 /**
+ * Actually navigate to the offline shell (or its missing-build fallback).
+ * Split out from `showOfflinePage` so the branded loading buffer below can
+ * sit in front of it without duplicating this logic.
+ *
  * @param {Electron.BrowserWindow} win
  * @param {'offline' | 'slow'} kind
  */
-function showOfflinePage(win, kind) {
+function loadOfflineShell(win, kind) {
   if (win.isDestroyed()) return
   clearLoadTimeout(win)
+  clearOfflineHandoffTimer(win)
   win.__shellPage = kind === 'slow' ? 'slow' : 'offline'
   const offlineAppIndex = join(__dirname, 'offline-app', 'dist', 'index.html')
   const offlineAppDev = join(__dirname, 'offline-app', 'index.html')
@@ -296,11 +323,72 @@ function showOfflinePage(win, kind) {
 /**
  * @param {Electron.BrowserWindow} win
  */
-function showLoadingPage(win) {
+function clearOfflineHandoffTimer(win) {
+  if (win.__offlineHandoffTimer) {
+    clearTimeout(win.__offlineHandoffTimer)
+    win.__offlineHandoffTimer = null
+  }
+}
+
+/**
+ * Attach `did-finish-load` *before* starting navigation so a fast data: load
+ * cannot finish before the listener is registered (which left the
+ * "Switching to offline mode…" buffer stuck forever).
+ *
+ * @param {Electron.BrowserWindow} win
+ * @param {string} expectedShellPage
+ * @param {() => void} onReady
+ * @param {number} [fallbackMs]
+ */
+function afterNextLoad(win, expectedShellPage, onReady, fallbackMs = 2500) {
+  const gen = (win.__loadGen = (win.__loadGen || 0) + 1)
+  let done = false
+  const finish = () => {
+    if (done || win.isDestroyed()) return
+    if (win.__loadGen !== gen) return
+    if (win.__shellPage !== expectedShellPage) return
+    done = true
+    clearOfflineHandoffTimer(win)
+    onReady()
+  }
+  win.webContents.once('did-finish-load', finish)
+  clearOfflineHandoffTimer(win)
+  win.__offlineHandoffTimer = setTimeout(finish, fallbackMs)
+}
+
+/**
+ * Switch to the offline shell. Always shows a branded loading buffer first
+ * — going straight from a broken/blank remote page to the next `loadFile()`
+ * navigation with nothing in between reads as a jarring flash; the offline
+ * → online path (`startAppLoad`/`loadRemoteApp`) already had this buffer,
+ * this brings the other direction up to the same standard.
+ *
+ * @param {Electron.BrowserWindow} win
+ * @param {'offline' | 'slow'} kind
+ */
+function showOfflinePage(win, kind) {
   if (win.isDestroyed()) return
   clearLoadTimeout(win)
+  const pendingKind = kind === 'slow' ? 'slow' : 'offline'
+  win.__shellPage = 'loading-offline'
+  afterNextLoad(win, 'loading-offline', () => {
+    loadOfflineShell(win, pendingKind)
+  })
+  void win.loadURL(
+    dataHtmlUrl(loadingPageHtml('Switching to offline mode…')),
+  )
+}
+
+/**
+ * @param {Electron.BrowserWindow} win
+ * @param {string} [caption]
+ */
+function showLoadingPage(win, caption) {
+  if (win.isDestroyed()) return
+  clearLoadTimeout(win)
+  clearOfflineHandoffTimer(win)
   win.__shellPage = 'loading'
-  void win.loadURL(dataHtmlUrl(loadingPageHtml()))
+  void win.loadURL(dataHtmlUrl(loadingPageHtml(caption)))
 }
 
 /**
@@ -319,6 +407,7 @@ function clearLoadTimeout(win) {
 function loadRemoteApp(win) {
   if (win.isDestroyed()) return
   clearLoadTimeout(win)
+  clearOfflineHandoffTimer(win)
   win.__shellPage = 'app'
   void win.loadURL(appUrl())
   win.__loadTimer = setTimeout(() => {
@@ -331,11 +420,17 @@ function loadRemoteApp(win) {
  * @param {Electron.BrowserWindow} win
  */
 function startAppLoad(win) {
-  showLoadingPage(win)
-  win.webContents.once('did-finish-load', () => {
-    if (win.isDestroyed()) return
-    if (win.__shellPage === 'loading') loadRemoteApp(win)
+  // `undefined` caption on first-ever launch (nothing to "reconnect" to
+  // yet); once we already have an offline shell page loaded, this is the
+  // offline → online hand-off, so say so explicitly.
+  if (win.isDestroyed()) return
+  const caption = win.__shellPage ? 'Reconnecting…' : undefined
+  clearLoadTimeout(win)
+  win.__shellPage = 'loading'
+  afterNextLoad(win, 'loading', () => {
+    loadRemoteApp(win)
   })
+  void win.loadURL(dataHtmlUrl(loadingPageHtml(caption)))
 }
 
 function createWindow() {
@@ -693,6 +788,14 @@ ipcMain.handle('app:retryLoad', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender) || mainWindow
   if (!win || win.isDestroyed()) return false
   startAppLoad(win)
+  return true
+})
+
+/** Go straight to the offline shell (used after logout while already offline). */
+ipcMain.handle('app:showOfflineShell', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender) || mainWindow
+  if (!win || win.isDestroyed()) return false
+  showOfflinePage(win, 'offline')
   return true
 })
 

@@ -202,6 +202,18 @@ function applyPullBatch(batch) {
     }
 
     if (Array.isArray(entities.users)) {
+      // `users.email` has a UNIQUE index (see 001_initial.cjs), but the
+      // upsert below only resolves conflicts on `id`. If the cloud sends a
+      // row whose `id` isn't in the local cache yet but whose `email`
+      // already belongs to a *different* local row (e.g. a user was
+      // deleted/recreated, or their email was reassigned), the INSERT
+      // fails with SQLITE_CONSTRAINT_UNIQUE on the email index and the
+      // whole pull batch throws — the cloud is always the source of
+      // truth here, so drop any stale local row under a different id
+      // that would otherwise collide on email before upserting by id.
+      const dropStaleEmail = db.prepare(
+        `DELETE FROM users WHERE email = @email AND id <> @id`,
+      )
       const upsert = db.prepare(
         `INSERT INTO users (id, email, name, password_hash, active_business_profile_id, updated_at, payload_json)
          VALUES (@id, @email, @name, @password_hash, @active_business_profile_id, @updated_at, @payload_json)
@@ -214,6 +226,9 @@ function applyPullBatch(batch) {
            payload_json = excluded.payload_json`,
       )
       for (const row of entities.users) {
+        if (row.email) {
+          dropStaleEmail.run({ email: row.email, id: row.id })
+        }
         upsert.run({
           id: row.id,
           email: row.email,
