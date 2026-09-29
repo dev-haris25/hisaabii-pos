@@ -416,6 +416,84 @@ function loadRemoteApp(win) {
   }, LOAD_TIMEOUT_MS)
 }
 
+const CONNECTIVITY_POLL_MS = 10_000
+const CONNECTIVITY_PROBE_TIMEOUT_MS = 5_000
+const CONNECTIVITY_FAILS_BEFORE_OFFLINE = 2
+
+/**
+ * Cloud reachability probe run from the MAIN process (not the renderer) —
+ * needed because once the live remote page is loaded and stable, nothing
+ * about a later disconnect ever fires `did-fail-load` (no new navigation is
+ * attempted), so `did-fail-load` alone can never detect a mid-session
+ * outage. `/api/auth/sync/ping` is auth-optional, so this needs no session.
+ */
+async function probeCloudReachableFromMain() {
+  let url
+  try {
+    url = appUrl()
+  } catch {
+    return false
+  }
+  const base = url.replace(/\/+$/, '')
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), CONNECTIVITY_PROBE_TIMEOUT_MS)
+  try {
+    const res = await fetch(`${base}/api/auth/sync/ping`, {
+      method: 'GET',
+      cache: 'no-store',
+      signal: ctrl.signal,
+    })
+    return res.ok
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Independently detects a disconnect that happens while the live remote app
+ * is already loaded and considered stable (`__shellPage === 'app'`) — the
+ * one case `did-fail-load` structurally cannot catch. On
+ * `CONNECTIVITY_FAILS_BEFORE_OFFLINE` consecutive failed probes, forces the
+ * same offline-shell hand-off used for cold-boot / failed-navigation cases,
+ * regardless of which page is currently showing (POS, Dashboard, HR, ...).
+ * This intentionally replaces "stay on the live page and gate individual
+ * features while offline" — the whole app should reflect real connectivity,
+ * not just POS.
+ *
+ * @param {Electron.BrowserWindow} win
+ */
+function startConnectivityWatchdog(win) {
+  win.__offlineProbeFails = 0
+  win.__connectivityWatchdogId = setInterval(async () => {
+    if (win.isDestroyed()) {
+      clearInterval(win.__connectivityWatchdogId)
+      return
+    }
+    // Only relevant once the live remote app is loaded and stable — any
+    // other state (loading buffers, already-offline shell) either isn't
+    // ready to probe yet or is already handled.
+    if (win.__shellPage !== 'app') {
+      win.__offlineProbeFails = 0
+      return
+    }
+    const ok = await probeCloudReachableFromMain()
+    if (win.isDestroyed() || win.__shellPage !== 'app') return
+    if (ok) {
+      win.__offlineProbeFails = 0
+      return
+    }
+    win.__offlineProbeFails += 1
+    if (win.__offlineProbeFails >= CONNECTIVITY_FAILS_BEFORE_OFFLINE) {
+      console.warn(
+        '[hisabi-desktop] connectivity watchdog: mid-session disconnect detected — switching to offline shell',
+      )
+      showOfflinePage(win, 'offline')
+    }
+  }, CONNECTIVITY_POLL_MS)
+}
+
 /**
  * @param {Electron.BrowserWindow} win
  */
@@ -549,10 +627,15 @@ function createWindow() {
 
   win.on('closed', () => {
     console.error('[hisabi-desktop] window "closed" event fired')
+    if (win.__connectivityWatchdogId) {
+      clearInterval(win.__connectivityWatchdogId)
+      win.__connectivityWatchdogId = null
+    }
     if (mainWindow === win) mainWindow = null
   })
 
   startAppLoad(win)
+  startConnectivityWatchdog(win)
 }
 
 app.on('second-instance', () => {

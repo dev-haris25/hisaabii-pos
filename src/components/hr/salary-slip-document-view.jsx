@@ -114,18 +114,11 @@ export function SalarySlipDocumentView({ model, className, printMode = false }) 
 
   /** @type {Array<{ key: string, label: string, amount: number, emphasize?: boolean }>} */
   const breakdownRows = [
-    { key: 'basic', label: t('fieldBasicPay'), amount: model.basicPay },
     ...model.earnings.map((row) => ({
       key: `e-${row.id}`,
       label: row.categoryName || row.description || t('earningsSection'),
       amount: row.total,
     })),
-    {
-      key: 'gross',
-      label: t('payslipGrossSalary'),
-      amount: model.totalEarnings,
-      emphasize: true,
-    },
     ...model.deductions.map((row) => ({
       key: `d-${row.id}`,
       label: row.categoryName || row.description || t('deductionsSection'),

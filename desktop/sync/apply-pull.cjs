@@ -264,6 +264,20 @@ function applyPullBatch(batch) {
     }
 
     if (Array.isArray(entities.rolePermissions)) {
+      // `role_permissions` has a UNIQUE(role_id, action, subject) index (see
+      // 002_auth_offline.cjs), but the upsert below only resolves conflicts
+      // on `id`. If the cloud sends a row whose `id` isn't in the local
+      // cache yet but whose (role_id, action, subject) triple already
+      // belongs to a *different* local row (e.g. a permission was
+      // deleted/recreated with a new id), the INSERT fails with
+      // SQLITE_CONSTRAINT_UNIQUE on that index and the whole pull batch
+      // throws — same bug family as the `users.email` fix above. The cloud
+      // is always the source of truth, so drop any stale local row under a
+      // different id that would otherwise collide before upserting by id.
+      const dropStaleTriple = db.prepare(
+        `DELETE FROM role_permissions
+         WHERE role_id = @role_id AND action = @action AND subject = @subject AND id <> @id`,
+      )
       const upsert = db.prepare(
         `INSERT INTO role_permissions (id, role_id, action, subject)
          VALUES (@id, @role_id, @action, @subject)
@@ -273,16 +287,27 @@ function applyPullBatch(batch) {
            subject = excluded.subject`,
       )
       for (const row of entities.rolePermissions) {
-        upsert.run({
+        const params = {
           id: row.id,
           role_id: row.roleId,
           action: row.action,
           subject: row.subject,
-        })
+        }
+        dropStaleTriple.run(params)
+        upsert.run(params)
       }
     }
 
     if (Array.isArray(entities.memberships)) {
+      // Same bug family as `users.email`/`role_permissions` above:
+      // `memberships` has a UNIQUE(user_id, business_profile_id) index (see
+      // 001_initial.cjs), but this upsert only resolves conflicts on `id`.
+      // Drop any stale local row under a different id that would otherwise
+      // collide on that pair before upserting by id.
+      const dropStalePair = db.prepare(
+        `DELETE FROM memberships
+         WHERE user_id = @user_id AND business_profile_id = @business_profile_id AND id <> @id`,
+      )
       const upsert = db.prepare(
         `INSERT INTO memberships (id, user_id, business_profile_id, updated_at, payload_json)
          VALUES (@id, @user_id, @business_profile_id, @updated_at, @payload_json)
@@ -293,13 +318,15 @@ function applyPullBatch(batch) {
            payload_json = excluded.payload_json`,
       )
       for (const row of entities.memberships) {
-        upsert.run({
+        const params = {
           id: row.id,
           user_id: row.userId,
           business_profile_id: row.businessProfileId,
           updated_at: row.updatedAt ?? null,
           payload_json: json(row.payload ?? row),
-        })
+        }
+        dropStalePair.run(params)
+        upsert.run(params)
       }
     }
 

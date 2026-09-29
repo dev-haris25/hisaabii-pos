@@ -1549,8 +1549,6 @@
     "modalClose": "Close",
     "lineNote": "Note",
     "lineNotePlaceholder": "Optional note for kitchen",
-    "nonPrimaryOfflineTitle": "No internet connection",
-    "nonPrimaryOfflineBody": "This till can't take sales while offline. Please use the primary till until you're back online.",
     "offlineModeLockedTitle": "Offline mode locked",
     "offlineModeLockedBody": "Ask an admin to log in and enable offline mode for this till.",
     "offlineModeLockedAdminBody": "Enable offline mode to take sales on this primary till while offline. Other tills should stay online.",

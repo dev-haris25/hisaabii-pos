@@ -24,7 +24,6 @@ import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { DesktopOfflineBadge } from '@/components/desktop/desktop-offline-badge'
 import { PosThermalReceiptPreview } from '@/components/invoices/pos-thermal-receipt-preview'
 import { LineModifierSummary } from '@/components/pos/line-modifier-summary'
-import { PosNonPrimaryOfflineLock } from '@/components/pos/pos-non-primary-offline-lock'
 import { PosPrimaryOfflineUnlockLock } from '@/components/pos/pos-primary-offline-unlock-lock'
 import {
   PosMoneyField,
@@ -283,7 +282,13 @@ export function PosCheckoutView({
     void tillQuery.refetch()
   }, [cloudOnline, desktop]) // eslint-disable-line react-hooks/exhaustive-deps -- refetch when connectivity flips
 
-  const nonPrimaryOfflineLock =
+  // Kept as a plain guard (no more full-screen lock modal — the desktop
+  // main process now force-navigates the whole app to the offline shell
+  // shortly after any real disconnect, and the offline shell never mounts
+  // this component for a non-primary till in the first place). This only
+  // covers the brief window before that hand-off completes; the server
+  // still enforces the primary-till rule either way.
+  const nonPrimaryOfflineBlocked =
     desktop &&
     !connectivityChecking &&
     !cloudOnline &&
@@ -712,10 +717,10 @@ export function PosCheckoutView({
   const canCheckout =
     cart.length > 0 &&
     !checkoutMutation.isPending &&
-    !nonPrimaryOfflineLock
+    !nonPrimaryOfflineBlocked
 
   function handleCheckout() {
-    if (nonPrimaryOfflineLock) return
+    if (nonPrimaryOfflineBlocked) return
     const nextErrors = { discount: '', tendered: '' }
     const disc = discount.trim()
     if (disc) {
@@ -1407,7 +1412,6 @@ export function PosCheckoutView({
         onSecondary={() => setStockConfirm(null)}
       />
 
-      <PosNonPrimaryOfflineLock open={nonPrimaryOfflineLock} />
       <PosPrimaryOfflineUnlockLock
         open={Boolean(primaryOfflineUnlockLock)}
         isAdmin={Boolean(isAdminUser)}
