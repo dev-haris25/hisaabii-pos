@@ -5,15 +5,12 @@
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "build:offline-app": "bun --cwd offline-app install && bun --cwd offline-app run build",
-    "dist": "bun run build:offline-app && electron-builder --win nsis",
-    "dist:dir": "bun run build:offline-app && electron-builder --win dir",
+    "dist": "electron-builder --win nsis",
+    "dist:dir": "electron-builder --win dir",
     "postinstall": "electron-builder install-app-deps",
     "smoke:packaging": "node scripts/smoke-packaging-files.cjs"
   },
   "dependencies": {
-    "@talha7k/zatca": "^0.13.0",
-    "better-sqlite3": "^11.9.1",
     "serialport": "^13.0.0"
   },
   "devDependencies": {
@@ -30,19 +27,9 @@
       "main.cjs",
       "preload.cjs",
       "app-config.json",
-      "icon.png",
-      "db/**/*",
-      "local-api/**/*",
-      "sync/**/*",
-      "auth/**/*",
-      "pos/**/*",
-      "stock/**/*",
-      "catalog/**/*",
-      "zatca/**/*",
-      "offline-app/dist/**/*"
+      "icon.png"
     ],
     "asarUnpack": [
-      "node_modules/better-sqlite3/**/*",
       "node_modules/serialport/**/*",
       "node_modules/@serialport/**/*",
       "node_modules/bindings/**/*",

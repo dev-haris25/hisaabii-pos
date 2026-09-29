@@ -1,49 +1,10 @@
 const { app, BrowserWindow, ipcMain, session } = require('electron')
-const { execFile } = require('node:child_process')
 const { readFileSync, writeFileSync, mkdirSync } = require('node:fs')
 const { join } = require('node:path')
-const { promisify } = require('node:util')
 const net = require('node:net')
 
-const {
-  openLocalDb,
-  getLocalDb,
-  getLocalStatus,
-  closeLocalDb,
-} = require('./db/open-db.cjs')
-const { startLocalApi } = require('./local-api/server.cjs')
-const {
-  applyPullBatch,
-  finalizeFullSync,
-  finalizeIncrementalSync,
-} = require('./sync/apply-pull.cjs')
-const {
-  storeZatcaSecrets,
-  loadZatcaSecrets,
-  testSafeStorageRoundTrip,
-} = require('./sync/zatca-secrets-store.cjs')
-const {
-  buildPushEvents,
-  markOutboxSynced,
-  markOutboxAttempt,
-  pendingOutboxCount,
-  finalizePush,
-} = require('./sync/push-outbox.cjs')
-const {
-  localLogin,
-  localMe,
-  localLogout,
-  upsertLocalUserFromCloud,
-  mintOfflineSessionForUser,
-} = require('./auth/local-login.cjs')
-
-const execFileAsync = promisify(execFile)
-
 /**
- * Prevent two processes (e.g. old + new install, or a double-launch) from
- * sharing the same userData/cache directory at once — the main cause of
- * Windows "Access is denied" cache corruption seen when Chromium's disk
- * cache is mid-write from another instance.
+ * Prevent two processes from sharing the same userData/cache directory.
  */
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
@@ -51,44 +12,10 @@ if (!gotSingleInstanceLock) {
 }
 
 /**
- * DIAGNOSTIC (temporary): this machine's Chromium GPU disk cache repeatedly
- * fails to initialize ("Access is denied" / "Gpu Cache Creation failed"),
- * which can cascade into GPU-process crash loops. Disabling hardware
- * acceleration removes Chromium's GPU process entirely so we can tell
- * whether that failure class is what's causing the app to exit / fail to
- * render, independent of any Next.js/React bug.
+ * DIAGNOSTIC (temporary): disable GPU to avoid Chromium GPU-cache
+ * "Access is denied" crash loops on some Windows machines.
  */
 app.disableHardwareAcceleration()
-
-/** @type {{ server: import('node:http').Server, port: number, baseUrl: string } | null} */
-let localApi = null
-
-function offlineTokenPath() {
-  return join(app.getPath('userData'), 'secure', 'offline-session-token.txt')
-}
-
-function readOfflineSessionToken() {
-  try {
-    const t = readFileSync(offlineTokenPath(), 'utf8').trim()
-    return t || null
-  } catch {
-    return null
-  }
-}
-
-function writeOfflineSessionToken(token) {
-  mkdirSync(join(app.getPath('userData'), 'secure'), { recursive: true })
-  if (token && String(token).trim()) {
-    writeFileSync(offlineTokenPath(), String(token).trim(), 'utf8')
-  } else {
-    try {
-      require('node:fs').unlinkSync(offlineTokenPath())
-    } catch {
-      /* ignore */
-    }
-  }
-  return readOfflineSessionToken()
-}
 
 function loadParentEnv() {
   try {
@@ -121,10 +48,7 @@ function appVersionMarkerPath() {
 }
 
 /**
- * Clears only the disposable Chromium caches (HTTP, code, GPU shader cache)
- * — never `local-db/`, `secure/`, or `till.json` — so a fresh install or an
- * upgrade never inherits a stale/corrupted cache from a previous version.
- * Safe to call every launch: it is a no-op once the version marker matches.
+ * Clears disposable Chromium caches on upgrade — never `till.json`.
  */
 async function clearStaleCacheIfUpgraded() {
   const markerPath = appVersionMarkerPath()
@@ -132,7 +56,7 @@ async function clearStaleCacheIfUpgraded() {
   try {
     previousVersion = readFileSync(markerPath, 'utf8').trim()
   } catch {
-    /* first launch on this machine, or marker missing */
+    /* first launch */
   }
   const currentVersion = app.getVersion()
   if (previousVersion === currentVersion) return
@@ -156,12 +80,6 @@ async function clearStaleCacheIfUpgraded() {
   }
 }
 
-/**
- * Self-heal: if the shell fails to load, clear Chromium's disk cache once
- * before showing the offline page, in case a locked/corrupted cache (e.g.
- * Windows "Access is denied" cache_util errors) is the actual cause rather
- * than a real network outage.
- */
 let didSelfHealCacheThisSession = false
 async function clearCacheOnceForSelfHeal() {
   if (didSelfHealCacheThisSession) return
@@ -190,7 +108,6 @@ function writeStore(data) {
 
 /**
  * Shell URL comes only from desktop/app-config.json (`appUrl`).
- * No env overrides and no hardcoded fallback.
  */
 function appUrl() {
   const cfgPath = join(__dirname, 'app-config.json')
@@ -213,6 +130,9 @@ function appUrl() {
 
 const BRAND_GREEN = '#00342b'
 const LOAD_TIMEOUT_MS = 30_000
+const CONNECTIVITY_POLL_MS = 10_000
+const CONNECTIVITY_PROBE_TIMEOUT_MS = 5_000
+const CONNECTIVITY_FAILS_BEFORE_RETRY = 2
 
 /** @type {Electron.BrowserWindow | null} */
 let mainWindow = null
@@ -222,9 +142,7 @@ function dataHtmlUrl(html) {
 }
 
 /**
- * @param {string} [caption] Small branded caption under the spinner — kept
- * optional/short so this still reads as a native app transition, not a
- * separate "error-ish" screen.
+ * @param {string} [caption]
  */
 function loadingPageHtml(caption) {
   const captionHtml = caption
@@ -267,7 +185,6 @@ function loadingPageHtml(caption) {
 </head>
 <body>
   <div class="wrap" role="status" aria-live="polite" aria-label="Loading">
-    <!-- Same shape as Lucide Loader2 used by HisabiSpinner on the web app -->
     <svg class="spinner" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
         d="M21 12a9 9 0 1 1-6.219-8.56"
@@ -283,112 +200,59 @@ function loadingPageHtml(caption) {
 </html>`
 }
 
+function retryPageHtml() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hisabi POS</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: grid;
+      place-items: center;
+      background: #ffffff;
+      color: ${BRAND_GREEN};
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      padding: 2rem;
+      text-align: center;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
+    p { margin: 0 0 1.25rem; opacity: 0.8; font-size: 0.9375rem; max-width: 22rem; }
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 0.5rem;
+      background: ${BRAND_GREEN};
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      font-size: 0.875rem;
+      padding: 0.625rem 1.25rem;
+      cursor: pointer;
+    }
+    button:hover { opacity: 0.92; }
+  </style>
+</head>
+<body>
+  <div>
+    <h1>No internet connection</h1>
+    <p>Hisabi POS needs an internet connection. Check your network, then try again.</p>
+    <button type="button" onclick="window.hisabiDesktop&amp;&amp;window.hisabiDesktop.retryLoadApp()">Try again</button>
+  </div>
+</body>
+</html>`
+}
+
 /**
- * Actually navigate to the offline shell (or its missing-build fallback).
- * Split out from `showOfflinePage` so the branded loading buffer below can
- * sit in front of it without duplicating this logic.
- *
  * @param {Electron.BrowserWindow} win
- * @param {'offline' | 'slow'} kind
  */
-function loadOfflineShell(win, kind) {
-  if (win.isDestroyed()) return
-  clearLoadTimeout(win)
-  clearOfflineHandoffTimer(win)
-  win.__shellPage = kind === 'slow' ? 'slow' : 'offline'
-  const offlineAppIndex = join(__dirname, 'offline-app', 'dist', 'index.html')
-  const offlineAppDev = join(__dirname, 'offline-app', 'index.html')
-  const { existsSync } = require('node:fs')
-  const target = existsSync(offlineAppIndex)
-    ? offlineAppIndex
-    : existsSync(offlineAppDev)
-      ? offlineAppDev
-      : null
-  if (target) {
-    void win.loadFile(target, {
-      query: { reason: kind },
-    })
-    return
+function clearHandoffTimer(win) {
+  if (win.__handoffTimer) {
+    clearTimeout(win.__handoffTimer)
+    win.__handoffTimer = null
   }
-  // Fallback if offline-app has not been built yet
-  void win.loadURL(
-    dataHtmlUrl(`<!doctype html><html><body style="font-family:system-ui;padding:2rem;text-align:center">
-      <h1 style="color:${BRAND_GREEN}">Internet not available</h1>
-      <p>Offline shell is missing. Build desktop/offline-app, then retry.</p>
-      <button onclick="window.hisabiDesktop&&window.hisabiDesktop.retryLoadApp()">Try again</button>
-    </body></html>`),
-  )
-}
-
-/**
- * @param {Electron.BrowserWindow} win
- */
-function clearOfflineHandoffTimer(win) {
-  if (win.__offlineHandoffTimer) {
-    clearTimeout(win.__offlineHandoffTimer)
-    win.__offlineHandoffTimer = null
-  }
-}
-
-/**
- * Attach `did-finish-load` *before* starting navigation so a fast data: load
- * cannot finish before the listener is registered (which left the
- * "Switching to offline mode…" buffer stuck forever).
- *
- * @param {Electron.BrowserWindow} win
- * @param {string} expectedShellPage
- * @param {() => void} onReady
- * @param {number} [fallbackMs]
- */
-function afterNextLoad(win, expectedShellPage, onReady, fallbackMs = 2500) {
-  const gen = (win.__loadGen = (win.__loadGen || 0) + 1)
-  let done = false
-  const finish = () => {
-    if (done || win.isDestroyed()) return
-    if (win.__loadGen !== gen) return
-    if (win.__shellPage !== expectedShellPage) return
-    done = true
-    clearOfflineHandoffTimer(win)
-    onReady()
-  }
-  win.webContents.once('did-finish-load', finish)
-  clearOfflineHandoffTimer(win)
-  win.__offlineHandoffTimer = setTimeout(finish, fallbackMs)
-}
-
-/**
- * Switch to the offline shell. Always shows a branded loading buffer first
- * — going straight from a broken/blank remote page to the next `loadFile()`
- * navigation with nothing in between reads as a jarring flash; the offline
- * → online path (`startAppLoad`/`loadRemoteApp`) already had this buffer,
- * this brings the other direction up to the same standard.
- *
- * @param {Electron.BrowserWindow} win
- * @param {'offline' | 'slow'} kind
- */
-function showOfflinePage(win, kind) {
-  if (win.isDestroyed()) return
-  clearLoadTimeout(win)
-  const pendingKind = kind === 'slow' ? 'slow' : 'offline'
-  win.__shellPage = 'loading-offline'
-  afterNextLoad(win, 'loading-offline', () => {
-    loadOfflineShell(win, pendingKind)
-  })
-  void win.loadURL(
-    dataHtmlUrl(loadingPageHtml('Switching to offline mode…')),
-  )
-}
-
-/**
- * @param {Electron.BrowserWindow} win
- * @param {string} [caption]
- */
-function showLoadingPage(win, caption) {
-  if (win.isDestroyed()) return
-  clearLoadTimeout(win)
-  clearOfflineHandoffTimer(win)
-  win.__shellPage = 'loading'
-  void win.loadURL(dataHtmlUrl(loadingPageHtml(caption)))
 }
 
 /**
@@ -403,30 +267,81 @@ function clearLoadTimeout(win) {
 
 /**
  * @param {Electron.BrowserWindow} win
+ * @param {string} expectedShellPage
+ * @param {() => void} onReady
+ * @param {number} [fallbackMs]
+ */
+function afterNextLoad(win, expectedShellPage, onReady, fallbackMs = 2500) {
+  const gen = (win.__loadGen = (win.__loadGen || 0) + 1)
+  let done = false
+  const finish = () => {
+    if (done || win.isDestroyed()) return
+    if (win.__loadGen !== gen) return
+    if (win.__shellPage !== expectedShellPage) return
+    done = true
+    clearHandoffTimer(win)
+    onReady()
+  }
+  win.webContents.once('did-finish-load', finish)
+  clearHandoffTimer(win)
+  win.__handoffTimer = setTimeout(finish, fallbackMs)
+}
+
+/**
+ * @param {Electron.BrowserWindow} win
+ * @param {string} [caption]
+ */
+function showLoadingPage(win, caption) {
+  if (win.isDestroyed()) return
+  clearLoadTimeout(win)
+  clearHandoffTimer(win)
+  win.__shellPage = 'loading'
+  void win.loadURL(dataHtmlUrl(loadingPageHtml(caption)))
+}
+
+/**
+ * Online-only: cloud unreachable → Retry page (no offline POS).
+ * @param {Electron.BrowserWindow} win
+ */
+function showRetryPage(win) {
+  if (win.isDestroyed()) return
+  clearLoadTimeout(win)
+  clearHandoffTimer(win)
+  win.__shellPage = 'retry'
+  win.__offlineProbeFails = 0
+  void win.loadURL(dataHtmlUrl(retryPageHtml()))
+}
+
+/**
+ * @param {Electron.BrowserWindow} win
  */
 function loadRemoteApp(win) {
   if (win.isDestroyed()) return
   clearLoadTimeout(win)
-  clearOfflineHandoffTimer(win)
+  clearHandoffTimer(win)
   win.__shellPage = 'app'
+  win.__offlineProbeFails = 0
   void win.loadURL(appUrl())
   win.__loadTimer = setTimeout(() => {
     if (win.isDestroyed()) return
-    if (win.__shellPage === 'app') showOfflinePage(win, 'slow')
+    if (win.__shellPage === 'app') showRetryPage(win)
   }, LOAD_TIMEOUT_MS)
 }
 
-const CONNECTIVITY_POLL_MS = 10_000
-const CONNECTIVITY_PROBE_TIMEOUT_MS = 5_000
-const CONNECTIVITY_FAILS_BEFORE_OFFLINE = 2
-
 /**
- * Cloud reachability probe run from the MAIN process (not the renderer) —
- * needed because once the live remote page is loaded and stable, nothing
- * about a later disconnect ever fires `did-fail-load` (no new navigation is
- * attempted), so `did-fail-load` alone can never detect a mid-session
- * outage. `/api/auth/sync/ping` is auth-optional, so this needs no session.
+ * @param {Electron.BrowserWindow} win
  */
+function startAppLoad(win) {
+  if (win.isDestroyed()) return
+  const caption = win.__shellPage ? 'Reconnecting…' : undefined
+  clearLoadTimeout(win)
+  win.__shellPage = 'loading'
+  afterNextLoad(win, 'loading', () => {
+    loadRemoteApp(win)
+  })
+  void win.loadURL(dataHtmlUrl(loadingPageHtml(caption)))
+}
+
 async function probeCloudReachableFromMain() {
   let url
   try {
@@ -452,16 +367,7 @@ async function probeCloudReachableFromMain() {
 }
 
 /**
- * Independently detects a disconnect that happens while the live remote app
- * is already loaded and considered stable (`__shellPage === 'app'`) — the
- * one case `did-fail-load` structurally cannot catch. On
- * `CONNECTIVITY_FAILS_BEFORE_OFFLINE` consecutive failed probes, forces the
- * same offline-shell hand-off used for cold-boot / failed-navigation cases,
- * regardless of which page is currently showing (POS, Dashboard, HR, ...).
- * This intentionally replaces "stay on the live page and gate individual
- * features while offline" — the whole app should reflect real connectivity,
- * not just POS.
- *
+ * Mid-session disconnect → Retry page (online-only desktop).
  * @param {Electron.BrowserWindow} win
  */
 function startConnectivityWatchdog(win) {
@@ -471,44 +377,26 @@ function startConnectivityWatchdog(win) {
       clearInterval(win.__connectivityWatchdogId)
       return
     }
-    // Only relevant once the live remote app is loaded and stable — any
-    // other state (loading buffers, already-offline shell) either isn't
-    // ready to probe yet or is already handled.
-    if (win.__shellPage !== 'app') {
+    // Act only while the live cloud app is considered loaded/stable.
+    if (win.__shellPage !== 'app' && win.__shellPage !== 'ready') {
       win.__offlineProbeFails = 0
       return
     }
     const ok = await probeCloudReachableFromMain()
-    if (win.isDestroyed() || win.__shellPage !== 'app') return
+    if (win.isDestroyed()) return
+    if (win.__shellPage !== 'app' && win.__shellPage !== 'ready') return
     if (ok) {
       win.__offlineProbeFails = 0
       return
     }
     win.__offlineProbeFails += 1
-    if (win.__offlineProbeFails >= CONNECTIVITY_FAILS_BEFORE_OFFLINE) {
+    if (win.__offlineProbeFails >= CONNECTIVITY_FAILS_BEFORE_RETRY) {
       console.warn(
-        '[hisabi-desktop] connectivity watchdog: mid-session disconnect detected — switching to offline shell',
+        '[hisabi-desktop] connectivity watchdog: disconnect — showing retry page',
       )
-      showOfflinePage(win, 'offline')
+      showRetryPage(win)
     }
   }, CONNECTIVITY_POLL_MS)
-}
-
-/**
- * @param {Electron.BrowserWindow} win
- */
-function startAppLoad(win) {
-  // `undefined` caption on first-ever launch (nothing to "reconnect" to
-  // yet); once we already have an offline shell page loaded, this is the
-  // offline → online hand-off, so say so explicitly.
-  if (win.isDestroyed()) return
-  const caption = win.__shellPage ? 'Reconnecting…' : undefined
-  clearLoadTimeout(win)
-  win.__shellPage = 'loading'
-  afterNextLoad(win, 'loading', () => {
-    loadRemoteApp(win)
-  })
-  void win.loadURL(dataHtmlUrl(loadingPageHtml(caption)))
 }
 
 function createWindow() {
@@ -540,21 +428,11 @@ function createWindow() {
       if (!isMainFrame) return
       if (errorCode === -3) return
       if (!validatedURL || validatedURL.startsWith('data:')) return
-      // Do not recurse when the offline shell (file://) itself fails to load.
-      if (
-        validatedURL.startsWith('file:') &&
-        validatedURL.includes('offline-app')
-      ) {
-        return
-      }
       void clearCacheOnceForSelfHeal()
-      showOfflinePage(win, 'offline')
+      showRetryPage(win)
     },
   )
 
-  // Forward renderer console output (including the real Next.js/React error
-  // that DevTools shows as an opaque "Uncaught Error") to this terminal, so
-  // load-time crashes are diagnosable without manually opening DevTools.
   win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     const levelName = ['log', 'warn', 'error', 'debug'][level] || String(level)
     console.log(`[renderer:${levelName}]`, message, `(${sourceId}:${line})`)
@@ -571,10 +449,6 @@ function createWindow() {
     )
   })
 
-  // Install the real crash listener in the PAGE's own JS world (not
-  // preload's isolated world — `contextIsolation` means preload never sees
-  // page-thrown exceptions). `window.hisabiDesktop` is reachable here
-  // because contextBridge exposes it into this exact world.
   win.webContents.on('dom-ready', () => {
     void win.webContents.executeJavaScript(
       `(() => {
@@ -621,12 +495,7 @@ function createWindow() {
     }
   })
 
-  win.on('close', () => {
-    console.error('[hisabi-desktop] window "close" event — stack:', new Error().stack)
-  })
-
   win.on('closed', () => {
-    console.error('[hisabi-desktop] window "closed" event fired')
     if (win.__connectivityWatchdogId) {
       clearInterval(win.__connectivityWatchdogId)
       win.__connectivityWatchdogId = null
@@ -650,111 +519,11 @@ app.whenReady().then(async () => {
   }
 
   await clearStaleCacheIfUpgraded()
-
-  try {
-    const safe = testSafeStorageRoundTrip()
-    console.info(
-      '[hisabi-desktop] safeStorage',
-      `available=${safe.encryptionAvailable}`,
-      `roundTrip=${safe.roundTrip}`,
-      safe.error ? `error=${safe.error}` : '',
-    )
-    if (!safe.ok) {
-      console.warn(
-        '[hisabi-desktop] CSID safeStorage self-test failed — offline ZATCA signing may be unavailable until encryption works on this machine',
-      )
-    }
-  } catch (err) {
-    console.warn('[hisabi-desktop] safeStorage self-test threw', err)
-  }
-
-  try {
-    openLocalDb(app.getPath('userData'))
-    localApi = await startLocalApi()
-    console.info('[hisabi-desktop] local API', localApi.baseUrl)
-  } catch (err) {
-    console.error('[hisabi-desktop] local DB/API failed to start', err)
-    // Remote cloud shell can still load; offline features need local API.
-  }
-
   createWindow()
-})
-
-app.on('before-quit', () => {
-  try {
-    localApi?.server?.close()
-  } catch {
-    /* ignore */
-  }
-  localApi = null
-  closeLocalDb()
 })
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
-})
-
-ipcMain.handle('local:getStatus', () => {
-  try {
-    return {
-      ok: true,
-      localApiBaseUrl: localApi?.baseUrl ?? null,
-      ...getLocalStatus(),
-    }
-  } catch {
-    return {
-      ok: false,
-      localApiBaseUrl: localApi?.baseUrl ?? null,
-      offlineReady: false,
-      pendingOutboxCount: 0,
-      schemaVersion: 0,
-      latestSchemaVersion: 0,
-      dbPath: null,
-      businessProfileId: null,
-    }
-  }
-})
-
-ipcMain.handle('local:getApiBaseUrl', () => localApi?.baseUrl ?? null)
-
-ipcMain.handle('local:getOfflineCheckoutUnlock', () => {
-  try {
-    const {
-      getOfflineCheckoutUnlockStatus,
-    } = require('./local-api/offline-unlock.cjs')
-    return { ok: true, ...getOfflineCheckoutUnlockStatus() }
-  } catch (err) {
-    return {
-      ok: false,
-      unlocked: false,
-      offlineReady: false,
-      message: err instanceof Error ? err.message : String(err),
-    }
-  }
-})
-
-ipcMain.handle('local:unlockOfflineCheckout', () => {
-  try {
-    const { unlockOfflineCheckout } = require('./local-api/offline-unlock.cjs')
-    return unlockOfflineCheckout()
-  } catch (err) {
-    return {
-      ok: false,
-      code: 'UNLOCK_FAILED',
-      message: err instanceof Error ? err.message : String(err),
-    }
-  }
-})
-
-ipcMain.handle('local:clearOfflineCheckoutUnlock', () => {
-  try {
-    const {
-      clearOfflineCheckoutUnlock,
-    } = require('./local-api/offline-unlock.cjs')
-    return clearOfflineCheckoutUnlock()
-  } catch {
-    return { ok: true, unlocked: false }
-  }
 })
 
 ipcMain.handle('app:getConfig', () => {
@@ -769,116 +538,10 @@ ipcMain.handle('app:getConfig', () => {
   }
 })
 
-ipcMain.handle('local:applyPullBatch', (_e, batch) => {
-  return applyPullBatch(batch || {})
-})
-
-ipcMain.handle('local:finalizeFullSync', (_e, payload) => {
-  return finalizeFullSync(payload || {})
-})
-
-ipcMain.handle('local:finalizeIncrementalSync', (_e, payload) => {
-  return finalizeIncrementalSync(payload || {})
-})
-
-ipcMain.handle('local:buildPushBatch', (_e, opts) => {
-  const limit = Number(opts?.limit) || 40
-  const raw = buildPushEvents(limit)
-  const events = []
-  const skipped = []
-  for (const row of raw) {
-    if (row._skip) {
-      skipped.push({ outboxId: row._outboxId, reason: row._skip })
-      continue
-    }
-    events.push({
-      outboxId: row._outboxId,
-      eventId: row.eventId,
-      eventType: row.eventType,
-      payload: row.payload,
-      invoice: row.invoice,
-      lines: row.lines,
-      kitchenOrder: row.kitchenOrder,
-      movement: row.movement,
-      tip: row.tip,
-    })
-  }
-  return {
-    ok: true,
-    events,
-    skipped,
-    pendingUploadCount: pendingOutboxCount(),
-  }
-})
-
-ipcMain.handle('local:markOutboxSynced', (_e, payload) => {
-  const ids = Array.isArray(payload?.outboxIds) ? payload.outboxIds : []
-  markOutboxSynced(ids)
-  finalizePush()
-  return { ok: true, pendingUploadCount: pendingOutboxCount() }
-})
-
-ipcMain.handle('local:markOutboxAttempt', (_e, payload) => {
-  const failures = Array.isArray(payload?.failures) ? payload.failures : []
-  markOutboxAttempt(failures)
-  return { ok: true, pendingUploadCount: pendingOutboxCount() }
-})
-
-ipcMain.handle('local:storeZatcaSecrets', (_e, payload) => {
-  return storeZatcaSecrets(
-    String(payload?.businessProfileId || ''),
-    payload?.secrets ?? null,
-  )
-})
-
-ipcMain.handle('local:hasZatcaSecrets', () => {
-  const loaded = loadZatcaSecrets()
-  return {
-    ok: true,
-    hasSecrets: Boolean(loaded?.secrets),
-    businessProfileId: loaded?.businessProfileId ?? null,
-  }
-})
-
-ipcMain.handle('local:safeStorageSelfTest', () => {
-  return testSafeStorageRoundTrip()
-})
-
-ipcMain.handle('auth:offlineLogin', (_e, body) => localLogin(body || {}))
-ipcMain.handle('auth:offlineMe', (_e, token) =>
-  localMe(typeof token === 'string' ? token : readOfflineSessionToken()),
-)
-ipcMain.handle('auth:offlineLogout', (_e, token) => {
-  const t = typeof token === 'string' ? token : readOfflineSessionToken()
-  localLogout(t)
-  writeOfflineSessionToken(null)
-  return { ok: true }
-})
-ipcMain.handle('auth:upsertLocalUser', (_e, user) =>
-  upsertLocalUserFromCloud(user || {}),
-)
-ipcMain.handle('auth:mintOfflineSession', (_e, body) =>
-  mintOfflineSessionForUser(body?.userId, {
-    remember: Boolean(body?.remember),
-  }),
-)
-ipcMain.handle('auth:getOfflineSessionToken', () => readOfflineSessionToken())
-ipcMain.handle('auth:setOfflineSessionToken', (_e, token) =>
-  writeOfflineSessionToken(token),
-)
-
 ipcMain.handle('app:retryLoad', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender) || mainWindow
   if (!win || win.isDestroyed()) return false
   startAppLoad(win)
-  return true
-})
-
-/** Go straight to the offline shell (used after logout while already offline). */
-ipcMain.handle('app:showOfflineShell', (event) => {
-  const win = BrowserWindow.fromWebContents(event.sender) || mainWindow
-  if (!win || win.isDestroyed()) return false
-  showOfflinePage(win, 'offline')
   return true
 })
 
@@ -888,33 +551,7 @@ ipcMain.handle('till:getId', () => {
     typeof store.tillId === 'string' && store.tillId.trim()
       ? store.tillId.trim()
       : null
-  if (id) return id
-
-  // This machine was never taken through Settings > Till while online to
-  // bind it to a specific till row, so it has no tillId locally. Without
-  // this, the till is permanently treated as non-primary while offline
-  // (blocking sales) even on a single-till setup where there's no real
-  // ambiguity. Auto-bind when local SQLite has exactly one synced till for
-  // this business — but never guess when there's more than one, since
-  // picking the wrong physical till would misattribute ZATCA invoices.
-  try {
-    const status = getLocalStatus()
-    if (!status?.businessProfileId) return null
-    const rows = getLocalDb()
-      .prepare(
-        `SELECT id FROM pos_tills WHERE business_profile_id = ?`,
-      )
-      .all(status.businessProfileId)
-    if (rows.length === 1) {
-      const autoId = rows[0].id
-      store.tillId = autoId
-      writeStore(store)
-      return autoId
-    }
-  } catch {
-    /* local db not ready / no synced tills yet — fall through to null */
-  }
-  return null
+  return id
 })
 
 ipcMain.handle('till:setId', (_e, id) => {
@@ -922,31 +559,6 @@ ipcMain.handle('till:setId', (_e, id) => {
   store.tillId = typeof id === 'string' && id.trim() ? id.trim() : null
   writeStore(store)
   return store.tillId
-})
-
-/**
- * List locally synced tills for this business — used by the offline shell
- * to let staff bind this machine to a till when it has never been bound via
- * the (online-only) Settings > Till page and auto-bind can't resolve it
- * unambiguously (more than one till synced locally).
- */
-ipcMain.handle('till:list', () => {
-  try {
-    const status = getLocalStatus()
-    if (!status?.businessProfileId) return []
-    const rows = getLocalDb()
-      .prepare(
-        `SELECT id, name, is_primary FROM pos_tills WHERE business_profile_id = ? ORDER BY is_primary DESC, name ASC`,
-      )
-      .all(status.businessProfileId)
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name || row.id,
-      isPrimary: Boolean(row.is_primary),
-    }))
-  } catch {
-    return []
-  }
 })
 
 ipcMain.handle('hw:listPorts', async () => {
@@ -1082,17 +694,14 @@ ipcMain.handle('hw:printWin', async (_e, payload) => {
       const options = {
         silent: true,
         deviceName: printerName,
-        // Thermal / mono heads — avoid color dithering that washes out text.
         printBackground: true,
         color: false,
         margins: { marginType: 'none' },
         preferCSSPageSize: true,
       }
       if (paperFormat === 'a4') {
-        // Office printers: real A4 so an 80mm CSS slip is true 80mm on paper.
         options.pageSize = 'A4'
       } else {
-        // Do NOT set `dpi` — non-96 values shrink CSS layout on paper.
         const height = Math.max(Number(heightMicrons) || 0, 80000)
         options.pageSize = {
           width: 80000,

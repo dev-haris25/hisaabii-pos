@@ -1,6 +1,6 @@
 /**
- * Ensures electron-builder `files` still lists every runtime folder the
- * local API / offline checkout needs. Run: bun run smoke:packaging (from desktop/).
+ * Ensures electron-builder `files` still lists every runtime file the
+ * online-only shell needs. Run: bun run smoke:packaging (from desktop/).
  */
 const { existsSync } = require('node:fs')
 const { join } = require('node:path')
@@ -10,16 +10,6 @@ const required = [
   'main.cjs',
   'preload.cjs',
   'app-config.json',
-  'db/open-db.cjs',
-  'local-api/server.cjs',
-  'local-api/local-invoices-read.cjs',
-  'sync/apply-pull.cjs',
-  'sync/zatca-secrets-store.cjs',
-  'auth/local-login.cjs',
-  'pos/local-checkout.cjs',
-  'stock/local-stock.cjs',
-  'catalog/local-catalog-read.cjs',
-  'zatca/sign-offline.cjs',
 ]
 
 let failed = 0
@@ -35,15 +25,7 @@ for (const rel of required) {
 
 const pkg = require('../package.json')
 const files = pkg.build?.files || []
-const mustInclude = [
-  'pos/**/*',
-  'stock/**/*',
-  'catalog/**/*',
-  'zatca/**/*',
-  'db/**/*',
-  'local-api/**/*',
-  'offline-app/dist/**/*',
-]
+const mustInclude = ['main.cjs', 'preload.cjs', 'app-config.json', 'icon.png']
 for (const pattern of mustInclude) {
   if (!files.includes(pattern)) {
     console.error(`[smoke:packaging] build.files missing ${pattern}`)
@@ -51,12 +33,38 @@ for (const pattern of mustInclude) {
   }
 }
 
-if (!pkg.dependencies?.['@talha7k/zatca']) {
-  console.error('[smoke:packaging] missing dependency @talha7k/zatca')
+const mustNotInclude = [
+  'db/**/*',
+  'local-api/**/*',
+  'sync/**/*',
+  'auth/**/*',
+  'pos/**/*',
+  'stock/**/*',
+  'catalog/**/*',
+  'zatca/**/*',
+  'offline-app/dist/**/*',
+]
+for (const pattern of mustNotInclude) {
+  if (files.includes(pattern)) {
+    console.error(`[smoke:packaging] build.files still includes offline ${pattern}`)
+    failed += 1
+  }
+}
+
+if (pkg.dependencies?.['@talha7k/zatca']) {
+  console.error('[smoke:packaging] unexpected dependency @talha7k/zatca')
   failed += 1
 }
-if (!pkg.dependencies?.['better-sqlite3']) {
-  console.error('[smoke:packaging] missing dependency better-sqlite3')
+if (pkg.dependencies?.['better-sqlite3']) {
+  console.error('[smoke:packaging] unexpected dependency better-sqlite3')
+  failed += 1
+}
+if (!pkg.dependencies?.serialport) {
+  console.error('[smoke:packaging] missing dependency serialport')
+  failed += 1
+}
+if (pkg.scripts?.['build:offline-app']) {
+  console.error('[smoke:packaging] unexpected script build:offline-app')
   failed += 1
 }
 
