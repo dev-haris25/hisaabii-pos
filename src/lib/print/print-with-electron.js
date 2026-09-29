@@ -2,7 +2,6 @@
 
 import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
 import { getHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
-import { fetchLocalBoundTill } from '@/lib/desktop/local-pos-api'
 import { renderThermalReceiptPrintJobs } from '@/lib/print/render-thermal-receipt-print-html'
 import {
   normalizePrintVia,
@@ -14,13 +13,9 @@ async function loadBoundTill() {
   const desktop = getHisabiDesktop()
   const tillId = await desktop?.getTillId?.()
   if (!tillId) return null
-  try {
-    const data = await authGet(`/pos/till?id=${encodeURIComponent(tillId)}`)
-    if (data.till && typeof data.till === 'object') return data.till
-  } catch {
-    /* offline — local SQLite */
-  }
-  return fetchLocalBoundTill()
+  const data = await authGet(`/pos/till?id=${encodeURIComponent(tillId)}`)
+  if (data.till && typeof data.till === 'object') return data.till
+  return null
 }
 
 /**

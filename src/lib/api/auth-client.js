@@ -1,5 +1,3 @@
-import { assertCloudWriteAllowed } from '@/lib/desktop/assert-cloud-write-allowed'
-
 export class AuthApiError extends Error {
   /**
    * @param {number} status
@@ -17,33 +15,10 @@ export class AuthApiError extends Error {
 }
 
 /**
- * @param {unknown} err
- */
-function rethrowWriteGuard(err) {
-  if (
-    err &&
-    typeof err === 'object' &&
-    /** @type {{ code?: string }} */ (err).code === 'INTERNET_REQUIRED'
-  ) {
-    throw new AuthApiError(
-      503,
-      'INTERNET_REQUIRED',
-      err instanceof Error ? err.message : 'Making changes needs an internet connection',
-    )
-  }
-  throw err
-}
-
-/**
  * @param {string} path e.g. "/register" -> POST /api/auth/register
  * @param {unknown} [body]
  */
 export async function authPost(path, body) {
-  try {
-    await assertCloudWriteAllowed(path, 'POST')
-  } catch (err) {
-    rethrowWriteGuard(err)
-  }
   const res = await fetch(`/api/auth${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -89,11 +64,6 @@ export async function authPost(path, body) {
  * }} [options]
  */
 export async function authPostInvoiceSendStream(invoiceId, options = {}) {
-  try {
-    await assertCloudWriteAllowed(`/invoices/${invoiceId}/send`, 'POST')
-  } catch (err) {
-    rethrowWriteGuard(err)
-  }
   const res = await fetch(`/api/auth/invoices/${invoiceId}/send`, {
     method: 'POST',
     credentials: 'same-origin',
@@ -171,11 +141,6 @@ export async function authPostInvoiceSendStream(invoiceId, options = {}) {
  * @param {{ signal?: AbortSignal, onStage?: (stage: string) => void }} [options]
  */
 export async function authPostNoteSendStream(noteType, id, options = {}) {
-  try {
-    await assertCloudWriteAllowed(`/${noteType}/${id}/send`, 'POST')
-  } catch (err) {
-    rethrowWriteGuard(err)
-  }
   const res = await fetch(`/api/auth/${noteType}/${id}/send`, {
     method: 'POST',
     credentials: 'same-origin',
@@ -235,11 +200,6 @@ export async function authPostNoteSendStream(noteType, id, options = {}) {
 }
 
 export async function authPatch(path, body) {
-  try {
-    await assertCloudWriteAllowed(path, 'PATCH')
-  } catch (err) {
-    rethrowWriteGuard(err)
-  }
   const res = await fetch(`/api/auth${path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -357,11 +317,6 @@ export async function authGetBlob(path) {
  * @param {string} path e.g. "/clients/cuid" -> DELETE /api/auth/clients/cuid
  */
 export async function authDelete(path) {
-  try {
-    await assertCloudWriteAllowed(path, 'DELETE')
-  } catch (err) {
-    rethrowWriteGuard(err)
-  }
   const res = await fetch(`/api/auth${path}`, {
     method: 'DELETE',
     credentials: 'same-origin',

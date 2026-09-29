@@ -23,18 +23,12 @@ import {
  *   createdAt: Date
  *   updatedAt: Date
  * }} row
- * @param {string | null | undefined} [primaryPosTillId]
  */
-export function mapTillToJson(row, primaryPosTillId) {
+export function mapTillToJson(row) {
   const lanPrinters = parseLanPrinters(row.lanPrinters)
-  const isPrimary =
-    typeof primaryPosTillId === 'string' &&
-    primaryPosTillId.length > 0 &&
-    row.id === primaryPosTillId
   return {
     id: row.id,
     name: row.name,
-    isPrimary,
     displayEnabled: row.displayEnabled === true,
     displayPort: row.displayPort ?? '',
     displayBaud: row.displayBaud ?? 9600,

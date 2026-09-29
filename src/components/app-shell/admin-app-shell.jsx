@@ -28,8 +28,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { useIsRtl } from '@/components/auth/use-is-rtl'
-import { DesktopFirstSyncGate } from '@/components/desktop/desktop-first-sync-gate'
-import { DesktopOfflineBadge } from '@/components/desktop/desktop-offline-badge'
 import { GlobalSearch } from '@/components/app-shell/global-search'
 import { NotificationsBell } from '@/components/app-shell/notifications-bell'
 import { NotificationToastListener } from '@/components/app-shell/notification-toast-listener'
@@ -105,20 +103,18 @@ export function AdminAppShell({
 }) {
   return (
     <AbilityProvider rules={abilityRules}>
-      <DesktopFirstSyncGate>
-        <AdminAppShellInner
-          userName={userName}
-          userEmail={userEmail}
-          contentClassName={contentClassName}
-          hasBusinessProfile={hasBusinessProfile}
-          zatcaOnboardingSkippedEffective={zatcaOnboardingSkippedEffective}
-          accessibleBusinessProfileCount={accessibleBusinessProfileCount}
-          roleName={roleName}
-          isRestaurantOwner={isRestaurantOwner}
-        >
-          {children}
-        </AdminAppShellInner>
-      </DesktopFirstSyncGate>
+      <AdminAppShellInner
+        userName={userName}
+        userEmail={userEmail}
+        contentClassName={contentClassName}
+        hasBusinessProfile={hasBusinessProfile}
+        zatcaOnboardingSkippedEffective={zatcaOnboardingSkippedEffective}
+        accessibleBusinessProfileCount={accessibleBusinessProfileCount}
+        roleName={roleName}
+        isRestaurantOwner={isRestaurantOwner}
+      >
+        {children}
+      </AdminAppShellInner>
     </AbilityProvider>
   )
 }
@@ -703,7 +699,6 @@ function AdminAppShellInner({
             />
           </div>
           <div className="ms-auto flex shrink-0 items-center max-md:gap-2 md:gap-hisabi-lg">
-            <DesktopOfflineBadge />
             <div className="hidden shrink-0 md:block">
               <AuthLocaleToggle />
             </div>

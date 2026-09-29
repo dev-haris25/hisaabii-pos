@@ -5,7 +5,6 @@ import { useState } from 'react'
 import { Toaster } from 'sonner'
 
 import { AuthSessionSync } from '@/components/auth-session-sync'
-import { InternetRequiredProvider } from '@/components/desktop/internet-required-provider'
 
 export function AppProviders({ children }) {
   const [queryClient] = useState(
@@ -22,18 +21,16 @@ export function AppProviders({ children }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <InternetRequiredProvider>
-        <AuthSessionSync />
-        <Toaster richColors closeButton position="top-center" />
-        <Toaster
-          id="notifications"
-          richColors
-          closeButton
-          position="bottom-right"
-          toastOptions={{ className: 'max-w-sm' }}
-        />
-        {children}
-      </InternetRequiredProvider>
+      <AuthSessionSync />
+      <Toaster richColors closeButton position="top-center" />
+      <Toaster
+        id="notifications"
+        richColors
+        closeButton
+        position="bottom-right"
+        toastOptions={{ className: 'max-w-sm' }}
+      />
+      {children}
     </QueryClientProvider>
   )
 }

@@ -21,10 +21,8 @@ import { AppLoader } from '@/components/app-loader'
 import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
-import { DesktopOfflineBadge } from '@/components/desktop/desktop-offline-badge'
 import { PosThermalReceiptPreview } from '@/components/invoices/pos-thermal-receipt-preview'
 import { LineModifierSummary } from '@/components/pos/line-modifier-summary'
-import { PosPrimaryOfflineUnlockLock } from '@/components/pos/pos-primary-offline-unlock-lock'
 import {
   PosMoneyField,
   PosOnScreenNumpad,
@@ -32,21 +30,11 @@ import {
 } from '@/components/pos/pos-on-screen-numpad'
 import { PosItemModifiersFlow } from '@/components/pos/pos-item-modifiers-flow'
 import { RequiredMark } from '@/components/ui/required-mark'
-import { useCloudConnectivity } from '@/hooks/use-cloud-connectivity'
 import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
 import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth'
 import { getHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
-import {
-  authGetPosMenuPreferOffline,
-  localPosCheckout,
-} from '@/lib/desktop/local-pos-api'
-import {
-  fetchOfflineCheckoutUnlockStatus,
-  unlockOfflineCheckoutMode,
-} from '@/lib/desktop/offline-unlock-client'
-import { fetchLocalTillPrimaryStatus } from '@/lib/desktop/local-till-primary'
 import {
   openTillCashDrawer,
   writeTillCustomerDisplay,
@@ -173,7 +161,6 @@ export function PosCheckoutView({
   const router = useRouter()
   const queryClient = useQueryClient()
   const setUser = useAuthStore((s) => s.setUser)
-  const user = useAuthStore((s) => s.user)
   const activeBusinessProfileId = useAuthStore(
     (s) => s.user?.activeBusinessProfileId ?? s.user?.businessProfileId ?? null,
   )
@@ -213,7 +200,7 @@ export function PosCheckoutView({
 
   const menuQuery = useQuery({
     queryKey: ['pos', 'menu', activeBusinessProfileId],
-    queryFn: () => authGetPosMenuPreferOffline(),
+    queryFn: () => authGet('/pos/menu'),
     enabled: Boolean(activeBusinessProfileId),
     staleTime: 0,
     refetchOnMount: 'always',
@@ -239,101 +226,22 @@ export function PosCheckoutView({
   const discountCapLimit = parseDiscountCap(discountCap)
   const keypadEnabled = menuQuery.data?.posOnScreenKeypad === true
   const desktop = useIsHisabiDesktop()
-  const { cloudOnline, checking: connectivityChecking } = useCloudConnectivity()
 
   const tillQuery = useQuery({
     queryKey: ['pos', 'bound-till'],
     enabled: desktop,
     queryFn: async () => {
       const tillId = await getHisabiDesktop()?.getTillId?.()
-      if (!tillId) return { till: null, isPrimary: false }
+      if (!tillId) return { till: null }
 
-      try {
-        const data = await authGet(
-          `/pos/till?id=${encodeURIComponent(tillId)}`,
-        )
-        return {
-          till: data.till ?? null,
-          isPrimary: data.till?.isPrimary === true,
-          primaryPosTillId: data.primaryPosTillId ?? null,
-        }
-      } catch {
-        /* cloud unreachable — use local SQLite */
-      }
-
-      const local = await fetchLocalTillPrimaryStatus()
-      if (!local) {
-        return { till: { id: tillId }, isPrimary: false }
-      }
-      return {
-        till: { id: local.tillId || tillId, isPrimary: local.isPrimary },
-        isPrimary: local.isPrimary,
-        primaryPosTillId: local.primaryPosTillId,
-      }
+      const data = await authGet(
+        `/pos/till?id=${encodeURIComponent(tillId)}`,
+      )
+      return { till: data.till ?? null }
     },
     staleTime: 15_000,
   })
   const boundTill = tillQuery.data?.till ?? null
-  const isPrimaryTill =
-    tillQuery.data?.isPrimary === true || boundTill?.isPrimary === true
-
-  useEffect(() => {
-    if (!desktop) return
-    void tillQuery.refetch()
-  }, [cloudOnline, desktop]) // eslint-disable-line react-hooks/exhaustive-deps -- refetch when connectivity flips
-
-  // Kept as a plain guard (no more full-screen lock modal — the desktop
-  // main process now force-navigates the whole app to the offline shell
-  // shortly after any real disconnect, and the offline shell never mounts
-  // this component for a non-primary till in the first place). This only
-  // covers the brief window before that hand-off completes; the server
-  // still enforces the primary-till rule either way.
-  const nonPrimaryOfflineBlocked =
-    desktop &&
-    !connectivityChecking &&
-    !cloudOnline &&
-    tillQuery.isFetched &&
-    !isPrimaryTill
-
-  const unlockQuery = useQuery({
-    queryKey: ['pos', 'offline-unlock'],
-    enabled: desktop && !cloudOnline && isPrimaryTill,
-    queryFn: () => fetchOfflineCheckoutUnlockStatus(),
-    staleTime: 5_000,
-    refetchInterval: 5_000,
-  })
-
-  const [unlockError, setUnlockError] = useState(/** @type {string | null} */ (null))
-  const unlockMutation = useMutation({
-    mutationFn: () => unlockOfflineCheckoutMode(),
-    onSuccess: async () => {
-      setUnlockError(null)
-      await unlockQuery.refetch()
-    },
-    onError: (err) => {
-      setUnlockError(
-        err instanceof AuthApiError && err.message
-          ? err.message
-          : t('offlineModeUnlockFailed'),
-      )
-    },
-  })
-
-  const isAdminUser =
-    user?.isRestaurantOwner === true ||
-    user?.roleName === 'Admin' ||
-    user?.roleName === 'Owner' ||
-    (Array.isArray(user?.roleNames) &&
-      (user.roleNames.includes('Admin') || user.roleNames.includes('Owner')))
-
-  const primaryOfflineUnlockLock =
-    desktop &&
-    !connectivityChecking &&
-    !cloudOnline &&
-    tillQuery.isFetched &&
-    isPrimaryTill &&
-    unlockQuery.isFetched &&
-    unlockQuery.data?.unlocked !== true
 
   const filteredItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase()
@@ -421,21 +329,6 @@ export function PosCheckoutView({
     onSuccess: () => {
       setUser(null)
       queryClient.clear()
-      // Client-side navigation to /login fetches that route's RSC payload
-      // from the remote server — while offline that request hangs/fails and
-      // the URL never changes. Go straight to the bundled offline shell
-      // (skip Reconnecting → fail → offline) so logout lands on its login.
-      if (desktop && !cloudOnline) {
-        const api = getHisabiDesktop()
-        if (api?.showOfflineShell) {
-          api.showOfflineShell()
-          return
-        }
-        if (api?.retryLoadApp) {
-          api.retryLoadApp()
-          return
-        }
-      }
       router.replace('/login')
     },
   })
@@ -479,10 +372,6 @@ export function PosCheckoutView({
               : null
         }
         if (tillId) body.tillId = tillId
-        if (!cloudOnline) body.desktopOffline = true
-      }
-      if (desktop && !cloudOnline) {
-        return localPosCheckout(body)
       }
       return authPost('/pos/checkout', body)
     },
@@ -714,13 +603,9 @@ export function PosCheckoutView({
     setReceipt(null)
   }
 
-  const canCheckout =
-    cart.length > 0 &&
-    !checkoutMutation.isPending &&
-    !nonPrimaryOfflineBlocked
+  const canCheckout = cart.length > 0 && !checkoutMutation.isPending
 
   function handleCheckout() {
-    if (nonPrimaryOfflineBlocked) return
     const nextErrors = { discount: '', tendered: '' }
     const disc = discount.trim()
     if (disc) {
@@ -812,7 +697,6 @@ export function PosCheckoutView({
             </p>
           )}
           <div className="flex min-w-0 items-center justify-end gap-hisabi-sm justify-self-end">
-            <DesktopOfflineBadge />
             <AuthLocaleToggle />
             <button
               type="button"
@@ -1412,15 +1296,6 @@ export function PosCheckoutView({
         onSecondary={() => setStockConfirm(null)}
       />
 
-      <PosPrimaryOfflineUnlockLock
-        open={Boolean(primaryOfflineUnlockLock)}
-        isAdmin={Boolean(isAdminUser)}
-        unlocking={unlockMutation.isPending}
-        loggingOut={logoutMutation.isPending}
-        error={unlockError}
-        onLogout={() => logoutMutation.mutate()}
-        onUnlock={() => unlockMutation.mutate()}
-      />
     </div>
   )
 }

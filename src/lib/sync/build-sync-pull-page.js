@@ -27,7 +27,6 @@ function iso(value) {
 function mapBusinessProfile(row) {
   return {
     id: row.id,
-    primaryPosTillId: row.primaryPosTillId ?? null,
     updatedAt: iso(row.updatedAt),
     payload: {
       id: row.id,
@@ -55,7 +54,6 @@ function mapBusinessProfile(row) {
       customerQueueLocale: row.customerQueueLocale,
       zatcaOnboardingSkipped: row.zatcaOnboardingSkipped,
       zatcaEnvironment: row.zatcaEnvironment,
-      primaryPosTillId: row.primaryPosTillId ?? null,
       updatedAt: iso(row.updatedAt),
     },
   }
@@ -136,7 +134,6 @@ export async function buildSyncPullPage(businessProfileId, cursorRaw) {
       id: t.id,
       businessProfileId: t.businessProfileId,
       name: t.name,
-      isPrimary: profile.primaryPosTillId === t.id,
       updatedAt: iso(t.updatedAt),
       payload: t,
     }))
@@ -605,18 +602,10 @@ async function buildIncrementalPull(businessProfileId, sinceIso) {
     }
   }
   if (tills.length) {
-    const primaryId = profile?.primaryPosTillId
-      ?? (
-        await prisma.businessProfile.findUnique({
-          where: { id: businessProfileId },
-          select: { primaryPosTillId: true },
-        })
-      )?.primaryPosTillId
     entities.tills = tills.map((t) => ({
       id: t.id,
       businessProfileId: t.businessProfileId,
       name: t.name,
-      isPrimary: primaryId === t.id,
       updatedAt: iso(t.updatedAt),
       payload: t,
     }))

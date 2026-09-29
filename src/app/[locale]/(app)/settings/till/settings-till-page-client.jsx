@@ -1,14 +1,13 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, MonitorSmartphone, Plus, Trash2, WifiOff } from 'lucide-react'
+import { ChevronDown, MonitorSmartphone, Plus, Trash2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { AppLoader } from '@/components/app-loader'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
-import { HisabiStatusModal } from '@/components/hisabi-status-modal'
 import { useAppAbility } from '@/components/rbac/ability-provider'
 import {
   SettingsField,
@@ -122,9 +121,6 @@ export function SettingsTillPageClient() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [nameError, setNameError] = useState('')
   const [newTillName, setNewTillName] = useState('')
-  const [primarySwitchBlock, setPrimarySwitchBlock] = useState(
-    /** @type {null | 'PRIMARY_TILL_OFFLINE' | 'PRIMARY_TILL_SYNCING'} */ (null),
-  )
 
   useEffect(() => {
     const api = getHisabiDesktop()
@@ -248,39 +244,6 @@ export function SettingsTillPageClient() {
     },
   })
 
-  const primaryMutation = useMutation({
-    mutationFn: async (tillId) => {
-      const status = await authGet(
-        `/tills/primary-switch-status?tillId=${encodeURIComponent(tillId)}`,
-      )
-      if (status?.canSwitch === false) {
-        const reason =
-          status.reason === 'PRIMARY_TILL_SYNCING'
-            ? 'PRIMARY_TILL_SYNCING'
-            : 'PRIMARY_TILL_OFFLINE'
-        throw new AuthApiError(409, reason, reason)
-      }
-      return authPost('/tills/primary', { tillId })
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['pos-tills'] })
-      toast.success(t('tillPrimarySaved'))
-    },
-    onError: (err) => {
-      const code = err instanceof AuthApiError ? err.code : undefined
-      if (code === 'PRIMARY_TILL_OFFLINE' || code === 'PRIMARY_TILL_SYNCING') {
-        setPrimarySwitchBlock(code)
-        return
-      }
-      toast.error(code ? tErr(code) : tErr('generic'))
-    },
-  })
-
-  const primaryPosTillId =
-    typeof tillsQuery.data?.primaryPosTillId === 'string'
-      ? tillsQuery.data.primaryPosTillId
-      : tills.find((row) => row.isPrimary === true)?.id ?? null
-
   async function testDisplay() {
     try {
       await writeTillCustomerDisplay(
@@ -371,75 +334,12 @@ export function SettingsTillPageClient() {
   )
 
   return (
-    <>
     <SettingsPageShell title={t('tillTitle')} subtitle={t('tillSubtitle')}>
       {!desktop ? (
         <p className="type-body-md text-hisabi-on-surface-variant rounded-lg border border-hisabi-outline-variant/30 bg-hisabi-surface-container-low/50 px-hisabi-md py-hisabi-sm">
           {t('tillChromePrinterHint')}
         </p>
       ) : null}
-
-      <SettingsSection title={t('tillPrimarySectionTitle')} icon={WifiOff}>
-        <p className="type-body-md text-hisabi-on-surface-variant">
-          {t('tillPrimarySectionHint')}
-        </p>
-        {tills.length === 0 ? (
-          <p className="type-body-md text-hisabi-on-surface-variant mt-hisabi-md">
-            {t('tillPrimaryEmpty')}
-          </p>
-        ) : (
-          <div className="mt-hisabi-lg flex flex-col gap-hisabi-sm">
-            {tills.length === 1 ? (
-              <p className="type-body-sm text-hisabi-on-surface-variant">
-                {t('tillPrimaryOnlyTillHint')}
-              </p>
-            ) : null}
-            <ul className="flex flex-col gap-hisabi-sm" role="radiogroup" aria-label={t('tillPrimarySectionTitle')}>
-              {tills.map((row) => {
-                const id = String(row.id)
-                const name = String(row.name ?? '')
-                const selected = primaryPosTillId === id || row.isPrimary === true
-                return (
-                  <li key={id}>
-                    <label
-                      className={cn(
-                        'flex cursor-pointer items-start gap-hisabi-md rounded-lg border px-hisabi-md py-hisabi-sm transition-colors',
-                        selected
-                          ? 'border-hisabi-primary/40 bg-hisabi-primary-fixed/20'
-                          : 'border-hisabi-outline-variant/30 bg-hisabi-surface-container-lowest',
-                        (!canUpdate || primaryMutation.isPending) && 'cursor-not-allowed opacity-70',
-                      )}
-                    >
-                      <input
-                        type="radio"
-                        name="primary-offline-till"
-                        className="mt-1 size-5 shrink-0 accent-hisabi-primary"
-                        checked={selected}
-                        disabled={!canUpdate || primaryMutation.isPending || tills.length === 1}
-                        aria-label={t('tillPrimarySelectAria', { name })}
-                        onChange={() => {
-                          if (!canUpdate || selected || tills.length === 1) return
-                          primaryMutation.mutate(id)
-                        }}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="type-label-md font-bold text-hisabi-on-surface">
-                          {name}
-                        </span>
-                        {selected ? (
-                          <span className="type-body-sm text-hisabi-primary mt-1 block font-semibold">
-                            {t('tillPrimaryBadge')}
-                          </span>
-                        ) : null}
-                      </span>
-                    </label>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        )}
-      </SettingsSection>
 
       <SettingsSection title={t('tillListTitle')} icon={MonitorSmartphone}>
         {boundTill ? (
@@ -450,11 +350,6 @@ export function SettingsTillPageClient() {
                 <span className="text-hisabi-primary ms-2 font-semibold">
                   {t('tillThisPc')}
                 </span>
-                {boundTill.isPrimary === true || boundTill.id === primaryPosTillId ? (
-                  <span className="text-hisabi-on-surface-variant ms-2 font-semibold">
-                    · {t('tillPrimaryBadge')}
-                  </span>
-                ) : null}
               </p>
               <p className="type-body-sm text-hisabi-on-surface-variant">
                 {t('tillListMeta', {
@@ -810,26 +705,5 @@ export function SettingsTillPageClient() {
         </SettingsSection>
       ) : null}
     </SettingsPageShell>
-
-      <HisabiStatusModal
-        open={primarySwitchBlock != null}
-        onOpenChange={(open) => {
-          if (!open) setPrimarySwitchBlock(null)
-        }}
-        variant="warning"
-        title={
-          primarySwitchBlock === 'PRIMARY_TILL_SYNCING'
-            ? t('tillPrimarySyncTitle')
-            : t('tillPrimaryOfflineTitle')
-        }
-        description={
-          primarySwitchBlock === 'PRIMARY_TILL_SYNCING'
-            ? t('tillPrimarySyncBody')
-            : t('tillPrimaryOfflineBody')
-        }
-        primaryLabel={t('tillPrimaryBlockOk')}
-        onPrimary={() => setPrimarySwitchBlock(null)}
-      />
-    </>
   )
 }

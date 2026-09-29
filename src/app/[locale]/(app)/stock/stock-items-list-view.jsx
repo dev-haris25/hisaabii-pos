@@ -1,6 +1,6 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ChevronLeft,
@@ -28,10 +28,6 @@ import {
 import { StockAdjustSheet } from './stock-adjust-sheet'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authDelete } from '@/lib/api/auth-client'
-import { isInternetRequiredError } from '@/lib/desktop/assert-cloud-write-allowed'
-import { authGetStockItemsPreferOffline } from '@/lib/desktop/local-pos-api'
-import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
-import { useRequireCloudForWrite } from '@/hooks/use-require-cloud-for-write'
 import { buildPaginationItems } from '@/lib/list-views/build-pagination-items'
 import { LIST_PAGE_HEADER_ACTIONS } from '@/lib/list-views/list-page-toolbar-styles'
 import {
@@ -82,45 +78,6 @@ export function StockItemsListView({ items, pagination, filters }) {
   const pathname = usePathname()
   const queryClient = useQueryClient()
   const ability = useAppAbility()
-  const { canWrite, guardWrite, cloudOnline } = useRequireCloudForWrite()
-  const desktop = useIsHisabiDesktop()
-  const desktopOffline = desktop && !cloudOnline
-
-  const [offlineSearch, setOfflineSearch] = useState(
-    /** @type {null | { search: string, page: number, limit: number }} */ (null),
-  )
-  const effectiveSearch =
-    desktopOffline && offlineSearch ? offlineSearch.search : filters.search
-  const effectivePage =
-    desktopOffline && offlineSearch ? offlineSearch.page : pagination.page
-  const effectiveLimit =
-    desktopOffline && offlineSearch ? offlineSearch.limit : pagination.limit
-
-  const offlineListQuery = useQuery({
-    queryKey: [
-      'stock',
-      'items',
-      'offline',
-      effectiveSearch,
-      effectivePage,
-      effectiveLimit,
-    ],
-    queryFn: () => {
-      const params = new URLSearchParams()
-      params.set('page', String(effectivePage ?? 1))
-      params.set('limit', String(effectiveLimit ?? 10))
-      if (effectiveSearch) params.set('search', effectiveSearch)
-      return authGetStockItemsPreferOffline(`/stock/items?${params.toString()}`)
-    },
-    enabled: desktopOffline,
-  })
-
-  const displayItems = desktopOffline
-    ? /** @type {StockRow[]} */ (offlineListQuery.data?.items ?? items)
-    : items
-  const displayPagination = desktopOffline
-    ? offlineListQuery.data?.pagination ?? pagination
-    : pagination
   const canCreate = ability.can('create', 'StockItem')
   const canUpdate = ability.can('update', 'StockItem')
   const canDelete = ability.can('delete', 'StockItem')
@@ -138,14 +95,6 @@ export function StockItemsListView({ items, pagination, filters }) {
     useUrlSyncedSearchInput(filters.search)
 
   function pushFilters(next) {
-    if (desktopOffline) {
-      setOfflineSearch({
-        search: next.search ?? '',
-        page: next.page ?? 1,
-        limit: next.limit ?? effectiveLimit ?? 10,
-      })
-      return
-    }
     const params = new URLSearchParams()
     params.set('page', String(next.page ?? 1))
     params.set('limit', String(next.limit ?? pagination.limit ?? 10))
@@ -161,7 +110,7 @@ export function StockItemsListView({ items, pagination, filters }) {
     pushFilters({
       page: 1,
       search: debouncedSearch,
-      limit: effectiveLimit,
+      limit: pagination.limit,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- URL sync from debounced search only
   }, [debouncedSearch])
@@ -176,7 +125,6 @@ export function StockItemsListView({ items, pagination, filters }) {
       router.refresh()
     },
     onError: (err) => {
-      if (isInternetRequiredError(err)) return
       const code = err instanceof AuthApiError ? err.code : undefined
       toast.error(code ? tErr(code) : tErr('generic'))
     },
@@ -189,16 +137,16 @@ export function StockItemsListView({ items, pagination, filters }) {
 
   const emptyMessage = filters.search ? t('emptyFiltered') : t('empty')
 
-  const safePage = Math.max(1, displayPagination.page || 1)
-  const totalPages = Math.max(1, displayPagination.totalPages || 1)
-  const total = displayPagination.total || 0
-  const pageSize = displayPagination.limit || 10
+  const safePage = Math.max(1, pagination.page || 1)
+  const totalPages = Math.max(1, pagination.totalPages || 1)
+  const total = pagination.total || 0
+  const pageSize = pagination.limit || 10
   const start = total === 0 ? 0 : (safePage - 1) * pageSize
   const paginationItems = useMemo(
     () => buildPaginationItems(safePage, totalPages),
     [safePage, totalPages],
   )
-  const listBusy = isPending || (desktopOffline && offlineListQuery.isFetching)
+  const listBusy = isPending
   const colSpan = 4 + (showActions ? 1 : 0)
 
   return (
@@ -222,11 +170,6 @@ export function StockItemsListView({ items, pagination, filters }) {
             <Link
               href="/stock/items/new"
               className="type-label-md inline-flex min-h-[44px] shrink-0 cursor-pointer items-center justify-center gap-hisabi-sm rounded-xl border-none bg-hisabi-gold-muted px-hisabi-lg py-2.5 font-bold text-hisabi-on-secondary-container shadow-sm transition-all hover:bg-hisabi-gold-muted-hover active:scale-[0.98]"
-              onClick={(e) => {
-                if (canWrite) return
-                e.preventDefault()
-                guardWrite(() => {})
-              }}
             >
               <Plus className="size-5 shrink-0" aria-hidden />
               {t('addItem')}
@@ -240,7 +183,7 @@ export function StockItemsListView({ items, pagination, filters }) {
           summary={
             listBusy
               ? t('loadingList')
-              : t('showingCount', { shown: displayItems.length, total })
+              : t('showingCount', { shown: items.length, total })
           }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
@@ -271,7 +214,7 @@ export function StockItemsListView({ items, pagination, filters }) {
               </tr>
             </thead>
             <tbody className={LIST_TABLE_BODY}>
-              {displayItems.length === 0 ? (
+              {items.length === 0 ? (
                 <tr>
                   <td
                     colSpan={colSpan}
@@ -281,7 +224,7 @@ export function StockItemsListView({ items, pagination, filters }) {
                   </td>
                 </tr>
               ) : (
-                displayItems.map((row) => (
+                items.map((row) => (
                   <tr
                     key={row.id}
                     className={cn(
@@ -343,9 +286,7 @@ export function StockItemsListView({ items, pagination, filters }) {
                           {canUpdate ? (
                             <ActionIconButton
                               label={t('adjustStock')}
-                              onClick={() =>
-                                guardWrite(() => setAdjustTarget(row))
-                              }
+                              onClick={() => setAdjustTarget(row)}
                               className="hover:text-hisabi-primary"
                             >
                               <PackagePlus className="size-5" aria-hidden />
@@ -408,7 +349,7 @@ export function StockItemsListView({ items, pagination, filters }) {
                 ? t('rangeEmpty')
                 : t('range', {
                     from: start + 1,
-                    to: start + displayItems.length,
+                    to: start + items.length,
                     total,
                   })}
             </span>
@@ -534,9 +475,7 @@ export function StockItemsListView({ items, pagination, filters }) {
         secondaryLabel={t('cancel')}
         primaryPending={deleteMutation.isPending}
         onPrimary={() => {
-                  if (deleteTarget) {
-                    guardWrite(() => deleteMutation.mutate(deleteTarget.id))
-                  }
+          if (deleteTarget) deleteMutation.mutate(deleteTarget.id)
         }}
         onSecondary={() => setDeleteTarget(null)}
       />

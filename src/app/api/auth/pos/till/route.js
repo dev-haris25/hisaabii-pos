@@ -14,20 +14,13 @@ export async function GET(request) {
       return jsonError(400, 'VALIDATION_ERROR', 'Till id required')
     }
 
-    const [row, profile] = await Promise.all([
-      prisma.posTill.findFirst({
-        where: { id: tillId, businessProfileId: auth.profileId },
-      }),
-      prisma.businessProfile.findUnique({
-        where: { id: auth.profileId },
-        select: { primaryPosTillId: true },
-      }),
-    ])
+    const row = await prisma.posTill.findFirst({
+      where: { id: tillId, businessProfileId: auth.profileId },
+    })
     if (!row) return jsonError(404, 'NOT_FOUND', 'Till not found')
 
     return jsonOk({
-      primaryPosTillId: profile?.primaryPosTillId ?? null,
-      till: mapTillToJson(row, profile?.primaryPosTillId),
+      till: mapTillToJson(row),
     })
   } catch (err) {
     return handleRouteError(err, 'GET /api/auth/pos/till')
