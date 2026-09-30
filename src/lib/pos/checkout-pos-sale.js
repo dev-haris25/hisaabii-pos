@@ -5,6 +5,19 @@ import {
   parseMoney,
   allocateOrderDiscount,
 } from '@/lib/invoices/invoice-compute-totals'
+import {
+  checkCouponEligibility,
+  mapCouponCalcReasonToError,
+} from '@/lib/coupons/check-coupon-eligibility'
+import { computeCouponDiscountForPricedLines } from '@/lib/coupons/compute-coupon-discount-for-priced-lines'
+import {
+  incrementBatchCouponCodeUsageGuarded,
+  incrementSharedCouponUsageGuarded,
+} from '@/lib/coupons/increment-coupon-usage-guarded'
+import {
+  normalizeCouponCodeInput,
+  resolveCouponCode,
+} from '@/lib/coupons/resolve-coupon-code'
 import { menuItemInclude } from '@/lib/menu/map-menu-json'
 import { resolveCheckoutModifiers } from '@/lib/menu/resolve-checkout-modifiers'
 import { createKitchenOrderInTx } from '@/lib/orders/create-kitchen-order'
@@ -46,6 +59,8 @@ export const posCheckoutBodySchema = z.object({
   amountTendered: moneyOptionalSchema,
   /** Order-level discount percent (0–100); converted to SAR then allocated by gross share. */
   discount: moneyOptionalSchema,
+  /** Typed coupon code — mutually exclusive with `discount`. */
+  couponCode: z.string().trim().min(1).max(64).optional().nullable(),
   notes: z.string().trim().max(500).optional().nullable(),
   /** When restaurant allows negative stock, cashier confirms override. */
   allowNegativeStock: z.boolean().optional(),
@@ -56,6 +71,14 @@ export const posCheckoutBodySchema = z.object({
   /** Desktop till id for hardware binding / audit. */
   tillId: z.string().trim().min(1).max(64).optional().nullable(),
 })
+
+/**
+ * @param {string} code
+ * @param {string} message
+ */
+function throwCheckoutError(code, message) {
+  throw Object.assign(new Error(message), { code })
+}
 
 /**
  * Human-facing POS invoice number, e.g. INV-0001.
@@ -151,9 +174,11 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
       l.customizationIds,
     )
     return {
+      menuItemId: l.menuItemId,
       quantity: l.quantity,
       unitPrice: resolved.unitPrice,
       vatPreset: item.vatPreset,
+      variantOptionIds: resolved.variantOptionIds,
       modifiersSnapshot: resolved.modifiersSnapshot,
       lineNote: l.lineNote?.trim() || null,
     }
@@ -193,36 +218,92 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
     }
   }
 
+  const couponCodeRaw =
+    body.couponCode != null && String(body.couponCode).trim() !== ''
+      ? String(body.couponCode).trim()
+      : null
+  const discountProvided =
+    body.discount != null && String(body.discount).trim() !== ''
+
+  if (couponCodeRaw && discountProvided) {
+    throwCheckoutError(
+      'COUPON_AND_MANUAL_DISCOUNT_CONFLICT',
+      'Cannot apply a coupon and a manual discount on the same order',
+    )
+  }
+
   const baseLines = pricedLines.map((l) => ({
+    menuItemId: l.menuItemId,
     quantity: l.quantity,
     unitPrice: l.unitPrice,
     vatPreset: l.vatPreset,
+    variantOptionIds: l.variantOptionIds,
   }))
-  const settings = await prisma.businessSettings.findUnique({
-    where: { businessProfileId: profileId },
-    select: { discountCap: true },
-  })
-  const discountPercent = body.discount ?? '0'
-  if (
-    String(discountPercent).trim() &&
-    (!isValidDiscountPercent(discountPercent) ||
-      !isDiscountWithinCap(discountPercent, settings?.discountCap))
-  ) {
-    throw Object.assign(new Error('Discount exceeds restaurant cap'), {
-      code: 'DISCOUNT_EXCEEDS_CAP',
-    })
-  }
 
-  const discountMoney = orderDiscountMoneyFromPercent(
-    baseLines,
-    discountPercent,
-  )
-  const lineDiscounts = allocateOrderDiscount(baseLines, discountMoney)
-  const computeInput = baseLines.map((l, i) => ({
-    ...l,
-    discount: lineDiscounts[i],
-  }))
-  const totals = computeInvoiceTotals(computeInput)
+  /** @type {string[]} */
+  let lineDiscounts
+  /** @type {ReturnType<typeof computeInvoiceTotals>} */
+  let totals
+
+  if (couponCodeRaw) {
+    // Preview totals for tender check only — authoritative re-validate inside the tx.
+    const previewResolved = await resolveCouponCode(profileId, couponCodeRaw)
+    if (!previewResolved || previewResolved.coupon.businessProfileId !== profileId) {
+      throwCheckoutError('INVALID_COUPON_CODE', 'Coupon code was not found')
+    }
+    const previewElig = checkCouponEligibility(
+      previewResolved.coupon,
+      previewResolved.couponCode,
+    )
+    if (previewElig) {
+      throwCheckoutError(previewElig.code, previewElig.message)
+    }
+    const previewCalc = await computeCouponDiscountForPricedLines(
+      previewResolved.coupon,
+      baseLines,
+      prisma,
+    )
+    if (!previewCalc.eligible) {
+      const mapped = mapCouponCalcReasonToError(
+        previewCalc.reason ?? 'invalid_value',
+      )
+      throwCheckoutError(mapped.code, mapped.message)
+    }
+    lineDiscounts = previewCalc.lineDiscounts ?? baseLines.map(() => '0.00')
+    totals = computeInvoiceTotals(
+      baseLines.map((l, i) => ({
+        ...l,
+        discount: lineDiscounts[i],
+      })),
+    )
+  } else {
+    const settings = await prisma.businessSettings.findUnique({
+      where: { businessProfileId: profileId },
+      select: { discountCap: true },
+    })
+    const discountPercent = body.discount ?? '0'
+    if (
+      String(discountPercent).trim() &&
+      (!isValidDiscountPercent(discountPercent) ||
+        !isDiscountWithinCap(discountPercent, settings?.discountCap))
+    ) {
+      throw Object.assign(new Error('Discount exceeds restaurant cap'), {
+        code: 'DISCOUNT_EXCEEDS_CAP',
+      })
+    }
+
+    const discountMoney = orderDiscountMoneyFromPercent(
+      baseLines,
+      discountPercent,
+    )
+    lineDiscounts = allocateOrderDiscount(baseLines, discountMoney)
+    totals = computeInvoiceTotals(
+      baseLines.map((l, i) => ({
+        ...l,
+        discount: lineDiscounts[i],
+      })),
+    )
+  }
 
   if (body.paymentMethod === 'cash') {
     const tendered = parseMoney(body.amountTendered)
@@ -234,7 +315,7 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
     }
   }
 
-  const changeGiven =
+  let changeGiven =
     body.paymentMethod === 'cash'
       ? decimalStringFromNumber(
           parseMoney(body.amountTendered) - parseMoney(totals.grandTotal),
@@ -243,6 +324,90 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
 
   const invoice = await prisma.$transaction(async (tx) => {
     const invoiceNumber = await allocateInvoiceNumber(profileId, tx)
+
+    /** @type {string | null} */
+    let couponId = null
+    /** @type {string | null} */
+    let couponCodeSnapshot = null
+    /** @type {string | null} */
+    let couponCodeId = null
+    /** @type {string | null} */
+    let orderDiscountAmount = null
+    /** @type {string[]} */
+    let finalLineDiscounts = lineDiscounts
+    /** @type {ReturnType<typeof computeInvoiceTotals>} */
+    let finalTotals = totals
+
+    if (couponCodeRaw) {
+      const resolved = await resolveCouponCode(profileId, couponCodeRaw, tx)
+      if (!resolved || resolved.coupon.businessProfileId !== profileId) {
+        throwCheckoutError('INVALID_COUPON_CODE', 'Coupon code was not found')
+      }
+
+      const { coupon, couponCode } = resolved
+      const eligibilityError = checkCouponEligibility(coupon, couponCode)
+      if (eligibilityError) {
+        throwCheckoutError(eligibilityError.code, eligibilityError.message)
+      }
+
+      const calc = await computeCouponDiscountForPricedLines(
+        coupon,
+        baseLines,
+        tx,
+      )
+      if (!calc.eligible) {
+        const mapped = mapCouponCalcReasonToError(calc.reason ?? 'invalid_value')
+        throwCheckoutError(mapped.code, mapped.message)
+      }
+
+      if (coupon.codeType === 'SHARED') {
+        const ok = await incrementSharedCouponUsageGuarded(tx, coupon)
+        if (!ok) {
+          throwCheckoutError(
+            'COUPON_USAGE_LIMIT_REACHED',
+            'This coupon has reached its usage limit',
+          )
+        }
+      } else if (couponCode) {
+        const ok = await incrementBatchCouponCodeUsageGuarded(tx, couponCode)
+        if (!ok) {
+          throwCheckoutError(
+            'COUPON_CODE_USAGE_LIMIT_REACHED',
+            'This coupon code has reached its usage limit',
+          )
+        }
+      } else {
+        throwCheckoutError('INVALID_COUPON_CODE', 'Coupon code was not found')
+      }
+
+      finalLineDiscounts = calc.lineDiscounts ?? baseLines.map(() => '0.00')
+      finalTotals = computeInvoiceTotals(
+        baseLines.map((l, i) => ({
+          ...l,
+          discount: finalLineDiscounts[i],
+        })),
+      )
+      if (body.paymentMethod === 'cash') {
+        const tendered = parseMoney(body.amountTendered)
+        const grand = parseMoney(finalTotals.grandTotal)
+        if (!body.amountTendered || tendered < grand) {
+          throwCheckoutError(
+            'INSUFFICIENT_TENDER',
+            'Amount tendered is less than the total',
+          )
+        }
+        changeGiven = decimalStringFromNumber(tendered - grand)
+      }
+
+      couponId = coupon.id
+      couponCodeSnapshot =
+        couponCode?.code ??
+        coupon.code ??
+        normalizeCouponCodeInput(couponCodeRaw)
+      couponCodeId = couponCode?.id ?? null
+      orderDiscountAmount = calc.discountAmount
+    }
+
     const created = await tx.invoice.create({
       data: {
         businessProfileId: profileId,
@@ -272,16 +437,19 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
         amountTendered:
           body.paymentMethod === 'cash' ? body.amountTendered : null,
         changeGiven,
-        subtotal: totals.subtotal,
-        totalVat: totals.totalVat,
-        grandTotal: totals.grandTotal,
+        subtotal: finalTotals.subtotal,
+        totalVat: finalTotals.totalVat,
+        grandTotal: finalTotals.grandTotal,
         notes: body.notes?.trim() || null,
         zatcaStatus: 'pending',
+        couponId,
+        couponCode: couponCodeSnapshot,
+        discountAmount: orderDiscountAmount,
         lines: {
           create: body.lines.map((l, idx) => {
             const item = byId.get(l.menuItemId)
             const priced = pricedLines[idx]
-            const a = totals.perLine[idx]
+            const a = finalTotals.perLine[idx]
             return {
               menuItemId: item.id,
               nameAr: item.nameAr,
@@ -301,6 +469,20 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
       },
       include: { lines: true },
     })
+
+    if (couponId && couponCodeSnapshot && orderDiscountAmount) {
+      await tx.couponUsage.create({
+        data: {
+          couponId,
+          couponCodeId,
+          invoiceId: created.id,
+          cashierUserId: staffId,
+          codeSnapshot: couponCodeSnapshot,
+          discountAmount: orderDiscountAmount,
+        },
+      })
+    }
+
     await createKitchenOrderInTx(tx, {
       businessProfileId: profileId,
       invoiceId: created.id,

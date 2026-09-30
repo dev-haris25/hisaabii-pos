@@ -66,6 +66,7 @@ export async function POST(request) {
     } catch (e) {
       const code =
         e && typeof e === 'object' && 'code' in e ? String(e.code) : ''
+      const message = e instanceof Error ? e.message : String(e)
       if (code === 'BUSINESS_PROFILE_REQUIRED') {
         return jsonError(403, code, 'Complete restaurant profile first')
       }
@@ -83,6 +84,27 @@ export async function POST(request) {
       }
       if (code === 'DISCOUNT_EXCEEDS_CAP') {
         return jsonError(400, code, 'Discount is above the restaurant cap')
+      }
+      if (code === 'COUPON_AND_MANUAL_DISCOUNT_CONFLICT') {
+        return jsonError(400, code, message)
+      }
+      if (
+        code === 'INVALID_COUPON_CODE' ||
+        code === 'COUPON_INACTIVE' ||
+        code === 'COUPON_NOT_YET_ACTIVE' ||
+        code === 'COUPON_EXPIRED' ||
+        code === 'COUPON_USAGE_LIMIT_REACHED' ||
+        code === 'COUPON_CODE_USAGE_LIMIT_REACHED' ||
+        code === 'COUPON_BELOW_MIN_ORDER' ||
+        code === 'COUPON_BOGO_REQUIREMENTS_NOT_MET' ||
+        code === 'COUPON_GET_ITEM_NOT_IN_CART' ||
+        code === 'COUPON_COMBO_REQUIREMENTS_NOT_MET' ||
+        code === 'COUPON_COMBO_NO_SAVINGS' ||
+        code === 'COUPON_UNSUPPORTED_DISCOUNT_KIND' ||
+        code === 'COUPON_DISCOUNT_CALCULATION_INVALID'
+      ) {
+        const status = code === 'INVALID_COUPON_CODE' ? 404 : 400
+        return jsonError(status, code, message)
       }
       if (code === 'INSUFFICIENT_STOCK' || code === 'INSUFFICIENT_STOCK_CONFIRM') {
         const shortfalls =

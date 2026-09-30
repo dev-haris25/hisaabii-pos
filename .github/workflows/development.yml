@@ -116,6 +116,9 @@ jobs:
           bunx prisma generate || { echo "prisma generate failed"; exit 1; }
           bunx prisma migrate deploy || { echo "prisma migrate deploy failed"; exit 1; }
 
+          # Demo Manager + Cashier accounts (idempotent; requires demo owner restaurant)
+          bun run db:seed-demo-staff || { echo "db:seed-demo-staff failed"; exit 1; }
+
           # Clean stale build output before production build
           rm -rf .next
 

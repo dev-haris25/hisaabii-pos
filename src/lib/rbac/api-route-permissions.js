@@ -38,6 +38,15 @@ const ROUTE_PERMISSIONS = [
     },
   },
   {
+    pattern: /^\/coupons/,
+    methods: {
+      GET: { action: 'read', subject: 'Coupon' },
+      POST: { action: 'create', subject: 'Coupon' },
+      PATCH: { action: 'update', subject: 'Coupon' },
+      DELETE: { action: 'delete', subject: 'Coupon' },
+    },
+  },
+  {
     pattern: /^\/stock\/days/,
     methods: {
       GET: { action: 'read', subject: 'StockItem' },
@@ -63,6 +72,12 @@ const ROUTE_PERMISSIONS = [
   },
   {
     pattern: /^\/pos\/checkout/,
+    methods: {
+      POST: { action: 'create', subject: 'Pos' },
+    },
+  },
+  {
+    pattern: /^\/pos\/coupons/,
     methods: {
       POST: { action: 'create', subject: 'Pos' },
     },

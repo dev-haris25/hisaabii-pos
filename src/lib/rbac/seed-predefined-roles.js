@@ -36,7 +36,7 @@ export function predefinedRolePermissionMap() {
   return {
     [ADMIN_ROLE_NAME]: [],
     [MANAGER_ROLE_NAME]: [
-      ...crudFor([...menu, ...stock, ...invoicesAll, 'Pos', ...allHr]),
+      ...crudFor([...menu, ...stock, ...invoicesAll, 'Pos', 'Coupon', ...allHr]),
       ...readFor(['Dashboard', ...ALL_REPORT_SUBJECTS]),
     ],
     [ACCOUNTANT_ROLE_NAME]: [

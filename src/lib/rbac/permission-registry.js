@@ -40,6 +40,7 @@ export const PERMISSION_REGISTRY = {
     moduleLabelKey: 'navPos',
     subjects: {
       Pos: { labelKey: 'navPos' },
+      Coupon: { labelKey: 'subCoupons' },
     },
   },
   kitchen: {

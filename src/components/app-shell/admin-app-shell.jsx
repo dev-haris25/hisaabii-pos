@@ -19,6 +19,7 @@ import {
   UtensilsCrossed,
   UserCircle,
   Warehouse,
+  TicketPercent,
   X,
 } from 'lucide-react'
 import Image from 'next/image'
@@ -291,6 +292,12 @@ function AdminAppShellInner({
           { href: '/stock/day-end', labelKey: 'subStockDayEnd' },
           { href: '/stock/movements', labelKey: 'subStockMovements' },
         ],
+      },
+      {
+        id: 'coupons',
+        href: '/coupons',
+        labelKey: 'navCoupons',
+        icon: TicketPercent,
       },
       {
         id: 'invoices',

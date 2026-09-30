@@ -177,6 +177,17 @@ export function PosCheckoutView({
   )
   const [amountTendered, setAmountTendered] = useState('')
   const [discount, setDiscount] = useState('')
+  const [couponCodeInput, setCouponCodeInput] = useState('')
+  /** @type {[null | { code: string, couponId: string, discountKind: string, discountAmount: string, lineDiscounts: string[], cartFingerprint: string }, function]} */
+  const [appliedCoupon, setAppliedCoupon] = useState(
+    /** @type {null | { code: string, couponId: string, discountKind: string, discountAmount: string, lineDiscounts: string[], cartFingerprint: string }} */ (
+      null
+    ),
+  )
+  const [couponValidating, setCouponValidating] = useState(false)
+  const [couponError, setCouponError] = useState(
+    /** @type {string | null} */ (null),
+  )
   const [fieldErrors, setFieldErrors] = useState({ discount: '', tendered: '' })
   const [numpadField, setNumpadField] = useState(
     /** @type {null | 'discount' | 'tendered'} */ (null),
@@ -216,6 +227,10 @@ export function PosCheckoutView({
     setAmountTendered('')
     setPaymentMethod('cash')
     setNumpadField(null)
+    setCouponCodeInput('')
+    setAppliedCoupon(null)
+    setCouponError(null)
+    setCouponValidating(false)
     router.refresh()
     void queryClient.invalidateQueries({ queryKey: ['pos', 'menu'] })
   }, [activeBusinessProfileId, queryClient, router])
@@ -254,6 +269,50 @@ export function PosCheckoutView({
     })
   }, [items, categoryId, itemSearch])
 
+  const cartFingerprint = useMemo(
+    () => cart.map((l) => `${l.lineKey}:${l.quantity}`).join('|'),
+    [cart],
+  )
+
+  useEffect(() => {
+    if (!appliedCoupon) return
+    if (appliedCoupon.cartFingerprint === cartFingerprint) return
+    setAppliedCoupon(null)
+    setCouponError(t('couponRemovedCartChanged'))
+  }, [appliedCoupon, cartFingerprint, t])
+
+  const manualDiscountBlocksCoupon = (() => {
+    const disc = discount.trim()
+    return Boolean(disc) && parseMoney(disc) > 0
+  })()
+  const couponBlocksManualDiscount = appliedCoupon != null
+
+  /**
+   * @returns {Array<{
+   *   menuItemId: string
+   *   quantity: number
+   *   variantOptionIds: string[]
+   *   customizationIds: string[]
+   *   lineNote?: string
+   * }>}
+   */
+  function buildCheckoutLines() {
+    return cart.map((l) => ({
+      menuItemId: l.menuItemId,
+      quantity: l.quantity,
+      variantOptionIds: l.variantOptionIds ?? [],
+      customizationIds: l.customizationIds ?? [],
+      lineNote: l.lineNote?.trim() || undefined,
+    }))
+  }
+
+  function resetCouponState() {
+    setCouponCodeInput('')
+    setAppliedCoupon(null)
+    setCouponError(null)
+    setCouponValidating(false)
+  }
+
   const cartTotals = useMemo(() => {
     if (cart.length === 0) {
       return {
@@ -269,6 +328,14 @@ export function PosCheckoutView({
       unitPrice: line.unitPrice,
       vatPreset: line.vatPreset,
     }))
+    if (appliedCoupon) {
+      return computeInvoiceTotals(
+        base.map((line, i) => ({
+          ...line,
+          discount: appliedCoupon.lineDiscounts[i] ?? '0.00',
+        })),
+      )
+    }
     const lineDiscounts = allocateOrderDiscount(
       base,
       orderDiscountMoneyFromPercent(base, discount.trim() || '0'),
@@ -279,7 +346,7 @@ export function PosCheckoutView({
         discount: lineDiscounts[i],
       })),
     )
-  }, [cart, discount])
+  }, [cart, discount, appliedCoupon])
 
   useEffect(() => {
     if (!desktop) return undefined
@@ -340,21 +407,19 @@ export function PosCheckoutView({
       const options = opts && typeof opts === 'object' ? opts : {}
       /** @type {Record<string, unknown>} */
       const body = {
-        lines: cart.map((l) => ({
-          menuItemId: l.menuItemId,
-          quantity: l.quantity,
-          variantOptionIds: l.variantOptionIds ?? [],
-          customizationIds: l.customizationIds ?? [],
-          lineNote: l.lineNote?.trim() || undefined,
-        })),
+        lines: buildCheckoutLines(),
         paymentMethod,
       }
       if (paymentMethod === 'cash') {
         body.amountTendered = amountTendered.trim()
       }
-      const disc = discount.trim()
-      if (disc && parseMoney(disc) > 0) {
-        body.discount = disc
+      if (appliedCoupon) {
+        body.couponCode = appliedCoupon.code
+      } else {
+        const disc = discount.trim()
+        if (disc && parseMoney(disc) > 0) {
+          body.discount = disc
+        }
       }
       if (options.allowNegativeStock) {
         body.allowNegativeStock = true
@@ -385,6 +450,7 @@ export function PosCheckoutView({
       setPaymentMethod('cash')
       setFieldErrors({ discount: '', tendered: '' })
       setNumpadField(null)
+      resetCouponState()
       void openTillCashDrawer(boundTill).catch(() => {})
     },
     onError: (err) => {
@@ -576,6 +642,64 @@ export function PosCheckoutView({
     setCart([])
     setAmountTendered('')
     setDiscount('')
+    resetCouponState()
+  }
+
+  async function handleApplyCoupon() {
+    const code = couponCodeInput.trim()
+    if (!code) {
+      setCouponError(t('couponCodeRequired'))
+      return
+    }
+    if (cart.length === 0) {
+      setCouponError(t('couponNeedsItems'))
+      return
+    }
+    if (manualDiscountBlocksCoupon) {
+      setCouponError(t('couponBlockedByDiscount'))
+      return
+    }
+    setCouponValidating(true)
+    setCouponError(null)
+    try {
+      const data = await authPost('/pos/coupons/validate', {
+        code,
+        lines: buildCheckoutLines(),
+      })
+      const rows = Array.isArray(data.lineDiscounts) ? data.lineDiscounts : []
+      const lineDiscounts = rows.map((row) =>
+        row && typeof row === 'object' && 'discount' in row
+          ? String(/** @type {{ discount: unknown }} */ (row).discount ?? '0.00')
+          : '0.00',
+      )
+      const coupon = data.coupon && typeof data.coupon === 'object' ? data.coupon : {}
+      setAppliedCoupon({
+        code: String(
+          /** @type {{ code?: unknown }} */ (coupon).code ?? code,
+        ).toUpperCase(),
+        couponId: String(/** @type {{ id?: unknown }} */ (coupon).id ?? ''),
+        discountKind: String(
+          /** @type {{ discountKind?: unknown }} */ (coupon).discountKind ?? '',
+        ),
+        discountAmount: String(data.discountAmount ?? '0.00'),
+        lineDiscounts,
+        cartFingerprint,
+      })
+      if (numpadField === 'discount') setNumpadField(null)
+      if (fieldErrors.discount) {
+        setFieldErrors((prev) => ({ ...prev, discount: '' }))
+      }
+    } catch (err) {
+      setAppliedCoupon(null)
+      const errCode = err instanceof AuthApiError ? err.code : undefined
+      setCouponError(errCode ? tErr(errCode) : tErr('generic'))
+    } finally {
+      setCouponValidating(false)
+    }
+  }
+
+  function handleRemoveCoupon() {
+    resetCouponState()
   }
 
   const printMutation = useMutation({
@@ -607,12 +731,14 @@ export function PosCheckoutView({
 
   function handleCheckout() {
     const nextErrors = { discount: '', tendered: '' }
-    const disc = discount.trim()
-    if (disc) {
-      if (!isValidDiscountPercent(disc)) {
-        nextErrors.discount = t('validationDiscount')
-      } else if (!isDiscountWithinCap(disc, discountCap)) {
-        nextErrors.discount = t('validationDiscountCap')
+    if (!appliedCoupon) {
+      const disc = discount.trim()
+      if (disc) {
+        if (!isValidDiscountPercent(disc)) {
+          nextErrors.discount = t('validationDiscount')
+        } else if (!isDiscountWithinCap(disc, discountCap)) {
+          nextErrors.discount = t('validationDiscountCap')
+        }
       }
     }
     if (paymentMethod === 'cash') {
@@ -1002,6 +1128,87 @@ export function PosCheckoutView({
             </div>
 
             <div className="space-y-hisabi-xs">
+              <div className="flex items-center justify-between gap-hisabi-sm">
+                <label
+                  htmlFor="pos-coupon-code"
+                  className="type-label-sm text-hisabi-on-surface-variant block"
+                >
+                  {t('couponCode')}
+                </label>
+                {appliedCoupon ? (
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoupon}
+                    className="type-label-sm text-hisabi-error hover:bg-hisabi-error/8 inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-0.5 font-bold transition-colors"
+                  >
+                    <X className="size-3.5 shrink-0" aria-hidden />
+                    {t('couponRemove')}
+                  </button>
+                ) : null}
+              </div>
+              <div className="flex gap-hisabi-sm">
+                <input
+                  id="pos-coupon-code"
+                  type="text"
+                  dir="ltr"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  disabled={manualDiscountBlocksCoupon || couponValidating}
+                  value={couponCodeInput}
+                  onChange={(e) => {
+                    setCouponCodeInput(e.target.value.toUpperCase())
+                    if (couponError) setCouponError(null)
+                  }}
+                  placeholder={t('couponCodePlaceholder')}
+                  aria-invalid={couponError ? true : undefined}
+                  aria-describedby={
+                    couponError ? 'pos-coupon-error' : undefined
+                  }
+                  className={cn(
+                    'type-body-md text-hisabi-on-surface w-full min-w-0 rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10 disabled:cursor-not-allowed disabled:opacity-50',
+                    couponError &&
+                      'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                  )}
+                />
+                <button
+                  type="button"
+                  disabled={
+                    couponValidating ||
+                    manualDiscountBlocksCoupon ||
+                    appliedCoupon != null ||
+                    cart.length === 0 ||
+                    !couponCodeInput.trim()
+                  }
+                  onClick={() => void handleApplyCoupon()}
+                  className="type-label-md inline-flex min-h-[44px] shrink-0 cursor-pointer items-center justify-center gap-hisabi-xs rounded-xl border border-hisabi-outline-variant/60 bg-white px-hisabi-md py-2 font-bold text-hisabi-on-surface transition-colors hover:bg-hisabi-surface-container disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {couponValidating ? <AuthButtonSpinner /> : t('couponApply')}
+                </button>
+              </div>
+              {manualDiscountBlocksCoupon ? (
+                <p className="type-body-sm text-hisabi-on-surface-variant">
+                  {t('couponDisabledHint')}
+                </p>
+              ) : null}
+              {couponError ? (
+                <p
+                  id="pos-coupon-error"
+                  className="type-body-sm text-hisabi-error"
+                  role="alert"
+                >
+                  {couponError}
+                </p>
+              ) : null}
+              {appliedCoupon && !couponError ? (
+                <p className="type-body-sm font-medium text-green-700" role="status">
+                  {t('couponApplied', {
+                    amount: formatSarAmount(appliedCoupon.discountAmount, locale),
+                  })}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-hisabi-xs">
               <label
                 htmlFor="pos-discount"
                 className="type-label-sm text-hisabi-on-surface-variant block"
@@ -1013,19 +1220,27 @@ export function PosCheckoutView({
                 keypadEnabled={keypadEnabled}
                 active={numpadField === 'discount'}
                 dir="ltr"
+                disabled={couponBlocksManualDiscount}
                 value={discount}
                 onChange={(e) => {
                   if (keypadEnabled) return
+                  if (couponBlocksManualDiscount) return
                   setDiscount(e.target.value)
                   if (fieldErrors.discount) {
                     setFieldErrors((prev) => ({ ...prev, discount: '' }))
                   }
                 }}
-                onClick={() => openNumpad('discount')}
-                onFocus={() => openNumpad('discount')}
+                onClick={() => {
+                  if (couponBlocksManualDiscount) return
+                  openNumpad('discount')
+                }}
+                onFocus={() => {
+                  if (couponBlocksManualDiscount) return
+                  openNumpad('discount')
+                }}
                 placeholder={t('discountPlaceholder')}
                 className={cn(
-                  'type-body-md text-hisabi-on-surface w-full rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10',
+                  'type-body-md text-hisabi-on-surface w-full rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10 disabled:cursor-not-allowed disabled:opacity-50',
                   fieldErrors.discount &&
                     'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
                 )}
@@ -1043,7 +1258,12 @@ export function PosCheckoutView({
                   {fieldErrors.discount}
                 </p>
               ) : null}
-              {discountCapLimit != null ? (
+              {couponBlocksManualDiscount ? (
+                <p className="type-body-sm text-hisabi-on-surface-variant">
+                  {t('discountDisabledHint')}
+                </p>
+              ) : null}
+              {discountCapLimit != null && !couponBlocksManualDiscount ? (
                 <p className="type-body-sm text-hisabi-on-surface-variant">
                   {t('discountCapHint', {
                     percent: discountCapLimit,

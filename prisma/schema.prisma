@@ -113,6 +113,8 @@ model BusinessProfile {
   kitchenStockAllocations KitchenStockAllocation[]
   stockDayEndReports    StockDayEndReport[]
   syncProcessedEvents   SyncProcessedEvent[]
+  coupons               Coupon[]
+  couponCodes           CouponCode[]
 
   @@index([ownerUserId])
   @@map("business_profiles")
@@ -261,6 +263,7 @@ model User {
   invoicesCreated    Invoice[]            @relation("InvoiceCreatedBy")
   creditNotesCreated CreditNote[]         @relation("CreditNoteCreatedBy")
   debitNotesCreated  DebitNote[]          @relation("DebitNoteCreatedBy")
+  couponUsagesAsCashier CouponUsage[]     @relation("CouponUsageCashier")
   otpCodes           OtpCode[]
   salarySlipsCreated SalarySlip[]         @relation("SalarySlipCreatedBy")
   notifications      Notification[]
@@ -684,6 +687,7 @@ model MenuItem {
   variantGroups   MenuItemVariantGroup[]
   customizations  MenuItemCustomization[]
   recipe          MenuItemRecipe?
+  couponItemRules CouponItemRule[]
 
   @@index([businessProfileId, active, sortOrder])
   @@index([categoryId])
@@ -761,6 +765,8 @@ model MenuItemVariantOption {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  couponItemRuleLinks CouponItemRuleVariantOption[]
 
   @@index([groupId, sortOrder])
   @@map("menu_item_variant_options")
@@ -875,6 +881,14 @@ model Invoice {
 
   notes String?
 
+  /// Optional coupon applied at checkout (mutually exclusive with manual order discount %).
+  couponId       String?
+  coupon         Coupon? @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  /// Denormalized code typed/scanned at sale time.
+  couponCode     String?
+  /// Ex-VAT total discount from the coupon for this invoice (strings, never floats).
+  discountAmount String?
+
   // ZATCA artifacts — field names match Hisabi's Invoice model exactly.
   xmlPayload         String?
   /// Base64 TLV QR — must always be the full 9-tag Phase-2 QR before printing,
@@ -902,12 +916,14 @@ model Invoice {
   creditNotes  CreditNote[]
   debitNotes   DebitNote[]
   kitchenOrder KitchenOrder?
+  couponUsages CouponUsage[]
 
   @@unique([businessProfileId, invoiceNumber])
   @@index([businessProfileId, zatcaStatus])
   @@index([businessProfileId, invoiceDate])
   @@index([businessProfileId, deletedAt])
   @@index([createdByStaffId])
+  @@index([couponId])
   @@index([zatcaStatus, createdAt])
   @@index([zatcaStatus, zatcaDeadlineRetriedAt, createdAt])
   @@map("invoices")
@@ -1498,4 +1514,165 @@ model EmployeePayment {
   @@index([employeeId])
   @@index([employeeId, payPeriod])
   @@map("employee_payments")
+}
+
+// ---------------------------------------------------------------------------
+// Coupons
+// ---------------------------------------------------------------------------
+
+enum CouponCodeType {
+  SHARED
+  UNIQUE_BATCH
+}
+
+enum CouponDiscountKind {
+  PERCENTAGE
+  FIXED_AMOUNT
+  BOGO
+  COMBO
+}
+
+enum CouponItemRuleType {
+  BUY
+  GET
+  COMBO_ITEM
+}
+
+model Coupon {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  nameAr String
+  nameEn String?
+
+  codeType  CouponCodeType
+  /// Set only when codeType = SHARED; stored UPPERCASE. Null for UNIQUE_BATCH.
+  code      String?
+  /// Set only when codeType = UNIQUE_BATCH.
+  batchSize Int?
+
+  discountKind   CouponDiscountKind
+  /// % or fixed amount for PERCENTAGE/FIXED_AMOUNT discounts;
+  /// combo's fixed total price for COMBO; null for BOGO. Never floats (rules.md #23).
+  discountValue  String?
+  /// Cap for percentage coupons only (decimal string).
+  maxDiscountCap String?
+
+  /// Minimum order amount — VAT-inclusive, pre-discount cart total (decimal string).
+  minOrderAmount String @default("0")
+
+  /// Meaningful for SHARED only; null = unlimited.
+  totalUsageLimit Int?
+  usedCount       Int  @default(0)
+
+  startDate DateTime?
+  expiresAt DateTime?
+  active    Boolean  @default(true)
+
+  /// Soft delete — retired coupons stay for usage history; codes are cleared for reuse.
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  codes     CouponCode[]
+  itemRules CouponItemRule[]
+  usages    CouponUsage[]
+  invoices  Invoice[]
+
+  @@unique([businessProfileId, code])
+  @@index([businessProfileId, active])
+  @@index([businessProfileId, deletedAt])
+  @@map("coupons")
+}
+
+model CouponCode {
+  id                String          @id @default(cuid())
+  couponId          String
+  coupon            Coupon          @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  /// Denormalized for business-scoped uniqueness (same pattern as Invoice.invoiceNumber).
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  /// UPPERCASE; unique per business. Cleared (null) when the parent coupon is soft-deleted.
+  code         String?
+  /// Sequential within the batch (e.g. printed "Ticket #047").
+  ticketNumber Int
+
+  /// Admin-set per code; null = unlimited.
+  usageLimit Int?
+  usedCount  Int  @default(0)
+
+  createdAt DateTime @default(now())
+
+  usages CouponUsage[]
+
+  @@unique([couponId, ticketNumber])
+  @@unique([businessProfileId, code])
+  @@index([code])
+  @@map("coupon_codes")
+}
+
+model CouponItemRule {
+  id         String   @id @default(cuid())
+  couponId   String
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+
+  ruleType   CouponItemRuleType
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+  quantity   Int
+  /// For GET rows — e.g. "50" or "100" for fully free (decimal string).
+  discountPercent String?
+  sortOrder  Int      @default(0)
+
+  allowedVariantOptions CouponItemRuleVariantOption[]
+
+  @@index([couponId])
+  @@index([menuItemId])
+  @@map("coupon_item_rules")
+}
+
+/// Allowed MenuItemVariantOption ids for a CouponItemRule (OR within a group,
+/// AND across groups that appear on the rule). Same join shape as EmployeeRole.
+model CouponItemRuleVariantOption {
+  id               String         @id @default(cuid())
+  couponItemRuleId String
+  couponItemRule   CouponItemRule @relation(fields: [couponItemRuleId], references: [id], onDelete: Cascade)
+  variantOptionId  String
+  variantOption    MenuItemVariantOption @relation(fields: [variantOptionId], references: [id], onDelete: Restrict)
+
+  @@unique([couponItemRuleId, variantOptionId])
+  @@index([couponItemRuleId])
+  @@index([variantOptionId])
+  @@map("coupon_item_rule_variant_options")
+}
+
+model CouponUsage {
+  id           String  @id @default(cuid())
+  couponId     String
+  coupon       Coupon  @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  couponCodeId String?
+  couponCode   CouponCode? @relation(fields: [couponCodeId], references: [id], onDelete: SetNull)
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  /// Same FK pattern as Invoice.createdByStaffId → User (onDelete: Restrict).
+  cashierUserId String
+  cashierUser   User   @relation("CouponUsageCashier", fields: [cashierUserId], references: [id], onDelete: Restrict)
+
+  /// Code actually typed/scanned; survives coupon edits/deletion.
+  codeSnapshot String
+  /// Ex-VAT total discount for this redemption (decimal string).
+  discountAmount String
+
+  usedAt DateTime @default(now())
+
+  @@index([couponId])
+  @@index([invoiceId])
+  @@index([couponCodeId])
+  @@index([cashierUserId])
+  @@map("coupon_usages")
 }

@@ -21,6 +21,8 @@ export const SIDEBAR_HREF_PERMISSIONS = {
   '/stock/kitchen': { subject: 'StockItem', action: 'read' },
   '/stock/wastage': { subject: 'StockItem', action: 'read' },
   '/stock/day-end': { subject: 'StockItem', action: 'read' },
+  '/coupons': { subject: 'Coupon', action: 'read' },
+  '/coupons/new': { subject: 'Coupon', action: 'create' },
   '/invoices': { subject: 'Invoice', action: 'read' },
   '/invoices/credit-notes': { subject: 'CreditNote', action: 'read' },
   '/invoices/debit-notes': { subject: 'DebitNote', action: 'read' },
