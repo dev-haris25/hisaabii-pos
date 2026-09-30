@@ -65,7 +65,7 @@ export function predefinedRolePermissionMap() {
       { action: 'create', subject: 'DebitNote' },
       { action: 'update', subject: 'DebitNote' },
       { action: 'delete', subject: 'DebitNote' },
-      ...readFor(['MenuItem', 'MenuCategory', 'StockItem']),
+      ...readFor(['MenuItem', 'MenuCategory']),
     ],
     [STAFF_ROLE_NAME]: [],
     [KITCHEN_BOARD_MANAGER_ROLE_NAME]: [
