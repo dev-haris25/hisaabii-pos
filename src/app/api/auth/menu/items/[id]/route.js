@@ -60,6 +60,9 @@ export async function PATCH(request, context) {
     if (d.vatPreset !== undefined) data.vatPreset = d.vatPreset
     if (d.sortOrder !== undefined) data.sortOrder = d.sortOrder
     if (d.active !== undefined) data.active = d.active
+    if (d.loyaltyRedeemable !== undefined) {
+      data.loyaltyRedeemable = d.loyaltyRedeemable
+    }
     if (d.categoryId !== undefined) {
       const categoryId = d.categoryId || null
       if (categoryId) {

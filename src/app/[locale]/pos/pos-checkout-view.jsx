@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
+  Gift,
   LayoutDashboard,
   LogOut,
   Minus,
@@ -28,7 +29,9 @@ import {
   PosOnScreenNumpad,
   applyNumpadKey,
 } from '@/components/pos/pos-on-screen-numpad'
+import { PosLoyaltyRedeemPhoneModal } from '@/components/pos/pos-loyalty-redeem-phone-modal'
 import { PosItemModifiersFlow } from '@/components/pos/pos-item-modifiers-flow'
+import { GiveLoyaltyPointsModal } from '@/components/invoices/give-loyalty-points-modal'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { Link, useRouter } from '@/i18n/navigation'
@@ -157,6 +160,7 @@ export function PosCheckoutView({
 }) {
   const t = useTranslations('Pos')
   const tErr = useTranslations('AuthErrors')
+  const tInv = useTranslations('Invoices')
   const locale = useLocale()
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -170,6 +174,7 @@ export function PosCheckoutView({
 
   const [categoryId, setCategoryId] = useState(/** @type {string | 'all'} */ ('all'))
   const [itemSearch, setItemSearch] = useState('')
+  const [redeemableOnly, setRedeemableOnly] = useState(false)
   /** @type {[CartLine[], function]} */
   const [cart, setCart] = useState(/** @type {CartLine[]} */ ([]))
   const [paymentMethod, setPaymentMethod] = useState(
@@ -188,14 +193,43 @@ export function PosCheckoutView({
   const [couponError, setCouponError] = useState(
     /** @type {string | null} */ (null),
   )
+  const [loyaltyPhoneInput, setLoyaltyPhoneInput] = useState('')
+  const [loyaltyAccount, setLoyaltyAccount] = useState(
+    /** @type {null | { accountId: string, balance: string }} */ (null),
+  )
+  const [loyaltyPointsInput, setLoyaltyPointsInput] = useState('')
+  const [loyaltyCeilings, setLoyaltyCeilings] = useState(
+    /** @type {null | Record<string, unknown>} */ (null),
+  )
+  const [loyaltyGateReason, setLoyaltyGateReason] = useState(
+    /** @type {null | 'below_min_order' | 'no_redeemable_items'} */ (null),
+  )
+  const [loyaltyAmountError, setLoyaltyAmountError] = useState(
+    /** @type {string | null} */ (null),
+  )
+  const [loyaltyPhoneModalOpen, setLoyaltyPhoneModalOpen] = useState(false)
+  const [loyaltyValidating, setLoyaltyValidating] = useState(false)
+  const [loyaltyLineDiscounts, setLoyaltyLineDiscounts] = useState(
+    /** @type {string[] | null} */ (null),
+  )
+  const [loyaltyDiscountAmount, setLoyaltyDiscountAmount] = useState(
+    /** @type {string | null} */ (null),
+  )
+  const [loyaltyCartFingerprint, setLoyaltyCartFingerprint] = useState(
+    /** @type {string | null} */ (null),
+  )
+  const loyaltyNumpadOpenedRef = useRef(false)
+  const loyaltyValidateSeqRef = useRef(0)
   const [fieldErrors, setFieldErrors] = useState({ discount: '', tendered: '' })
   const [numpadField, setNumpadField] = useState(
-    /** @type {null | 'discount' | 'tendered'} */ (null),
+    /** @type {null | 'discount' | 'tendered' | 'loyaltyPoints'} */ (null),
   )
   /** @type {[Record<string, unknown> | null, function]} */
   const [receipt, setReceipt] = useState(
     /** @type {Record<string, unknown> | null} */ (null),
   )
+  const [receiptLoyaltyAwarded, setReceiptLoyaltyAwarded] = useState(false)
+  const [givePointsModalOpen, setGivePointsModalOpen] = useState(false)
   /** @type {[{ item: Record<string, unknown> | null, mode: 'add' | 'edit', lineKey: string | null, selection?: Record<string, string>, customizationIds?: string[] }, function]} */
   const [configurator, setConfigurator] = useState({
     item: /** @type {Record<string, unknown> | null} */ (null),
@@ -221,8 +255,11 @@ export function PosCheckoutView({
   useEffect(() => {
     setCategoryId('all')
     setItemSearch('')
+    setRedeemableOnly(false)
     setCart([])
     setReceipt(null)
+    setReceiptLoyaltyAwarded(false)
+    setGivePointsModalOpen(false)
     setDiscount('')
     setAmountTendered('')
     setPaymentMethod('cash')
@@ -231,6 +268,18 @@ export function PosCheckoutView({
     setAppliedCoupon(null)
     setCouponError(null)
     setCouponValidating(false)
+    setLoyaltyPhoneInput('')
+    setLoyaltyAccount(null)
+    setLoyaltyPointsInput('')
+    setLoyaltyCeilings(null)
+    setLoyaltyGateReason(null)
+    setLoyaltyAmountError(null)
+    setLoyaltyPhoneModalOpen(false)
+    setLoyaltyValidating(false)
+    setLoyaltyLineDiscounts(null)
+    setLoyaltyDiscountAmount(null)
+    setLoyaltyCartFingerprint(null)
+    loyaltyNumpadOpenedRef.current = false
     router.refresh()
     void queryClient.invalidateQueries({ queryKey: ['pos', 'menu'] })
   }, [activeBusinessProfileId, queryClient, router])
@@ -240,6 +289,12 @@ export function PosCheckoutView({
   const discountCap = menuQuery.data?.discountCap ?? null
   const discountCapLimit = parseDiscountCap(discountCap)
   const keypadEnabled = menuQuery.data?.posOnScreenKeypad === true
+  const loyaltyEnabled = menuQuery.data?.loyaltyEnabled === true
+  const hasAvailableCoupons = menuQuery.data?.hasAvailableCoupons === true
+  const anyLoyaltyRedeemableMarked = useMemo(
+    () => items.some((item) => item.loyaltyRedeemable === true),
+    [items],
+  )
   const desktop = useIsHisabiDesktop()
 
   const tillQuery = useQuery({
@@ -262,12 +317,25 @@ export function PosCheckoutView({
     const q = itemSearch.trim().toLowerCase()
     return items.filter((item) => {
       if (categoryId !== 'all' && item.categoryId !== categoryId) return false
+      if (redeemableOnly && loyaltyEnabled) {
+        // Empty restriction list ⇒ whole menu is redeemable (same as Step 6).
+        if (anyLoyaltyRedeemableMarked && item.loyaltyRedeemable !== true) {
+          return false
+        }
+      }
       if (!q) return true
       const nameAr = String(item.nameAr ?? '').toLowerCase()
       const nameEn = String(item.nameEn ?? '').toLowerCase()
       return nameAr.includes(q) || nameEn.includes(q)
     })
-  }, [items, categoryId, itemSearch])
+  }, [
+    items,
+    categoryId,
+    itemSearch,
+    redeemableOnly,
+    loyaltyEnabled,
+    anyLoyaltyRedeemableMarked,
+  ])
 
   const cartFingerprint = useMemo(
     () => cart.map((l) => `${l.lineKey}:${l.quantity}`).join('|'),
@@ -281,11 +349,35 @@ export function PosCheckoutView({
     setCouponError(t('couponRemovedCartChanged'))
   }, [appliedCoupon, cartFingerprint, t])
 
+  // Loyalty: keep account linked; clear entered points and re-validate ceilings.
+  useEffect(() => {
+    if (!loyaltyAccount) return
+    if (loyaltyCartFingerprint == null) {
+      setLoyaltyCartFingerprint(cartFingerprint)
+      return
+    }
+    if (loyaltyCartFingerprint === cartFingerprint) return
+    setLoyaltyCartFingerprint(cartFingerprint)
+    setLoyaltyPointsInput('')
+    setLoyaltyLineDiscounts(null)
+    setLoyaltyDiscountAmount(null)
+    setLoyaltyAmountError(t('loyaltyCartChangedReenter'))
+    setNumpadField((field) => (field === 'loyaltyPoints' ? null : field))
+  }, [loyaltyAccount, cartFingerprint, loyaltyCartFingerprint, t])
+
   const manualDiscountBlocksCoupon = (() => {
     const disc = discount.trim()
     return Boolean(disc) && parseMoney(disc) > 0
   })()
-  const couponBlocksManualDiscount = appliedCoupon != null
+  const loyaltyRedeemActive =
+    loyaltyAccount != null &&
+    Boolean(loyaltyPointsInput.trim()) &&
+    parseMoney(loyaltyPointsInput) > 0
+  const couponBlocksManualDiscount =
+    appliedCoupon != null || loyaltyRedeemActive
+  const loyaltyBlocksCoupon = loyaltyRedeemActive
+  const couponOrDiscountBlocksLoyalty =
+    appliedCoupon != null || manualDiscountBlocksCoupon
 
   /**
    * @returns {Array<{
@@ -313,6 +405,59 @@ export function PosCheckoutView({
     setCouponValidating(false)
   }
 
+  function resetLoyaltyState() {
+    setLoyaltyPhoneInput('')
+    setLoyaltyAccount(null)
+    setLoyaltyPointsInput('')
+    setLoyaltyCeilings(null)
+    setLoyaltyGateReason(null)
+    setLoyaltyAmountError(null)
+    setLoyaltyPhoneModalOpen(false)
+    setLoyaltyValidating(false)
+    setLoyaltyLineDiscounts(null)
+    setLoyaltyDiscountAmount(null)
+    setLoyaltyCartFingerprint(null)
+    loyaltyNumpadOpenedRef.current = false
+    if (numpadField === 'loyaltyPoints') setNumpadField(null)
+  }
+
+  /**
+   * Soft amount-check message. exceeds_ceiling includes concrete cap (no i18n interpolation).
+   * @param {Record<string, unknown> | null | undefined} amountCheck
+   * @param {Record<string, unknown> | null | undefined} ceilings
+   */
+  function formatLoyaltyAmountError(amountCheck, ceilings) {
+    if (!amountCheck || amountCheck.valid === true) return null
+    const reason = String(amountCheck.reason ?? '')
+    if (reason === 'exceeds_ceiling') {
+      const maxAllowed = String(
+        amountCheck.maxAllowed ??
+          ceilings?.effectiveCeiling ??
+          '',
+      )
+      const factor = String(
+        amountCheck.limitingFactor ?? ceilings?.limitingFactor ?? '',
+      )
+      const factorLabel =
+        factor === 'balance'
+          ? t('loyaltyLimitingFactorBalance')
+          : factor === 'per_order_max'
+            ? t('loyaltyLimitingFactorPerOrder')
+            : factor === 'redeemable_value'
+              ? t('loyaltyLimitingFactorRedeemableValue')
+              : t('loyaltyLimitingFactorBalance')
+      return `${t('loyaltyRedeemReasons.exceeds_ceiling')} ${factorLabel}: ${maxAllowed}`
+    }
+    if (
+      reason === 'invalid_amount' ||
+      reason === 'not_positive' ||
+      reason === 'exceeds_ceiling'
+    ) {
+      return t(`loyaltyRedeemReasons.${reason}`)
+    }
+    return t('loyaltyRedeemReasons.invalid_amount')
+  }
+
   const cartTotals = useMemo(() => {
     if (cart.length === 0) {
       return {
@@ -328,6 +473,20 @@ export function PosCheckoutView({
       unitPrice: line.unitPrice,
       vatPreset: line.vatPreset,
     }))
+    const loyaltyActiveValid =
+      loyaltyRedeemActive &&
+      Array.isArray(loyaltyLineDiscounts) &&
+      loyaltyLineDiscounts.length === base.length &&
+      !loyaltyAmountError &&
+      !loyaltyGateReason
+    if (loyaltyActiveValid) {
+      return computeInvoiceTotals(
+        base.map((line, i) => ({
+          ...line,
+          discount: loyaltyLineDiscounts[i] ?? '0.00',
+        })),
+      )
+    }
     if (appliedCoupon) {
       return computeInvoiceTotals(
         base.map((line, i) => ({
@@ -346,7 +505,15 @@ export function PosCheckoutView({
         discount: lineDiscounts[i],
       })),
     )
-  }, [cart, discount, appliedCoupon])
+  }, [
+    cart,
+    discount,
+    appliedCoupon,
+    loyaltyRedeemActive,
+    loyaltyLineDiscounts,
+    loyaltyAmountError,
+    loyaltyGateReason,
+  ])
 
   useEffect(() => {
     if (!desktop) return undefined
@@ -413,7 +580,18 @@ export function PosCheckoutView({
       if (paymentMethod === 'cash') {
         body.amountTendered = amountTendered.trim()
       }
-      if (appliedCoupon) {
+      const redeemPoints = loyaltyPointsInput.trim()
+      const loyaltyCheckoutActive =
+        loyaltyAccount != null &&
+        redeemPoints &&
+        parseMoney(redeemPoints) > 0 &&
+        Array.isArray(loyaltyLineDiscounts) &&
+        !loyaltyAmountError &&
+        !loyaltyGateReason
+      if (loyaltyCheckoutActive) {
+        body.loyaltyAccountId = loyaltyAccount.accountId
+        body.loyaltyRedeemPoints = redeemPoints
+      } else if (appliedCoupon) {
         body.couponCode = appliedCoupon.code
       } else {
         const disc = discount.trim()
@@ -444,6 +622,8 @@ export function PosCheckoutView({
       setStockConfirm(null)
       setAllotmentConfirm(null)
       setReceipt(data.invoice ?? null)
+      setReceiptLoyaltyAwarded(false)
+      setGivePointsModalOpen(false)
       setCart([])
       setAmountTendered('')
       setDiscount('')
@@ -451,6 +631,7 @@ export function PosCheckoutView({
       setFieldErrors({ discount: '', tendered: '' })
       setNumpadField(null)
       resetCouponState()
+      resetLoyaltyState()
       void openTillCashDrawer(boundTill).catch(() => {})
     },
     onError: (err) => {
@@ -643,6 +824,7 @@ export function PosCheckoutView({
     setAmountTendered('')
     setDiscount('')
     resetCouponState()
+    resetLoyaltyState()
   }
 
   async function handleApplyCoupon() {
@@ -655,8 +837,12 @@ export function PosCheckoutView({
       setCouponError(t('couponNeedsItems'))
       return
     }
-    if (manualDiscountBlocksCoupon) {
-      setCouponError(t('couponBlockedByDiscount'))
+    if (manualDiscountBlocksCoupon || loyaltyBlocksCoupon) {
+      setCouponError(
+        loyaltyBlocksCoupon
+          ? t('couponDisabledByLoyaltyHint')
+          : t('couponBlockedByDiscount'),
+      )
       return
     }
     setCouponValidating(true)
@@ -724,6 +910,7 @@ export function PosCheckoutView({
   })
 
   function closeReceipt() {
+    setGivePointsModalOpen(false)
     setReceipt(null)
   }
 
@@ -731,7 +918,7 @@ export function PosCheckoutView({
 
   function handleCheckout() {
     const nextErrors = { discount: '', tendered: '' }
-    if (!appliedCoupon) {
+    if (!appliedCoupon && !loyaltyRedeemActive) {
       const disc = discount.trim()
       if (disc) {
         if (!isValidDiscountPercent(disc)) {
@@ -772,6 +959,11 @@ export function PosCheckoutView({
       }
       return
     }
+    if (numpadField === 'loyaltyPoints') {
+      setLoyaltyPointsInput((prev) => applyNumpadKey(prev, key))
+      if (loyaltyAmountError) setLoyaltyAmountError(null)
+      return
+    }
     if (numpadField === 'tendered') {
       setAmountTendered((prev) => applyNumpadKey(prev, key))
       if (fieldErrors.tendered) {
@@ -779,6 +971,121 @@ export function PosCheckoutView({
       }
     }
   }
+
+  // Live loyalty redeem validate (ceilings + optional amount check).
+  useEffect(() => {
+    if (!loyaltyAccount || !loyaltyEnabled) return
+    if (cart.length === 0) {
+      setLoyaltyCeilings(null)
+      setLoyaltyGateReason(null)
+      setLoyaltyLineDiscounts(null)
+      setLoyaltyDiscountAmount(null)
+      return
+    }
+    if (couponOrDiscountBlocksLoyalty) {
+      setLoyaltyLineDiscounts(null)
+      setLoyaltyDiscountAmount(null)
+      return
+    }
+
+    const accountId = loyaltyAccount.accountId
+    const points = loyaltyPointsInput.trim()
+    const seq = ++loyaltyValidateSeqRef.current
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setLoyaltyValidating(true)
+        try {
+          /** @type {Record<string, unknown>} */
+          const body = {
+            accountId,
+            lines: buildCheckoutLines(),
+          }
+          if (points) body.requestedPoints = points
+          const data = await authPost('/pos/loyalty/redeem/validate', body)
+          if (seq !== loyaltyValidateSeqRef.current) return
+
+          if (data?.eligible === false) {
+            const reason = String(data.reason ?? '')
+            setLoyaltyGateReason(
+              reason === 'below_min_order' || reason === 'no_redeemable_items'
+                ? reason
+                : 'below_min_order',
+            )
+            setLoyaltyCeilings(null)
+            setLoyaltyLineDiscounts(null)
+            setLoyaltyDiscountAmount(null)
+            setLoyaltyAmountError(null)
+            return
+          }
+
+          setLoyaltyGateReason(null)
+          const ceilings =
+            data?.ceilings && typeof data.ceilings === 'object'
+              ? /** @type {Record<string, unknown>} */ (data.ceilings)
+              : null
+          setLoyaltyCeilings(ceilings)
+
+          if (!loyaltyNumpadOpenedRef.current && keypadEnabled) {
+            loyaltyNumpadOpenedRef.current = true
+            setNumpadField('loyaltyPoints')
+          }
+
+          if (points && data?.amountCheck) {
+            const amountCheck =
+              /** @type {Record<string, unknown>} */ (data.amountCheck)
+            if (amountCheck.valid === true) {
+              setLoyaltyAmountError(null)
+              const rows = Array.isArray(data.lineDiscounts)
+                ? data.lineDiscounts.map((d) => String(d ?? '0.00'))
+                : null
+              setLoyaltyLineDiscounts(rows)
+              setLoyaltyDiscountAmount(
+                data.discountAmount != null
+                  ? String(data.discountAmount)
+                  : null,
+              )
+            } else {
+              setLoyaltyLineDiscounts(null)
+              setLoyaltyDiscountAmount(null)
+              setLoyaltyAmountError(
+                formatLoyaltyAmountError(amountCheck, ceilings),
+              )
+            }
+          } else {
+            setLoyaltyLineDiscounts(null)
+            setLoyaltyDiscountAmount(null)
+            setLoyaltyAmountError((prev) =>
+              prev === t('loyaltyCartChangedReenter') ? prev : null,
+            )
+          }
+        } catch (err) {
+          if (seq !== loyaltyValidateSeqRef.current) return
+          const code = err instanceof AuthApiError ? err.code : undefined
+          setLoyaltyLineDiscounts(null)
+          setLoyaltyDiscountAmount(null)
+          setLoyaltyAmountError(code ? tErr(code) : tErr('generic'))
+        } finally {
+          if (seq === loyaltyValidateSeqRef.current) {
+            setLoyaltyValidating(false)
+          }
+        }
+      })()
+    }, 280)
+
+    return () => window.clearTimeout(timer)
+    // buildCheckoutLines / formatLoyaltyAmountError close over latest cart.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberate debounce deps
+  }, [
+    loyaltyAccount,
+    loyaltyEnabled,
+    cartFingerprint,
+    loyaltyPointsInput,
+    couponOrDiscountBlocksLoyalty,
+    keypadEnabled,
+    cart.length,
+    t,
+    tErr,
+  ])
 
   return (
     <div
@@ -882,6 +1189,21 @@ export function PosCheckoutView({
             >
               {t('allCategories')}
             </button>
+            {loyaltyEnabled ? (
+              <button
+                type="button"
+                onClick={() => setRedeemableOnly((v) => !v)}
+                aria-pressed={redeemableOnly}
+                className={cn(
+                  'type-label-sm shrink-0 cursor-pointer rounded-xl px-hisabi-md py-2 font-bold transition-colors',
+                  redeemableOnly
+                    ? 'bg-hisabi-teal text-white'
+                    : 'bg-hisabi-surface-container-lowest text-hisabi-on-surface-variant hover:bg-hisabi-surface-container',
+                )}
+              >
+                {t('redeemableFilter')}
+              </button>
+            ) : null}
             {categories.map((cat) => (
               <button
                 key={cat.id}
@@ -925,6 +1247,10 @@ export function PosCheckoutView({
                 const name = itemDisplayName(item)
                 const arabicUnderEn =
                   locale !== 'ar' ? String(item.nameAr ?? '').trim() : ''
+                const showRedeemableBadge =
+                  loyaltyEnabled &&
+                  (!anyLoyaltyRedeemableMarked ||
+                    item.loyaltyRedeemable === true)
                 return (
                   <button
                     key={item.id}
@@ -943,6 +1269,11 @@ export function PosCheckoutView({
                       ) : (
                         name.slice(0, 2).toUpperCase()
                       )}
+                      {showRedeemableBadge ? (
+                        <span className="type-label-sm absolute start-2 top-2 z-[1] rounded-lg bg-hisabi-teal px-2 py-0.5 font-bold text-white shadow-sm">
+                          {t('redeemableBadge')}
+                        </span>
+                      ) : null}
                     </div>
                     <div className="flex flex-1 flex-col gap-1 p-hisabi-md">
                       <span className="type-body-md line-clamp-2 pb-0.5 font-bold leading-normal text-hisabi-on-surface">
@@ -1127,86 +1458,101 @@ export function PosCheckoutView({
               </div>
             </div>
 
-            <div className="space-y-hisabi-xs">
-              <div className="flex items-center justify-between gap-hisabi-sm">
-                <label
-                  htmlFor="pos-coupon-code"
-                  className="type-label-sm text-hisabi-on-surface-variant block"
-                >
-                  {t('couponCode')}
-                </label>
-                {appliedCoupon ? (
+            {hasAvailableCoupons ? (
+              <div className="space-y-hisabi-xs">
+                <div className="flex items-center justify-between gap-hisabi-sm">
+                  <label
+                    htmlFor="pos-coupon-code"
+                    className="type-label-sm text-hisabi-on-surface-variant block"
+                  >
+                    {t('couponCode')}
+                  </label>
+                  {appliedCoupon ? (
+                    <button
+                      type="button"
+                      onClick={handleRemoveCoupon}
+                      className="type-label-sm text-hisabi-error hover:bg-hisabi-error/8 inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-0.5 font-bold transition-colors"
+                    >
+                      <X className="size-3.5 shrink-0" aria-hidden />
+                      {t('couponRemove')}
+                    </button>
+                  ) : null}
+                </div>
+                <div className="flex gap-hisabi-sm">
+                  <input
+                    id="pos-coupon-code"
+                    type="text"
+                    dir="ltr"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    disabled={
+                      manualDiscountBlocksCoupon ||
+                      loyaltyBlocksCoupon ||
+                      couponValidating
+                    }
+                    value={couponCodeInput}
+                    onChange={(e) => {
+                      setCouponCodeInput(e.target.value.toUpperCase())
+                      if (couponError) setCouponError(null)
+                    }}
+                    placeholder={t('couponCodePlaceholder')}
+                    aria-invalid={couponError ? true : undefined}
+                    aria-describedby={
+                      couponError ? 'pos-coupon-error' : undefined
+                    }
+                    className={cn(
+                      'type-body-md text-hisabi-on-surface w-full min-w-0 rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10 disabled:cursor-not-allowed disabled:opacity-50',
+                      couponError &&
+                        'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                    )}
+                  />
                   <button
                     type="button"
-                    onClick={handleRemoveCoupon}
-                    className="type-label-sm text-hisabi-error hover:bg-hisabi-error/8 inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-0.5 font-bold transition-colors"
+                    disabled={
+                      couponValidating ||
+                      manualDiscountBlocksCoupon ||
+                      loyaltyBlocksCoupon ||
+                      appliedCoupon != null ||
+                      cart.length === 0 ||
+                      !couponCodeInput.trim()
+                    }
+                    onClick={() => void handleApplyCoupon()}
+                    className="type-label-md inline-flex min-h-[44px] shrink-0 cursor-pointer items-center justify-center gap-hisabi-xs rounded-xl border border-hisabi-outline-variant/60 bg-white px-hisabi-md py-2 font-bold text-hisabi-on-surface transition-colors hover:bg-hisabi-surface-container disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <X className="size-3.5 shrink-0" aria-hidden />
-                    {t('couponRemove')}
+                    {couponValidating ? <AuthButtonSpinner /> : t('couponApply')}
                   </button>
+                </div>
+                {manualDiscountBlocksCoupon || loyaltyBlocksCoupon ? (
+                  <p className="type-body-sm text-hisabi-on-surface-variant">
+                    {loyaltyBlocksCoupon
+                      ? t('couponDisabledByLoyaltyHint')
+                      : t('couponDisabledHint')}
+                  </p>
+                ) : null}
+                {couponError ? (
+                  <p
+                    id="pos-coupon-error"
+                    className="type-body-sm text-hisabi-error"
+                    role="alert"
+                  >
+                    {couponError}
+                  </p>
+                ) : null}
+                {appliedCoupon && !couponError ? (
+                  <p
+                    className="type-body-sm font-medium text-green-700"
+                    role="status"
+                  >
+                    {t('couponApplied', {
+                      amount: formatSarAmount(
+                        appliedCoupon.discountAmount,
+                        locale,
+                      ),
+                    })}
+                  </p>
                 ) : null}
               </div>
-              <div className="flex gap-hisabi-sm">
-                <input
-                  id="pos-coupon-code"
-                  type="text"
-                  dir="ltr"
-                  autoCapitalize="characters"
-                  spellCheck={false}
-                  disabled={manualDiscountBlocksCoupon || couponValidating}
-                  value={couponCodeInput}
-                  onChange={(e) => {
-                    setCouponCodeInput(e.target.value.toUpperCase())
-                    if (couponError) setCouponError(null)
-                  }}
-                  placeholder={t('couponCodePlaceholder')}
-                  aria-invalid={couponError ? true : undefined}
-                  aria-describedby={
-                    couponError ? 'pos-coupon-error' : undefined
-                  }
-                  className={cn(
-                    'type-body-md text-hisabi-on-surface w-full min-w-0 rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10 disabled:cursor-not-allowed disabled:opacity-50',
-                    couponError &&
-                      'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
-                  )}
-                />
-                <button
-                  type="button"
-                  disabled={
-                    couponValidating ||
-                    manualDiscountBlocksCoupon ||
-                    appliedCoupon != null ||
-                    cart.length === 0 ||
-                    !couponCodeInput.trim()
-                  }
-                  onClick={() => void handleApplyCoupon()}
-                  className="type-label-md inline-flex min-h-[44px] shrink-0 cursor-pointer items-center justify-center gap-hisabi-xs rounded-xl border border-hisabi-outline-variant/60 bg-white px-hisabi-md py-2 font-bold text-hisabi-on-surface transition-colors hover:bg-hisabi-surface-container disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {couponValidating ? <AuthButtonSpinner /> : t('couponApply')}
-                </button>
-              </div>
-              {manualDiscountBlocksCoupon ? (
-                <p className="type-body-sm text-hisabi-on-surface-variant">
-                  {t('couponDisabledHint')}
-                </p>
-              ) : null}
-              {couponError ? (
-                <p
-                  id="pos-coupon-error"
-                  className="type-body-sm text-hisabi-error"
-                  role="alert"
-                >
-                  {couponError}
-                </p>
-              ) : null}
-              {appliedCoupon && !couponError ? (
-                <p className="type-body-sm font-medium text-green-700" role="status">
-                  {t('couponApplied', {
-                    amount: formatSarAmount(appliedCoupon.discountAmount, locale),
-                  })}
-                </p>
-              ) : null}
-            </div>
+            ) : null}
 
             <div className="space-y-hisabi-xs">
               <label
@@ -1260,7 +1606,9 @@ export function PosCheckoutView({
               ) : null}
               {couponBlocksManualDiscount ? (
                 <p className="type-body-sm text-hisabi-on-surface-variant">
-                  {t('discountDisabledHint')}
+                  {loyaltyRedeemActive
+                    ? t('discountDisabledByLoyaltyHint')
+                    : t('discountDisabledHint')}
                 </p>
               ) : null}
               {discountCapLimit != null && !couponBlocksManualDiscount ? (
@@ -1271,6 +1619,136 @@ export function PosCheckoutView({
                 </p>
               ) : null}
             </div>
+
+            {loyaltyEnabled ? (
+              <div className="space-y-hisabi-xs">
+                <div className="flex items-center justify-between gap-hisabi-sm">
+                  <p className="type-label-sm text-hisabi-on-surface-variant">
+                    {t('loyaltyRedeemTitle')}
+                  </p>
+                  {loyaltyAccount ? (
+                    <button
+                      type="button"
+                      onClick={() => resetLoyaltyState()}
+                      className="type-label-sm text-hisabi-error hover:bg-hisabi-error/8 inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-0.5 font-bold transition-colors"
+                    >
+                      <X className="size-3.5 shrink-0" aria-hidden />
+                      {t('loyaltyRedeemClear')}
+                    </button>
+                  ) : null}
+                </div>
+
+                {!loyaltyAccount ? (
+                  <button
+                    type="button"
+                    disabled={cart.length === 0}
+                    onClick={() => {
+                      setLoyaltyPhoneInput('')
+                      setLoyaltyPhoneModalOpen(true)
+                    }}
+                    className="type-label-md inline-flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-hisabi-sm rounded-xl border border-hisabi-outline-variant/60 bg-white px-hisabi-md py-2 font-bold text-hisabi-on-surface transition-colors hover:bg-hisabi-surface-container disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Gift className="size-4 shrink-0 text-hisabi-teal" aria-hidden />
+                    {t('loyaltyRedeemButton')}
+                  </button>
+                ) : (
+                  <>
+                    {loyaltyGateReason ? (
+                      <p className="type-body-sm text-hisabi-error" role="alert">
+                        {t(`loyaltyRedeemReasons.${loyaltyGateReason}`)}
+                      </p>
+                    ) : (
+                      <>
+                        <label
+                          htmlFor="pos-loyalty-points"
+                          className="type-label-sm text-hisabi-on-surface-variant block"
+                        >
+                          {t('loyaltyPointsLabel')}
+                        </label>
+                        <PosMoneyField
+                          id="pos-loyalty-points"
+                          keypadEnabled={keypadEnabled}
+                          active={numpadField === 'loyaltyPoints'}
+                          dir="ltr"
+                          disabled={couponOrDiscountBlocksLoyalty}
+                          value={loyaltyPointsInput}
+                          onChange={(e) => {
+                            if (keypadEnabled) return
+                            if (couponOrDiscountBlocksLoyalty) return
+                            setLoyaltyPointsInput(e.target.value)
+                            if (loyaltyAmountError) setLoyaltyAmountError(null)
+                          }}
+                          onClick={() => {
+                            if (couponOrDiscountBlocksLoyalty) return
+                            openNumpad('loyaltyPoints')
+                          }}
+                          onFocus={() => {
+                            if (couponOrDiscountBlocksLoyalty) return
+                            openNumpad('loyaltyPoints')
+                          }}
+                          placeholder={t('loyaltyPointsPlaceholder')}
+                          className={cn(
+                            'type-body-md text-hisabi-on-surface w-full rounded-lg border border-hisabi-outline-variant bg-hisabi-surface px-hisabi-md py-hisabi-sm outline-none focus:border-hisabi-primary focus:ring-2 focus:ring-hisabi-primary/10 disabled:cursor-not-allowed disabled:opacity-50',
+                            loyaltyAmountError &&
+                              'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                          )}
+                          aria-invalid={loyaltyAmountError ? true : undefined}
+                          aria-describedby={
+                            loyaltyAmountError
+                              ? 'pos-loyalty-points-error'
+                              : undefined
+                          }
+                        />
+                        {couponOrDiscountBlocksLoyalty ? (
+                          <p className="type-body-sm text-hisabi-on-surface-variant">
+                            {appliedCoupon
+                              ? t('loyaltyDisabledByCouponHint')
+                              : t('loyaltyDisabledByDiscountHint')}
+                          </p>
+                        ) : null}
+                        {loyaltyAmountError ? (
+                          <p
+                            id="pos-loyalty-points-error"
+                            className="type-body-sm text-hisabi-error"
+                            role="alert"
+                          >
+                            {loyaltyAmountError}
+                          </p>
+                        ) : null}
+                        {loyaltyDiscountAmount &&
+                        !loyaltyAmountError &&
+                        !couponOrDiscountBlocksLoyalty ? (
+                          <p
+                            className="type-body-sm font-medium text-green-700"
+                            role="status"
+                          >
+                            {t('loyaltyRedeemApplied', {
+                              amount: formatSarAmount(
+                                loyaltyDiscountAmount,
+                                locale,
+                              ),
+                            })}
+                          </p>
+                        ) : null}
+                        {loyaltyCeilings?.effectiveCeiling != null ? (
+                          <p className="type-body-sm text-hisabi-on-surface-variant">
+                            {t('loyaltyMaxRedeemable', {
+                              points: String(loyaltyCeilings.effectiveCeiling),
+                            })}
+                          </p>
+                        ) : null}
+                      </>
+                    )}
+                    <p className="type-body-sm text-hisabi-on-surface-variant">
+                      {t('loyaltyBalanceLabel', {
+                        balance: String(loyaltyAccount.balance),
+                      })}
+                      {loyaltyValidating ? ` · ${t('loyaltyValidating')}` : ''}
+                    </p>
+                  </>
+                )}
+              </div>
+            ) : null}
 
             <div>
               <p className="type-label-sm text-hisabi-on-surface-variant mb-hisabi-xs">
@@ -1374,14 +1852,42 @@ export function PosCheckoutView({
         <PosOnScreenNumpad
           open={numpadField != null}
           title={
-            numpadField === 'tendered' ? t('amountReceived') : t('discount')
+            numpadField === 'tendered'
+              ? t('amountReceived')
+              : numpadField === 'loyaltyPoints'
+                ? t('loyaltyPointsLabel')
+                : t('discount')
           }
-          value={numpadField === 'tendered' ? amountTendered : discount}
+          value={
+            numpadField === 'tendered'
+              ? amountTendered
+              : numpadField === 'loyaltyPoints'
+                ? loyaltyPointsInput
+                : discount
+          }
           onKey={handleNumpadKey}
           onClose={() => setNumpadField(null)}
           onDone={() => setNumpadField(null)}
         />
       ) : null}
+
+      <PosLoyaltyRedeemPhoneModal
+        open={loyaltyPhoneModalOpen}
+        onOpenChange={setLoyaltyPhoneModalOpen}
+        phone={loyaltyPhoneInput}
+        onPhoneChange={setLoyaltyPhoneInput}
+        onSuccess={({ accountId, balance }) => {
+          loyaltyNumpadOpenedRef.current = false
+          setLoyaltyAccount({ accountId, balance })
+          setLoyaltyCartFingerprint(cartFingerprint)
+          setLoyaltyPointsInput('')
+          setLoyaltyCeilings(null)
+          setLoyaltyGateReason(null)
+          setLoyaltyAmountError(null)
+          setLoyaltyLineDiscounts(null)
+          setLoyaltyDiscountAmount(null)
+        }}
+      />
 
       <PosItemModifiersFlow
         open={Boolean(configurator.item)}
@@ -1450,17 +1956,55 @@ export function PosCheckoutView({
                   {t('printBlockedNoQr')}
                 </p>
               )}
-              <AuthSubmitButton
-                type="button"
-                variant="secondary"
-                onClick={closeReceipt}
-              >
-                {t('newSale')}
-              </AuthSubmitButton>
+              {loyaltyEnabled &&
+              typeof receipt.id === 'string' &&
+              receipt.id &&
+              !receiptLoyaltyAwarded ? (
+                <AuthSubmitButton
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setGivePointsModalOpen(true)}
+                >
+                  {t('giveLoyaltyPointsButton')}
+                </AuthSubmitButton>
+              ) : (
+                <AuthSubmitButton
+                  type="button"
+                  variant="secondary"
+                  onClick={closeReceipt}
+                >
+                  {t('newSale')}
+                </AuthSubmitButton>
+              )}
             </div>
           </div>
         </div>
       ) : null}
+
+      <GiveLoyaltyPointsModal
+        open={givePointsModalOpen && Boolean(receipt?.id)}
+        onOpenChange={setGivePointsModalOpen}
+        invoiceId={
+          typeof receipt?.id === 'string' ? receipt.id : null
+        }
+        invoiceNumber={
+          typeof receipt?.invoiceNumber === 'string'
+            ? receipt.invoiceNumber
+            : null
+        }
+        onSuccess={(res) => {
+          setReceiptLoyaltyAwarded(true)
+          const points =
+            res && typeof res.pointsEarned === 'string'
+              ? res.pointsEarned
+              : null
+          toast.success(
+            points
+              ? tInv('givePointsSuccessWithAmount', { points })
+              : tInv('givePointsSuccess'),
+          )
+        }}
+      />
 
       <HisabiStatusModal
         open={Boolean(allotmentConfirm)}

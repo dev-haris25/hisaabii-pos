@@ -8,6 +8,7 @@ import {
 import { allocateCreditNoteNumber, allocateDebitNoteNumber } from '@/lib/notes/allocate-note-number'
 import { emitZatcaReportFailed } from '@/lib/notifications/emit-zatca-report-failed'
 import { notifyPosAudience } from '@/lib/notifications/notify-owner-and-actor'
+import { reconcileLoyaltyPointsForInvoice } from '@/lib/loyalty/reconcile-loyalty-points-for-invoice'
 import { cancelKitchenOrderForInvoice } from '@/lib/orders/sync-kitchen-order'
 import { prisma } from '@/lib/prisma'
 import { humanizeZatcaError } from '@/lib/zatca/humanize-zatca-error'
@@ -291,6 +292,17 @@ export async function createAndReportNote(opts) {
         link: `/invoices/${invoice.id}`,
         dedupeKey: `invoice-voided:${invoice.id}`,
         actorUserId: staffId,
+      })
+      // Loyalty reverse only after void is finalized (post-ZATCA success).
+      await reconcileLoyaltyPointsForInvoice({
+        invoice: { ...invoice, status: 'voided' },
+        cashierUserId: staffId,
+      })
+    } else {
+      // Partial credit/debit note — recompute earn after successful report.
+      await reconcileLoyaltyPointsForInvoice({
+        invoice,
+        cashierUserId: staffId,
       })
     }
   } catch (err) {

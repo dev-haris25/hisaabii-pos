@@ -52,6 +52,7 @@ export const menuItemBodySchema = z.object({
   categoryId: z.string().trim().min(1).optional().nullable(),
   sortOrder: z.number().int().min(0).max(9999).optional().default(0),
   active: z.boolean().optional().default(true),
+  loyaltyRedeemable: z.boolean().optional().default(false),
   clearImage: z.coerce.boolean().optional().default(false),
   imageBase64: optionalImageBase64,
   imageMimeType: optionalImageMime,

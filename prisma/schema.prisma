@@ -115,6 +115,8 @@ model BusinessProfile {
   syncProcessedEvents   SyncProcessedEvent[]
   coupons               Coupon[]
   couponCodes           CouponCode[]
+  loyaltySettings       LoyaltySettings?
+  loyaltyAccounts       LoyaltyAccount[]
 
   @@index([ownerUserId])
   @@map("business_profiles")
@@ -264,6 +266,7 @@ model User {
   creditNotesCreated CreditNote[]         @relation("CreditNoteCreatedBy")
   debitNotesCreated  DebitNote[]          @relation("DebitNoteCreatedBy")
   couponUsagesAsCashier CouponUsage[]     @relation("CouponUsageCashier")
+  loyaltyTransactionsAsCashier LoyaltyTransaction[] @relation("LoyaltyTransactionCashier")
   otpCodes           OtpCode[]
   salarySlipsCreated SalarySlip[]         @relation("SalarySlipCreatedBy")
   notifications      Notification[]
@@ -677,6 +680,8 @@ model MenuItem {
 
   vatPreset VatPreset @default(standard)
   active    Boolean   @default(true)
+  /// When true, this item can be paid for with loyalty points at POS.
+  loyaltyRedeemable Boolean @default(false)
   sortOrder Int       @default(0)
   imageUrl  String?
 
@@ -889,6 +894,15 @@ model Invoice {
   /// Ex-VAT total discount from the coupon for this invoice (strings, never floats).
   discountAmount String?
 
+  /// One-shot guard — server enforces awarding loyalty points at most once per invoice.
+  loyaltyPointsAwarded  Boolean @default(false)
+  loyaltyAccountId      String?
+  loyaltyAccount        LoyaltyAccount? @relation(fields: [loyaltyAccountId], references: [id], onDelete: SetNull)
+  /// Points redeemed on this sale, if any (decimal string).
+  loyaltyPointsRedeemed String?
+  /// Ex-VAT discount from loyalty redemption, if any (decimal string).
+  loyaltyDiscountAmount String?
+
   // ZATCA artifacts — field names match Hisabi's Invoice model exactly.
   xmlPayload         String?
   /// Base64 TLV QR — must always be the full 9-tag Phase-2 QR before printing,
@@ -917,6 +931,7 @@ model Invoice {
   debitNotes   DebitNote[]
   kitchenOrder KitchenOrder?
   couponUsages CouponUsage[]
+  loyaltyTransactions LoyaltyTransaction[]
 
   @@unique([businessProfileId, invoiceNumber])
   @@index([businessProfileId, zatcaStatus])
@@ -924,6 +939,7 @@ model Invoice {
   @@index([businessProfileId, deletedAt])
   @@index([createdByStaffId])
   @@index([couponId])
+  @@index([loyaltyAccountId])
   @@index([zatcaStatus, createdAt])
   @@index([zatcaStatus, zatcaDeadlineRetriedAt, createdAt])
   @@map("invoices")
@@ -1675,4 +1691,101 @@ model CouponUsage {
   @@index([couponCodeId])
   @@index([cashierUserId])
   @@map("coupon_usages")
+}
+
+// ---------------------------------------------------------------------------
+// Loyalty Points
+// ---------------------------------------------------------------------------
+
+/// Per-restaurant loyalty configuration (singleton — same shape as BusinessSettings).
+model LoyaltySettings {
+  businessProfileId String          @id
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  enabled Boolean @default(false)
+
+  /// Money units per earnRatePoints (decimal string), e.g. "10".
+  earnRateAmount String
+  /// Points earned per earnRateAmount (decimal string), e.g. "1".
+  earnRatePoints String
+
+  /// Points per redeemRateAmount (decimal string), e.g. "1".
+  redeemRatePoints String
+  /// Money value per redeemRatePoints (decimal string), e.g. "1".
+  redeemRateAmount String
+
+  /// Minimum balance required to redeem (decimal string). Null = no minimum.
+  minBalanceToRedeem String?
+  /// Cap on points redeemable per order (decimal string, POINTS). Null = no cap.
+  maxPointsPerOrder String?
+  /// Minimum VAT-inclusive order total to redeem (decimal string). Null = no minimum.
+  minOrderValueToRedeem String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("loyalty_settings")
+}
+
+model LoyaltyAccount {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  /// Normalized Saudi mobile number ONLY — digits-only, 10 digits, starts
+  /// with "05" (e.g. "0501234567"). Normalization happens before this
+  /// field is ever written or queried; see the shared normalization
+  /// function added in a later step. Never store a raw/unnormalized value.
+  /// Cleared to null on soft-delete so the number can be reused (same
+  /// pattern as CouponCode.code).
+  phone   String?
+  /// Fractional points balance kept exact — never rounded (decimal string).
+  balance String @default("0")
+
+  /// Soft delete — account hidden from active views/lookups and POS resolution;
+  /// LoyaltyTransaction history is preserved and never deleted.
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions LoyaltyTransaction[]
+  invoices     Invoice[]
+
+  @@unique([businessProfileId, phone])
+  @@index([businessProfileId])
+  @@index([businessProfileId, deletedAt])
+  @@map("loyalty_accounts")
+}
+
+enum LoyaltyTransactionType {
+  EARN
+  REDEEM
+  ADJUSTMENT
+}
+
+model LoyaltyTransaction {
+  id      String         @id @default(cuid())
+  accountId String
+  account   LoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  type   LoyaltyTransactionType
+  /// Always positive; `type` determines direction (decimal string).
+  points String
+  /// Set only for REDEEM — ex-VAT discount given (decimal string).
+  discountAmount String?
+
+  /// Same FK pattern as CouponUsage.cashierUserId → User (onDelete: Restrict).
+  cashierUserId String
+  cashierUser   User   @relation("LoyaltyTransactionCashier", fields: [cashierUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([accountId])
+  @@index([invoiceId])
+  @@index([cashierUserId])
+  @@map("loyalty_transactions")
 }

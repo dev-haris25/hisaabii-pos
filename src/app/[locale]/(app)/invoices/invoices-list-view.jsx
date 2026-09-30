@@ -9,6 +9,7 @@ import {
   ChevronsRight,
   Download,
   Eye,
+  Gift,
   Loader2,
   Pencil,
   Printer,
@@ -22,6 +23,7 @@ import { toast } from 'sonner'
 
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { HisabiStatusModal } from '@/components/hisabi-status-modal'
+import { GiveLoyaltyPointsModal } from '@/components/invoices/give-loyalty-points-modal'
 import { InvoiceCancelConfirmModal } from '@/components/invoices/invoice-cancel-confirm-modal'
 import { PosThermalReceiptPreview } from '@/components/invoices/pos-thermal-receipt-preview'
 import { SoftDeleteConfirmModal } from '@/components/invoices/soft-delete-confirm-modal'
@@ -71,6 +73,8 @@ import {
 } from '@/lib/list-views/list-table-styles'
 import { useListRowSelection } from '@/lib/list-views/use-list-row-selection'
 import { useUrlSyncedSearchInput } from '@/lib/list-views/use-url-synced-search-input'
+import { useAppAbility } from '@/components/rbac/ability-provider'
+import { hasFullAccess } from '@/lib/rbac/ability-utils'
 import { cn } from '@/lib/utils'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50]
@@ -96,6 +100,7 @@ const ZATCA_FILTER_KEYS = /** @type {const} */ ([
  *     zatcaStatus: string | null
  *     zatcaLastError: string | null
  *     hasQr: boolean
+ *     loyaltyPointsAwarded?: boolean
  *     staffName: string | null
  *     creditNotes?: Array<{ id: string, noteNumber: string }>
  *     debitNotes?: Array<{ id: string, noteNumber: string }>
@@ -104,6 +109,7 @@ const ZATCA_FILTER_KEYS = /** @type {const} */ ([
  *   filters: { search: string, zatca: string, payment: string }
  *   logoUrl?: string | null
  *   cashierWindowOnly?: boolean
+ *   loyaltyEnabled?: boolean
  * }} props
  */
 export function InvoicesListView({
@@ -112,6 +118,7 @@ export function InvoicesListView({
   filters,
   logoUrl = null,
   cashierWindowOnly = false,
+  loyaltyEnabled = false,
 }) {
   const t = useTranslations('Invoices')
   const tList = useTranslations('ListViews')
@@ -121,6 +128,12 @@ export function InvoicesListView({
   const locale = useLocale()
   const router = useRouter()
   const pathname = usePathname()
+  const ability = useAppAbility()
+  const canGiveLoyaltyPoints =
+    loyaltyEnabled &&
+    (hasFullAccess(ability) ||
+      ability.can('create', 'Pos') ||
+      ability.can('read', 'Pos'))
   const [isPending, startTransition] = useTransition()
   const [reportingId, setReportingId] = useState(
     /** @type {string | null} */ (null),
@@ -132,6 +145,9 @@ export function InvoicesListView({
     /** @type {Record<string, unknown> | null} */ (null),
   )
   const [cancelTarget, setCancelTarget] = useState(
+    /** @type {{ id: string, invoiceNumber: string } | null} */ (null),
+  )
+  const [givePointsTarget, setGivePointsTarget] = useState(
     /** @type {{ id: string, invoiceNumber: string } | null} */ (null),
   )
   const [deleteTarget, setDeleteTarget] = useState(
@@ -566,6 +582,22 @@ export function InvoicesListView({
                         >
                           <Eye className="size-5" aria-hidden />
                         </ActionIconLink>
+                        {canGiveLoyaltyPoints &&
+                        row.status === 'completed' &&
+                        row.loyaltyPointsAwarded !== true ? (
+                          <ActionIconButton
+                            label={t('actionGivePoints')}
+                            className="hover:text-hisabi-secondary"
+                            onClick={() =>
+                              setGivePointsTarget({
+                                id: row.id,
+                                invoiceNumber: row.invoiceNumber,
+                              })
+                            }
+                          >
+                            <Gift className="size-5" aria-hidden />
+                          </ActionIconButton>
+                        ) : null}
                         {row.status !== 'voided' && row.hasQr ? (
                           <ActionIconButton
                             label={invoiceReceiptActionLabel(t, desktop)}
@@ -805,6 +837,27 @@ export function InvoicesListView({
           invoiceNumber={cancelTarget.invoiceNumber}
         />
       ) : null}
+      <GiveLoyaltyPointsModal
+        open={Boolean(givePointsTarget)}
+        onOpenChange={(next) => {
+          if (!next) setGivePointsTarget(null)
+        }}
+        invoiceId={givePointsTarget?.id ?? null}
+        invoiceNumber={givePointsTarget?.invoiceNumber ?? null}
+        onSuccess={(res) => {
+          const points =
+            res && typeof res.pointsEarned === 'string'
+              ? res.pointsEarned
+              : null
+          toast.success(
+            points
+              ? t('givePointsSuccessWithAmount', { points })
+              : t('givePointsSuccess'),
+          )
+          setGivePointsTarget(null)
+          router.refresh()
+        }}
+      />
       {deleteTarget ? (
         <SoftDeleteConfirmModal
           open={Boolean(deleteTarget)}

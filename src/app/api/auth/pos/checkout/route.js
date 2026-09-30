@@ -89,6 +89,28 @@ export async function POST(request) {
         return jsonError(400, code, message)
       }
       if (
+        code === 'COUPON_AND_LOYALTY_CONFLICT' ||
+        code === 'LOYALTY_AND_MANUAL_DISCOUNT_CONFLICT'
+      ) {
+        return jsonError(400, code, message)
+      }
+      if (
+        code === 'LOYALTY_ACCOUNT_NOT_FOUND' ||
+        code === 'LOYALTY_MODULE_DISABLED' ||
+        code === 'LOYALTY_BELOW_MIN_BALANCE' ||
+        code === 'LOYALTY_BELOW_MIN_ORDER' ||
+        code === 'LOYALTY_NO_REDEEMABLE_ITEMS' ||
+        code === 'LOYALTY_REDEEM_AMOUNT_INVALID' ||
+        code === 'LOYALTY_REDEEM_AMOUNT_NOT_POSITIVE' ||
+        code === 'LOYALTY_REDEEM_EXCEEDS_CEILING' ||
+        code === 'LOYALTY_BALANCE_CHANGED_RETRY' ||
+        code === 'LOYALTY_ACCOUNT_ID_REQUIRED' ||
+        code === 'LOYALTY_REDEEM_POINTS_REQUIRED'
+      ) {
+        const status = code === 'LOYALTY_ACCOUNT_NOT_FOUND' ? 404 : 400
+        return jsonError(status, code, message)
+      }
+      if (
         code === 'INVALID_COUPON_CODE' ||
         code === 'COUPON_INACTIVE' ||
         code === 'COUPON_NOT_YET_ACTIVE' ||

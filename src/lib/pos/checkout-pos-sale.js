@@ -18,6 +18,20 @@ import {
   normalizeCouponCodeInput,
   resolveCouponCode,
 } from '@/lib/coupons/resolve-coupon-code'
+import { orderVatInclusiveSubtotalFromLines } from '@/lib/coupons/coupon-order-discount'
+import {
+  allocateLoyaltyRedeemDiscount,
+  computeLoyaltyRedeemCeilings,
+  computeRedeemableValueInCart,
+  pointsToRedeemMoney,
+} from '@/lib/loyalty/compute-loyalty-redeem-ceilings'
+import { decrementLoyaltyBalanceGuarded } from '@/lib/loyalty/decrement-loyalty-balance-guarded'
+import { loadOwnedLoyaltyAccount } from '@/lib/loyalty/load-owned-loyalty-account'
+import {
+  checkLoyaltyMinOrderValue,
+  checkLoyaltyRedeemEligibility,
+  validateLoyaltyRedeemAmount,
+} from '@/lib/loyalty/loyalty-redeem-eligibility'
 import { menuItemInclude } from '@/lib/menu/map-menu-json'
 import { resolveCheckoutModifiers } from '@/lib/menu/resolve-checkout-modifiers'
 import { createKitchenOrderInTx } from '@/lib/orders/create-kitchen-order'
@@ -59,8 +73,12 @@ export const posCheckoutBodySchema = z.object({
   amountTendered: moneyOptionalSchema,
   /** Order-level discount percent (0–100); converted to SAR then allocated by gross share. */
   discount: moneyOptionalSchema,
-  /** Typed coupon code — mutually exclusive with `discount`. */
+  /** Typed coupon code — mutually exclusive with `discount` and loyalty redeem. */
   couponCode: z.string().trim().min(1).max(64).optional().nullable(),
+  /** Linked loyalty account for redeem — mutually exclusive with coupon / manual discount. */
+  loyaltyAccountId: z.string().trim().min(1).max(64).optional().nullable(),
+  /** Points to redeem (money-string). Requires loyaltyAccountId. */
+  loyaltyRedeemPoints: moneyOptionalSchema,
   notes: z.string().trim().max(500).optional().nullable(),
   /** When restaurant allows negative stock, cashier confirms override. */
   allowNegativeStock: z.boolean().optional(),
@@ -78,6 +96,47 @@ export const posCheckoutBodySchema = z.object({
  */
 function throwCheckoutError(code, message) {
   throw Object.assign(new Error(message), { code })
+}
+
+/**
+ * @param {string | undefined} reason
+ */
+function throwLoyaltyAmountCheckError(reason) {
+  if (reason === 'not_positive') {
+    throwCheckoutError(
+      'LOYALTY_REDEEM_AMOUNT_NOT_POSITIVE',
+      'Redeem points must be greater than zero',
+    )
+  }
+  if (reason === 'exceeds_ceiling') {
+    throwCheckoutError(
+      'LOYALTY_REDEEM_EXCEEDS_CEILING',
+      'Redeem points exceed the allowed ceiling for this order',
+    )
+  }
+  throwCheckoutError(
+    'LOYALTY_REDEEM_AMOUNT_INVALID',
+    'Redeem points amount is invalid',
+  )
+}
+
+/**
+ * Fresh redeemable menu-item ids for this restaurant (never cached).
+ *
+ * @param {string} businessProfileId
+ * @param {import('@/generated/prisma/client').Prisma.TransactionClient | typeof prisma} db
+ * @returns {Promise<string[]>}
+ */
+async function loadRedeemableMenuItemIds(businessProfileId, db) {
+  const rows = await db.menuItem.findMany({
+    where: {
+      businessProfileId,
+      loyaltyRedeemable: true,
+      active: true,
+    },
+    select: { id: true },
+  })
+  return rows.map((r) => r.id)
 }
 
 /**
@@ -224,12 +283,60 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
       : null
   const discountProvided =
     body.discount != null && String(body.discount).trim() !== ''
+  const loyaltyAccountRaw =
+    body.loyaltyAccountId != null && String(body.loyaltyAccountId).trim() !== ''
+      ? String(body.loyaltyAccountId).trim()
+      : null
+  const loyaltyPointsRaw =
+    body.loyaltyRedeemPoints != null &&
+    String(body.loyaltyRedeemPoints).trim() !== ''
+      ? String(body.loyaltyRedeemPoints).trim()
+      : null
+  const loyaltyRedeemProvided = Boolean(loyaltyAccountRaw || loyaltyPointsRaw)
 
-  if (couponCodeRaw && discountProvided) {
-    throwCheckoutError(
-      'COUPON_AND_MANUAL_DISCOUNT_CONFLICT',
-      'Cannot apply a coupon and a manual discount on the same order',
-    )
+  // 3-way mutual exclusivity — exactly one specific pairwise error per request.
+  {
+    const present = [
+      couponCodeRaw ? 'coupon' : null,
+      discountProvided ? 'manual' : null,
+      loyaltyRedeemProvided ? 'loyalty' : null,
+    ].filter(Boolean)
+    if (present.length > 1) {
+      const set = new Set(present)
+      if (set.has('coupon') && set.has('manual')) {
+        throwCheckoutError(
+          'COUPON_AND_MANUAL_DISCOUNT_CONFLICT',
+          'Cannot apply a coupon and a manual discount on the same order',
+        )
+      }
+      if (set.has('coupon') && set.has('loyalty')) {
+        throwCheckoutError(
+          'COUPON_AND_LOYALTY_CONFLICT',
+          'Cannot apply a coupon and loyalty points on the same order',
+        )
+      }
+      if (set.has('manual') && set.has('loyalty')) {
+        throwCheckoutError(
+          'LOYALTY_AND_MANUAL_DISCOUNT_CONFLICT',
+          'Cannot apply a manual discount and loyalty points on the same order',
+        )
+      }
+    }
+  }
+
+  if (loyaltyRedeemProvided) {
+    if (!loyaltyAccountRaw) {
+      throwCheckoutError(
+        'LOYALTY_ACCOUNT_ID_REQUIRED',
+        'Loyalty account is required to redeem points',
+      )
+    }
+    if (!loyaltyPointsRaw) {
+      throwCheckoutError(
+        'LOYALTY_REDEEM_POINTS_REQUIRED',
+        'Loyalty redeem points are required',
+      )
+    }
   }
 
   const baseLines = pricedLines.map((l) => ({
@@ -270,6 +377,96 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
       throwCheckoutError(mapped.code, mapped.message)
     }
     lineDiscounts = previewCalc.lineDiscounts ?? baseLines.map(() => '0.00')
+    totals = computeInvoiceTotals(
+      baseLines.map((l, i) => ({
+        ...l,
+        discount: lineDiscounts[i],
+      })),
+    )
+  } else if (loyaltyAccountRaw && loyaltyPointsRaw) {
+    // Preview totals for tender check — authoritative re-validate inside the tx.
+    const previewAccount = await loadOwnedLoyaltyAccount(
+      profileId,
+      loyaltyAccountRaw,
+    )
+    if (!previewAccount) {
+      throwCheckoutError(
+        'LOYALTY_ACCOUNT_NOT_FOUND',
+        'Loyalty account not found',
+      )
+    }
+    const previewSettings = await prisma.loyaltySettings.findUnique({
+      where: { businessProfileId: profileId },
+    })
+    if (!previewSettings || previewSettings.enabled !== true) {
+      throwCheckoutError(
+        'LOYALTY_MODULE_DISABLED',
+        'Loyalty points are not enabled for this restaurant',
+      )
+    }
+    const balanceElig = checkLoyaltyRedeemEligibility(
+      previewAccount,
+      previewSettings,
+    )
+    if (!balanceElig.eligible) {
+      throwCheckoutError(
+        'LOYALTY_BELOW_MIN_BALANCE',
+        'Balance is below the minimum required to redeem',
+      )
+    }
+    const vatInclusive = orderVatInclusiveSubtotalFromLines(baseLines)
+    const minOrderElig = checkLoyaltyMinOrderValue(vatInclusive, previewSettings)
+    if (!minOrderElig.eligible) {
+      throwCheckoutError(
+        'LOYALTY_BELOW_MIN_ORDER',
+        'Order total is below the minimum required to redeem',
+      )
+    }
+    const previewRedeemableIds = await loadRedeemableMenuItemIds(
+      profileId,
+      prisma,
+    )
+    const previewRedeemSettings = {
+      redeemRatePoints: previewSettings.redeemRatePoints,
+      redeemRateAmount: previewSettings.redeemRateAmount,
+      maxPointsPerOrder: previewSettings.maxPointsPerOrder,
+      redeemableMenuItemIds: previewRedeemableIds,
+    }
+    const previewRedeemableMoney = computeRedeemableValueInCart(
+      baseLines,
+      previewRedeemSettings,
+    )
+    if (
+      previewRedeemableIds.length > 0 &&
+      parseMoney(previewRedeemableMoney) <= 0
+    ) {
+      throwCheckoutError(
+        'LOYALTY_NO_REDEEMABLE_ITEMS',
+        'No redeemable items in the cart',
+      )
+    }
+    const previewCeilings = computeLoyaltyRedeemCeilings(
+      previewAccount,
+      previewRedeemSettings,
+      baseLines,
+      null,
+    )
+    const previewAmount = validateLoyaltyRedeemAmount(
+      loyaltyPointsRaw,
+      previewCeilings,
+    )
+    if (!previewAmount.valid) {
+      throwLoyaltyAmountCheckError(previewAmount.reason)
+    }
+    const previewDiscountMoney = pointsToRedeemMoney(
+      loyaltyPointsRaw,
+      previewRedeemSettings,
+    )
+    lineDiscounts = allocateLoyaltyRedeemDiscount(
+      baseLines,
+      previewDiscountMoney,
+      previewRedeemableIds,
+    )
     totals = computeInvoiceTotals(
       baseLines.map((l, i) => ({
         ...l,
@@ -333,6 +530,12 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
     let couponCodeId = null
     /** @type {string | null} */
     let orderDiscountAmount = null
+    /** @type {string | null} */
+    let loyaltyAccountIdForInvoice = null
+    /** @type {string | null} */
+    let loyaltyPointsRedeemed = null
+    /** @type {string | null} */
+    let loyaltyDiscountAmount = null
     /** @type {string[]} */
     let finalLineDiscounts = lineDiscounts
     /** @type {ReturnType<typeof computeInvoiceTotals>} */
@@ -406,6 +609,140 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
         normalizeCouponCodeInput(couponCodeRaw)
       couponCodeId = couponCode?.id ?? null
       orderDiscountAmount = calc.discountAmount
+    } else if (loyaltyAccountRaw && loyaltyPointsRaw) {
+      const account = await loadOwnedLoyaltyAccount(
+        profileId,
+        loyaltyAccountRaw,
+        tx,
+      )
+      if (!account) {
+        throwCheckoutError(
+          'LOYALTY_ACCOUNT_NOT_FOUND',
+          'Loyalty account not found',
+        )
+      }
+
+      const loyaltySettings = await tx.loyaltySettings.findUnique({
+        where: { businessProfileId: profileId },
+      })
+      if (!loyaltySettings || loyaltySettings.enabled !== true) {
+        throwCheckoutError(
+          'LOYALTY_MODULE_DISABLED',
+          'Loyalty points are not enabled for this restaurant',
+        )
+      }
+
+      const balanceElig = checkLoyaltyRedeemEligibility(account, loyaltySettings)
+      if (!balanceElig.eligible) {
+        throwCheckoutError(
+          'LOYALTY_BELOW_MIN_BALANCE',
+          'Balance is below the minimum required to redeem',
+        )
+      }
+
+      const vatInclusive = orderVatInclusiveSubtotalFromLines(baseLines)
+      const minOrderElig = checkLoyaltyMinOrderValue(
+        vatInclusive,
+        loyaltySettings,
+      )
+      if (!minOrderElig.eligible) {
+        throwCheckoutError(
+          'LOYALTY_BELOW_MIN_ORDER',
+          'Order total is below the minimum required to redeem',
+        )
+      }
+
+      const redeemableMenuItemIds = await loadRedeemableMenuItemIds(
+        profileId,
+        tx,
+      )
+      const redeemSettings = {
+        redeemRatePoints: loyaltySettings.redeemRatePoints,
+        redeemRateAmount: loyaltySettings.redeemRateAmount,
+        maxPointsPerOrder: loyaltySettings.maxPointsPerOrder,
+        redeemableMenuItemIds,
+      }
+
+      const redeemableMoney = computeRedeemableValueInCart(
+        baseLines,
+        redeemSettings,
+      )
+      if (
+        redeemableMenuItemIds.length > 0 &&
+        parseMoney(redeemableMoney) <= 0
+      ) {
+        throwCheckoutError(
+          'LOYALTY_NO_REDEEMABLE_ITEMS',
+          'No redeemable items in the cart',
+        )
+      }
+
+      const ceilings = computeLoyaltyRedeemCeilings(
+        account,
+        redeemSettings,
+        baseLines,
+        null,
+      )
+      const amountCheck = validateLoyaltyRedeemAmount(
+        loyaltyPointsRaw,
+        ceilings,
+      )
+      if (!amountCheck.valid) {
+        throwLoyaltyAmountCheckError(amountCheck.reason)
+      }
+
+      const discountMoney = pointsToRedeemMoney(
+        loyaltyPointsRaw,
+        redeemSettings,
+      )
+      if (parseMoney(discountMoney) <= 0) {
+        throwCheckoutError(
+          'LOYALTY_REDEEM_AMOUNT_INVALID',
+          'Redeem points amount is invalid',
+        )
+      }
+
+      finalLineDiscounts = allocateLoyaltyRedeemDiscount(
+        baseLines,
+        discountMoney,
+        redeemableMenuItemIds,
+      )
+      finalTotals = computeInvoiceTotals(
+        baseLines.map((l, i) => ({
+          ...l,
+          discount: finalLineDiscounts[i],
+        })),
+      )
+      if (body.paymentMethod === 'cash') {
+        const tendered = parseMoney(body.amountTendered)
+        const grand = parseMoney(finalTotals.grandTotal)
+        if (!body.amountTendered || tendered < grand) {
+          throwCheckoutError(
+            'INSUFFICIENT_TENDER',
+            'Amount tendered is less than the total',
+          )
+        }
+        changeGiven = decimalStringFromNumber(tendered - grand)
+      }
+
+      const decremented = await decrementLoyaltyBalanceGuarded(
+        tx,
+        account.id,
+        loyaltyPointsRaw,
+      )
+      if (!decremented) {
+        throwCheckoutError(
+          'LOYALTY_BALANCE_CHANGED_RETRY',
+          'Loyalty balance changed — try again',
+        )
+      }
+
+      loyaltyAccountIdForInvoice = account.id
+      loyaltyPointsRedeemed = decimalStringFromNumber(
+        parseMoney(loyaltyPointsRaw),
+      )
+      loyaltyDiscountAmount = discountMoney
+      orderDiscountAmount = discountMoney
     }
 
     const created = await tx.invoice.create({
@@ -445,6 +782,9 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
         couponId,
         couponCode: couponCodeSnapshot,
         discountAmount: orderDiscountAmount,
+        loyaltyAccountId: loyaltyAccountIdForInvoice,
+        loyaltyPointsRedeemed,
+        loyaltyDiscountAmount,
         lines: {
           create: body.lines.map((l, idx) => {
             const item = byId.get(l.menuItemId)
@@ -479,6 +819,23 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
           cashierUserId: staffId,
           codeSnapshot: couponCodeSnapshot,
           discountAmount: orderDiscountAmount,
+        },
+      })
+    }
+
+    if (
+      loyaltyAccountIdForInvoice &&
+      loyaltyPointsRedeemed &&
+      loyaltyDiscountAmount
+    ) {
+      await tx.loyaltyTransaction.create({
+        data: {
+          accountId: loyaltyAccountIdForInvoice,
+          invoiceId: created.id,
+          type: 'REDEEM',
+          points: loyaltyPointsRedeemed,
+          discountAmount: loyaltyDiscountAmount,
+          cashierUserId: staffId,
         },
       })
     }

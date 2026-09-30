@@ -114,6 +114,7 @@ export async function POST(request) {
           vatPreset: d.vatPreset ?? 'standard',
           sortOrder: d.sortOrder ?? 0,
           active: d.active ?? true,
+          loyaltyRedeemable: d.loyaltyRedeemable ?? false,
         },
       })
       await replaceMenuItemModifiers(

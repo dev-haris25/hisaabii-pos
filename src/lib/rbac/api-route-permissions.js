@@ -47,6 +47,15 @@ const ROUTE_PERMISSIONS = [
     },
   },
   {
+    pattern: /^\/loyalty/,
+    methods: {
+      GET: { action: 'read', subject: 'Loyalty' },
+      PATCH: { action: 'update', subject: 'Loyalty' },
+      POST: { action: 'update', subject: 'Loyalty' },
+      DELETE: { action: 'delete', subject: 'Loyalty' },
+    },
+  },
+  {
     pattern: /^\/stock\/days/,
     methods: {
       GET: { action: 'read', subject: 'StockItem' },
@@ -78,6 +87,12 @@ const ROUTE_PERMISSIONS = [
   },
   {
     pattern: /^\/pos\/coupons/,
+    methods: {
+      POST: { action: 'create', subject: 'Pos' },
+    },
+  },
+  {
+    pattern: /^\/pos\/loyalty/,
     methods: {
       POST: { action: 'create', subject: 'Pos' },
     },

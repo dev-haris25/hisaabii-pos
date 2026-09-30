@@ -86,7 +86,7 @@ export default async function InvoicesPage({ params, searchParams }) {
     defaultLimit: 10,
   })
 
-  const [total, rows, profile] = await Promise.all([
+  const [total, rows, profile, loyaltySettings] = await Promise.all([
     prisma.invoice.count({ where }),
     prisma.invoice.findMany({
       where,
@@ -105,6 +105,7 @@ export default async function InvoicesPage({ params, searchParams }) {
         zatcaStatus: true,
         zatcaLastError: true,
         qrCode: true,
+        loyaltyPointsAwarded: true,
         createdByStaff: { select: { id: true, name: true } },
         kitchenOrder: { select: { orderNumber: true, status: true } },
         creditNotes: {
@@ -122,6 +123,10 @@ export default async function InvoicesPage({ params, searchParams }) {
     prisma.businessProfile.findUnique({
       where: { id: user.businessProfileId },
       select: { id: true, logoStoragePath: true, updatedAt: true },
+    }),
+    prisma.loyaltySettings.findUnique({
+      where: { businessProfileId: user.businessProfileId },
+      select: { enabled: true },
     }),
   ])
 
@@ -143,6 +148,7 @@ export default async function InvoicesPage({ params, searchParams }) {
         }}
         logoUrl={restaurantLogoPreviewUrl(profile)}
         cashierWindowOnly={isCashier}
+        loyaltyEnabled={loyaltySettings?.enabled === true}
       />
     </Suspense>
   )

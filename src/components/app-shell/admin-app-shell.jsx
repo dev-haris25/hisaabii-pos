@@ -20,6 +20,7 @@ import {
   UserCircle,
   Warehouse,
   TicketPercent,
+  Gift,
   X,
 } from 'lucide-react'
 import Image from 'next/image'
@@ -165,6 +166,7 @@ function AdminAppShellInner({
     restaurants: pathname.startsWith('/restaurants'),
     hr: pathname.startsWith('/hr'),
     reports: pathname.startsWith('/reports'),
+    loyalty: pathname.startsWith('/loyalty'),
   }))
 
   const openSidebarSection = useCallback((sectionId) => {
@@ -178,6 +180,7 @@ function AdminAppShellInner({
       restaurants: false,
       hr: false,
       reports: false,
+      loyalty: false,
     })
   }, [])
 
@@ -300,6 +303,16 @@ function AdminAppShellInner({
         icon: TicketPercent,
       },
       {
+        id: 'loyalty',
+        labelKey: 'navLoyalty',
+        icon: Gift,
+        isGroupActive: (p) => p === '/loyalty' || p.startsWith('/loyalty/'),
+        children: [
+          { href: '/loyalty/customers', labelKey: 'subLoyaltyCustomers' },
+          { href: '/loyalty/settings', labelKey: 'subLoyaltySettings' },
+        ],
+      },
+      {
         id: 'invoices',
         labelKey: 'navInvoices',
         icon: FileText,
@@ -397,6 +410,7 @@ function AdminAppShellInner({
       if (pathname.startsWith('/reports')) next.reports = true
       if (pathname.startsWith('/restaurants')) next.restaurants = true
       if (pathname.startsWith('/hr')) next.hr = true
+      if (pathname.startsWith('/loyalty')) next.loyalty = true
       return next
     })
   }, [pathname])

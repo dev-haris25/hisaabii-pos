@@ -32,9 +32,11 @@ function moneyString(value) {
  *   zatcaStatus: string | null
  *   zatcaLastError: string | null
  *   qrCode: string | null
+ *   loyaltyPointsAwarded?: boolean | null
  *   createdByStaff?: { id: string, name: string } | null
  *   creditNotes?: Array<{ id: string, creditNoteNumber: string }>
  *   debitNotes?: Array<{ id: string, debitNoteNumber: string }>
+ *   kitchenOrder?: { orderNumber?: number | null } | null
  * }} row
  */
 export function mapInvoiceListItemToJson(row) {
@@ -50,6 +52,7 @@ export function mapInvoiceListItemToJson(row) {
     zatcaStatus: row.zatcaStatus,
     zatcaLastError: row.zatcaLastError,
     hasQr: Boolean(row.qrCode?.trim()),
+    loyaltyPointsAwarded: row.loyaltyPointsAwarded === true,
     staffName: row.createdByStaff?.name ?? null,
     staffId: row.createdByStaff?.id ?? null,
     orderNumber: row.kitchenOrder?.orderNumber ?? null,

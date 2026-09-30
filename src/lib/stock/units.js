@@ -109,11 +109,13 @@ export function formatQtyString(n) {
 }
 
 /**
- * Display label for unit (L for litre).
+ * Display label for unit (L for litre; kg/piece shown as kg(s) / piece(s)).
  * @param {StockUnit} unit
  */
 export function stockUnitLabel(unit) {
   if (unit === 'l') return 'L'
+  if (unit === 'kg') return 'kg(s)'
+  if (unit === 'piece') return 'piece(s)'
   return unit
 }
 

@@ -62,6 +62,7 @@ export async function mapMenuCategoriesWithActiveCounts(rows) {
  *   price: string
  *   vatPreset: string
  *   active: boolean
+ *   loyaltyRedeemable?: boolean
  *   sortOrder: number
  *   imageUrl: string | null
  *   categoryId: string | null
@@ -106,6 +107,7 @@ export function mapMenuItemToJson(row) {
     price: row.price,
     vatPreset: row.vatPreset,
     active: row.active,
+    loyaltyRedeemable: row.loyaltyRedeemable === true,
     sortOrder: row.sortOrder,
     hasImage,
     // Authenticated serve URL (DB `imageUrl` holds relative UPLOADS_DIR key).

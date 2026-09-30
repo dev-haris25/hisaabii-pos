@@ -373,6 +373,7 @@ export function MenuItemFormView({ mode, itemId }) {
   const [categoryId, setCategoryId] = useState('')
   const [sortOrder, setSortOrder] = useState('0')
   const [active, setActive] = useState(true)
+  const [loyaltyRedeemable, setLoyaltyRedeemable] = useState(false)
   const [formError, setFormError] = useState('')
   const [fieldErrors, setFieldErrors] = useState(
     /** @type {Record<string, string>} */ ({}),
@@ -464,6 +465,7 @@ export function MenuItemFormView({ mode, itemId }) {
     setCategoryId(item.categoryId ?? '')
     setSortOrder(String(item.sortOrder ?? 0))
     setActive(item.active !== false)
+    setLoyaltyRedeemable(item.loyaltyRedeemable === true)
     setImageNext(null)
     setVariantGroups(
       (item.variantGroups ?? []).map((group) => ({
@@ -520,6 +522,7 @@ export function MenuItemFormView({ mode, itemId }) {
         categoryId: categoryId || null,
         sortOrder: Number.parseInt(sortOrder, 10) || 0,
         active,
+        loyaltyRedeemable,
         variantGroups: variantGroups.map((group) => ({
           nameAr: group.nameAr.trim(),
           nameEn: group.nameEn.trim() || null,
@@ -1096,6 +1099,23 @@ export function MenuItemFormView({ mode, itemId }) {
                 ))}
               </div>
             </fieldset>
+
+            <label className="flex cursor-pointer items-start gap-hisabi-md">
+              <input
+                type="checkbox"
+                className="mt-1 size-5 accent-hisabi-primary"
+                checked={loyaltyRedeemable}
+                onChange={(e) => setLoyaltyRedeemable(e.target.checked)}
+              />
+              <span className="min-w-0">
+                <span className="type-body-md block text-hisabi-on-surface">
+                  {t('loyaltyRedeemableLabel')}
+                </span>
+                <span className="type-body-sm text-hisabi-on-surface-variant">
+                  {t('loyaltyRedeemableHint')}
+                </span>
+              </span>
+            </label>
           </MenuItemFormSection>
 
           <MenuItemFormSection
