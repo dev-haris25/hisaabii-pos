@@ -35,6 +35,7 @@ import {
 import { menuItemInclude } from '@/lib/menu/map-menu-json'
 import { resolveCheckoutModifiers } from '@/lib/menu/resolve-checkout-modifiers'
 import { createKitchenOrderInTx } from '@/lib/orders/create-kitchen-order'
+import { primaryKitchenOrderInclude } from '@/lib/orders/primary-kitchen-order'
 import {
   isDiscountWithinCap,
   isValidDiscountPercent,
@@ -179,15 +180,115 @@ async function allocateInvoiceNumber(businessProfileId, tx) {
 }
 
 /**
+ * @param {unknown} ids
+ * @returns {string[]}
+ */
+function normalizeSettlementKitchenOrderIds(ids) {
+  if (!Array.isArray(ids)) return []
+  const out = []
+  const seen = new Set()
+  for (const raw of ids) {
+    const id = typeof raw === 'string' ? raw.trim() : ''
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
+/**
+ * Tenant + invoice-link checks for E-Waiter settlement tickets.
+ * Re-run inside the transaction before linking.
+ *
+ * @param {string} profileId
+ * @param {string[]} kitchenOrderIds
+ * @param {import('@/generated/prisma/client').Prisma.TransactionClient | typeof prisma} [db]
+ */
+async function assertSettlementKitchenOrders(
+  profileId,
+  kitchenOrderIds,
+  db = prisma,
+) {
+  if (kitchenOrderIds.length === 0) {
+    throwCheckoutError(
+      'SETTLEMENT_KITCHEN_ORDERS_REQUIRED',
+      'Settlement requires at least one kitchen order',
+    )
+  }
+
+  const rows = await db.kitchenOrder.findMany({
+    where: { id: { in: kitchenOrderIds } },
+    select: {
+      id: true,
+      businessProfileId: true,
+      invoiceId: true,
+      status: true,
+    },
+  })
+
+  if (rows.length !== kitchenOrderIds.length) {
+    throwCheckoutError(
+      'SETTLEMENT_KITCHEN_ORDER_NOT_FOUND',
+      'One or more kitchen orders were not found',
+    )
+  }
+
+  for (const row of rows) {
+    if (row.businessProfileId !== profileId) {
+      throwCheckoutError(
+        'SETTLEMENT_KITCHEN_ORDER_WRONG_RESTAURANT',
+        'Kitchen order does not belong to this restaurant',
+      )
+    }
+    if (row.invoiceId) {
+      throwCheckoutError(
+        'SETTLEMENT_KITCHEN_ORDER_ALREADY_INVOICED',
+        'Kitchen order is already linked to an invoice',
+      )
+    }
+    if (row.status === 'cancelled') {
+      throwCheckoutError(
+        'SETTLEMENT_KITCHEN_ORDER_CANCELLED',
+        'Cancelled kitchen orders cannot be settled',
+      )
+    }
+  }
+}
+
+/**
  * Create completed simplified invoice, sign + report to ZATCA (Phase-2 QR).
+ *
+ * Normal POS path: omit `settlement` — creates one new KitchenOrder for the invoice.
+ * E-Waiter settlement: pass `settlement.existingKitchenOrderIds` to skip ticket
+ * creation and link those open tickets to the new invoice instead.
  *
  * @param {{
  *   profileId: string
  *   staffId: string
  *   body: z.infer<typeof posCheckoutBodySchema>
+ *   settlement?: {
+ *     existingKitchenOrderIds: string[]
+ *   } | null
  * }} opts
  */
-export async function checkoutPosSale({ profileId, staffId, body }) {
+export async function checkoutPosSale({
+  profileId,
+  staffId,
+  body,
+  settlement = null,
+}) {
+  const settlementKitchenOrderIds = normalizeSettlementKitchenOrderIds(
+    settlement?.existingKitchenOrderIds,
+  )
+  /** Explicit settlement object opts into link-existing mode (must include ids). */
+  const isSettlementMode = settlement != null
+  if (isSettlementMode && settlementKitchenOrderIds.length === 0) {
+    throwCheckoutError(
+      'SETTLEMENT_KITCHEN_ORDERS_REQUIRED',
+      'Settlement requires at least one kitchen order',
+    )
+  }
+
   const profile = await prisma.businessProfile.findUnique({
     where: { id: profileId },
   })
@@ -204,6 +305,10 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
     throw Object.assign(new Error('ZATCA not onboarded'), {
       code: 'ZATCA_NOT_ONBOARDED',
     })
+  }
+
+  if (isSettlementMode) {
+    await assertSettlementKitchenOrders(profileId, settlementKitchenOrderIds)
   }
 
   const itemIds = [...new Set(body.lines.map((l) => l.menuItemId))]
@@ -254,26 +359,30 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
     recipesByMenuItemId,
   )
 
-  const fromMain = await excludeBulkStockNeeds(prisma, profileId, needs)
-  const shortfalls = fromMain.filter((n) => n.shortfall)
-  if (shortfalls.length > 0) {
-    if (bizSettings.allowNegativeStock === true) {
-      // Restaurant already allows negative stock — continue without a confirm modal.
-    } else if (body.allowNegativeStock === true) {
-      // Cashier confirmed via POS modal: persist the restaurant setting, then continue.
-      await prisma.businessSettings.upsert({
-        where: { businessProfileId: profileId },
-        create: {
-          businessProfileId: profileId,
-          allowNegativeStock: true,
-        },
-        update: { allowNegativeStock: true },
-      })
-    } else {
-      throw Object.assign(new Error('Confirm allow negative stock'), {
-        code: 'INSUFFICIENT_STOCK_CONFIRM',
-        shortfalls,
-      })
+  // Settlement: rounds may already have deducted stock at kitchen ready —
+  // do not block settle on the same recipe qty again.
+  if (!isSettlementMode) {
+    const fromMain = await excludeBulkStockNeeds(prisma, profileId, needs)
+    const shortfalls = fromMain.filter((n) => n.shortfall)
+    if (shortfalls.length > 0) {
+      if (bizSettings.allowNegativeStock === true) {
+        // Restaurant already allows negative stock — continue without a confirm modal.
+      } else if (body.allowNegativeStock === true) {
+        // Cashier confirmed via POS modal: persist the restaurant setting, then continue.
+        await prisma.businessSettings.upsert({
+          where: { businessProfileId: profileId },
+          create: {
+            businessProfileId: profileId,
+            allowNegativeStock: true,
+          },
+          update: { allowNegativeStock: true },
+        })
+      } else {
+        throw Object.assign(new Error('Confirm allow negative stock'), {
+          code: 'INSUFFICIENT_STOCK_CONFIRM',
+          shortfalls,
+        })
+      }
     }
   }
 
@@ -840,22 +949,47 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
       })
     }
 
-    await createKitchenOrderInTx(tx, {
-      businessProfileId: profileId,
-      invoiceId: created.id,
-      lines: body.lines.map((l, idx) => {
-        const item = byId.get(l.menuItemId)
-        const priced = pricedLines[idx]
-        return {
-          menuItemId: item.id,
-          nameAr: item.nameAr,
-          nameEn: item.nameEn,
-          quantity: priced.quantity,
-          lineNote: priced.lineNote,
-          modifiersSnapshot: priced.modifiersSnapshot,
-        }
-      }),
-    })
+    if (isSettlementMode) {
+      // Re-check inside the tx so a concurrent settle/cancel cannot race past the
+      // pre-tx assert, then attach existing E-Waiter rounds to this invoice.
+      await assertSettlementKitchenOrders(
+        profileId,
+        settlementKitchenOrderIds,
+        tx,
+      )
+      const linked = await tx.kitchenOrder.updateMany({
+        where: {
+          id: { in: settlementKitchenOrderIds },
+          businessProfileId: profileId,
+          invoiceId: null,
+          status: { not: 'cancelled' },
+        },
+        data: { invoiceId: created.id },
+      })
+      if (linked.count !== settlementKitchenOrderIds.length) {
+        throwCheckoutError(
+          'SETTLEMENT_KITCHEN_ORDER_LINK_FAILED',
+          'Could not link all kitchen orders to the invoice',
+        )
+      }
+    } else {
+      await createKitchenOrderInTx(tx, {
+        businessProfileId: profileId,
+        invoiceId: created.id,
+        lines: body.lines.map((l, idx) => {
+          const item = byId.get(l.menuItemId)
+          const priced = pricedLines[idx]
+          return {
+            menuItemId: item.id,
+            nameAr: item.nameAr,
+            nameEn: item.nameEn,
+            quantity: priced.quantity,
+            lineNote: priced.lineNote,
+            modifiersSnapshot: priced.modifiersSnapshot,
+          }
+        }),
+      })
+    }
     return created
   }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
 
@@ -908,7 +1042,7 @@ export async function checkoutPosSale({ profileId, staffId, body }) {
     where: { id: invoice.id },
     include: {
       lines: { orderBy: { sortOrder: 'asc' } },
-      kitchenOrder: { select: { orderNumber: true, status: true } },
+      kitchenOrders: primaryKitchenOrderInclude(),
     },
   })
   return fresh

@@ -8,6 +8,7 @@ import {
   FileBarChart,
   FileText,
   LayoutDashboard,
+  LayoutGrid,
   LogOut,
   Menu,
   Monitor,
@@ -21,10 +22,12 @@ import {
   Warehouse,
   TicketPercent,
   Gift,
+  Table2,
   X,
 } from 'lucide-react'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
+import { useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
@@ -33,6 +36,7 @@ import { useIsRtl } from '@/components/auth/use-is-rtl'
 import { GlobalSearch } from '@/components/app-shell/global-search'
 import { NotificationsBell } from '@/components/app-shell/notifications-bell'
 import { NotificationToastListener } from '@/components/app-shell/notification-toast-listener'
+import { TableSessionAlertToastListener } from '@/components/app-shell/table-session-alert-toast-listener'
 import { RestaurantSwitcher } from '@/components/app-shell/restaurant-switcher'
 import { ZatcaOnboardingModal } from '@/components/app-shell/zatca-onboarding-modal'
 import { ProductTourProvider } from '@/components/product-tour/product-tour-provider'
@@ -147,6 +151,7 @@ function AdminAppShellInner({
 }) {
   const t = useTranslations('AppShell')
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const router = useRouter()
   const queryClient = useQueryClient()
   const desktop = useIsHisabiDesktop()
@@ -216,6 +221,19 @@ function AdminAppShellInner({
   })
   const lowStockCount = lowStockData?.count ?? 0
 
+  const canReadTableSessions =
+    hasFullAccess(ability) || Boolean(ability?.can('read', 'TableSession'))
+  const { data: activeTablesData } = useQuery({
+    queryKey: ['tables-active-exists', activeBusinessProfileId],
+    queryFn: async () => authGet('/tables/active-exists'),
+    enabled:
+      hasBusinessProfile === true &&
+      Boolean(activeBusinessProfileId) &&
+      canReadTableSessions,
+    staleTime: 30_000,
+  })
+  const hasActiveTables = activeTablesData?.hasActiveTables === true
+
   const skippedEffective =
     typeof liveZatcaSkipped === 'boolean'
       ? liveZatcaSkipped
@@ -260,6 +278,12 @@ function AdminAppShellInner({
         href: '/pos',
         labelKey: 'navPos',
         icon: Monitor,
+      },
+      {
+        id: 'pos-tables',
+        href: '/pos?tab=tables',
+        labelKey: 'navOpenTables',
+        icon: LayoutGrid,
       },
       {
         id: 'kitchen',
@@ -311,6 +335,12 @@ function AdminAppShellInner({
           { href: '/loyalty/customers', labelKey: 'subLoyaltyCustomers' },
           { href: '/loyalty/settings', labelKey: 'subLoyaltySettings' },
         ],
+      },
+      {
+        id: 'tables',
+        href: '/tables',
+        labelKey: 'navManageTables',
+        icon: Table2,
       },
       {
         id: 'invoices',
@@ -379,6 +409,7 @@ function AdminAppShellInner({
     const sidebarOpts = { isRestaurantOwner }
     return all
       .map((item) => {
+        if (item.id === 'pos-tables' && !hasActiveTables) return null
         if (item.children?.length) {
           const children = filterSidebarChildren(
             ability,
@@ -392,7 +423,7 @@ function AdminAppShellInner({
         return item
       })
       .filter(Boolean)
-  }, [ability, isRestaurantOwner])
+  }, [ability, hasActiveTables, isRestaurantOwner])
 
   useEffect(() => {
     // Close drawer / search sheet on navigation (Hisabi ClientPortalShell).
@@ -482,8 +513,25 @@ function AdminAppShellInner({
   }
 
   function isActive(href, exact) {
-    if (exact) return pathname === href
-    return pathname === href || pathname.startsWith(`${href}/`)
+    const [pathPart, queryPart] = href.split('?')
+    const pathMatch = exact
+      ? pathname === pathPart
+      : pathname === pathPart || pathname.startsWith(`${pathPart}/`)
+    if (!pathMatch) return false
+
+    if (queryPart) {
+      const want = new URLSearchParams(queryPart)
+      for (const [key, value] of want.entries()) {
+        if (searchParams.get(key) !== value) return false
+      }
+      return true
+    }
+
+    // Plain /pos should not stay active when Tables tab is open.
+    if (pathPart === '/pos' && searchParams.get('tab') === 'tables') {
+      return false
+    }
+    return true
   }
 
   function toggleGroup(id) {
@@ -494,6 +542,7 @@ function AdminAppShellInner({
     <ProductTourProvider shell={productTourShell}>
     <div className="type-body-md text-hisabi-on-surface min-h-screen bg-hisabi-background">
       <NotificationToastListener disabled={!hasBusinessProfile} />
+      <TableSessionAlertToastListener disabled={!hasBusinessProfile} />
       {mobileNavOpen ? (
         <button
           type="button"

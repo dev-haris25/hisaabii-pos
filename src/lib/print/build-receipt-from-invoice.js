@@ -1,4 +1,5 @@
 import { formatLineModifierDetails } from '@/lib/menu/item-modifiers'
+import { primaryKitchenOrder } from '@/lib/orders/primary-kitchen-order'
 
 /**
  * Build the print-bridge receipt DTO from a stored invoice.
@@ -84,7 +85,7 @@ export function buildReceiptPayloadFromInvoice({
     sellerEmail: invoice.sellerEmail ?? null,
     sellerPhone: invoice.sellerPhone ?? null,
     invoiceNumber: invoice.invoiceNumber,
-    orderNumber: invoice.kitchenOrder?.orderNumber ?? null,
+    orderNumber: primaryKitchenOrder(invoice)?.orderNumber ?? null,
     invoiceDate: invoice.invoiceDate.toISOString(),
     staffName: invoice.createdByStaff?.name || null,
     lines,

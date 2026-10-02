@@ -22,6 +22,7 @@ import {
   cancelKitchenOrderForInvoice,
   refreshKitchenOrderAfterEdit,
 } from '@/lib/orders/sync-kitchen-order'
+import { primaryKitchenOrderInclude } from '@/lib/orders/primary-kitchen-order'
 import { prisma } from '@/lib/prisma'
 
 const repairLineSchema = z.object({
@@ -53,7 +54,7 @@ export async function GET(_request, context) {
       include: {
         lines: { orderBy: { sortOrder: 'asc' } },
         createdByStaff: { select: { id: true, name: true } },
-        kitchenOrder: { select: { orderNumber: true, status: true } },
+        kitchenOrders: primaryKitchenOrderInclude(),
       },
     })
     if (!invoice) return jsonError(404, 'NOT_FOUND', 'Invoice not found')
@@ -193,7 +194,7 @@ export async function PATCH(request, context) {
         include: {
           lines: { orderBy: { sortOrder: 'asc' } },
           createdByStaff: { select: { id: true, name: true } },
-          kitchenOrder: { select: { orderNumber: true, status: true } },
+          kitchenOrders: primaryKitchenOrderInclude(),
         },
       })
       await refreshKitchenOrderAfterEdit(tx, id, row.lines)

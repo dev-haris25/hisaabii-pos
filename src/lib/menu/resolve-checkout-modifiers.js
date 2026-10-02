@@ -98,5 +98,7 @@ export function resolveCheckoutModifiers(
     ),
     /** Resolved option ids after defaults (one per variant group). */
     variantOptionIds: resolvedOptionIds,
+    /** Validated customization ids. */
+    customizationIds: resolvedCustomIds,
   }
 }

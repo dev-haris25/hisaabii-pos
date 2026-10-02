@@ -5,6 +5,37 @@ import { hasNumberOrSpecial } from '@/lib/auth/password-rules'
 
 const logoBase64MaxChars = Math.ceil((MAX_COMPANY_LOGO_BYTES * 4) / 3)
 
+/** Optional CSS hex `#RRGGBB` — empty string / null clears the stored color. */
+const optionalBrandHex = z.preprocess((v) => {
+  if (v === undefined) return undefined
+  if (v == null) return null
+  const s = String(v).trim()
+  return s === '' ? null : s
+}, z.union([z.null(), z.string().regex(/^#[0-9A-Fa-f]{6}$/)]).optional())
+
+/**
+ * Optional finite number from JSON number or numeric string; '' / null → null.
+ * @param {number} min
+ * @param {number} max
+ */
+function optionalBoundedNumber(min, max) {
+  return z.preprocess((v) => {
+    if (v === undefined) return undefined
+    if (v == null || v === '') return null
+    const n = typeof v === 'number' ? v : Number(String(v).trim())
+    return Number.isFinite(n) ? n : v
+  }, z.union([z.null(), z.number().min(min).max(max)]).optional())
+}
+
+/** Optional positive integer meters (app suggests ~100–150; not a DB default). */
+const optionalRadiusMeters = z.preprocess((v) => {
+  if (v === undefined) return undefined
+  if (v == null || v === '') return null
+  const n =
+    typeof v === 'number' ? v : Number.parseInt(String(v).trim(), 10)
+  return Number.isFinite(n) ? n : v
+}, z.union([z.null(), z.number().int().min(1).max(50000)]).optional())
+
 export const registerBodySchema = z
   .object({
     name: z.string().trim().min(1).max(200),
@@ -87,6 +118,14 @@ export const businessProfileBodySchema = z
       .optional()
       .nullable(),
     preserveLogo: z.boolean().optional(),
+    brandPrimaryColor: optionalBrandHex,
+    brandSecondaryColor: optionalBrandHex,
+    brandAccentColor: optionalBrandHex,
+    brandBackgroundColor: optionalBrandHex,
+    brandTextColor: optionalBrandHex,
+    locationLat: optionalBoundedNumber(-90, 90),
+    locationLng: optionalBoundedNumber(-180, 180),
+    locationRadiusMeters: optionalRadiusMeters,
   })
   .refine(
     (d) => {

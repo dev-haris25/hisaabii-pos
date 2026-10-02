@@ -10,6 +10,7 @@
  *     nameAr: string
  *     nameEn?: string | null
  *     priceChange: string
+ *     calories?: number | null
  *     isDefault?: boolean
  *   }>
  * }> | undefined} variantGroups
@@ -45,6 +46,11 @@ export async function replaceMenuItemModifiers(
               nameAr: option.nameAr,
               nameEn: option.nameEn?.trim() || null,
               priceChange: option.priceChange,
+              calories:
+                typeof option.calories === 'number' &&
+                Number.isFinite(option.calories)
+                  ? Math.round(option.calories)
+                  : null,
               isDefault: hasDefault ? Boolean(option.isDefault) : oi === 0,
               sortOrder: oi,
             })),

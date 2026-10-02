@@ -25,10 +25,20 @@ export const menuCategoryBodySchema = z.object({
   active: z.boolean().optional().default(true),
 })
 
+const optionalCalories = z.preprocess((v) => {
+  if (v == null || v === '') return null
+  if (typeof v === 'number') return Number.isFinite(v) ? Math.round(v) : v
+  const s = String(v).trim()
+  if (!s) return null
+  const n = Number.parseInt(s, 10)
+  return Number.isFinite(n) ? n : v
+}, z.number().int().min(0).max(999999).nullable().optional())
+
 const variantOptionBodySchema = z.object({
   nameAr: z.string().trim().min(1).max(200),
   nameEn: z.string().trim().max(200).optional().nullable(),
   priceChange: moneyString,
+  calories: optionalCalories,
   isDefault: z.boolean().optional().default(false),
 })
 
@@ -53,6 +63,7 @@ export const menuItemBodySchema = z.object({
   sortOrder: z.number().int().min(0).max(9999).optional().default(0),
   active: z.boolean().optional().default(true),
   loyaltyRedeemable: z.boolean().optional().default(false),
+  calories: optionalCalories,
   clearImage: z.coerce.boolean().optional().default(false),
   imageBase64: optionalImageBase64,
   imageMimeType: optionalImageMime,

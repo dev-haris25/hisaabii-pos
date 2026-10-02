@@ -158,6 +158,14 @@ export function buildBusinessProfileConfirmSnapshot(state) {
  *   defaultVat: string
  *   useCustomRate: boolean
  *   customVatPercent: string
+ *   brandPrimaryColor?: string
+ *   brandSecondaryColor?: string
+ *   brandAccentColor?: string
+ *   brandBackgroundColor?: string
+ *   brandTextColor?: string
+ *   locationLat?: string | number | null
+ *   locationLng?: string | number | null
+ *   locationRadiusMeters?: string | number | null
  * }} state
  */
 export function buildBusinessProfileApiBody(invoiceFields, state) {
@@ -211,5 +219,66 @@ export function buildBusinessProfileApiBody(invoiceFields, state) {
     defaultVatPreset: state.defaultVat,
     useCustomVatRate: state.useCustomRate,
     customVatPercent: state.useCustomRate ? state.customVatPercent : null,
+    ...(state.brandPrimaryColor !== undefined
+      ? {
+          brandPrimaryColor:
+            String(state.brandPrimaryColor ?? '').trim() || null,
+        }
+      : {}),
+    ...(state.brandSecondaryColor !== undefined
+      ? {
+          brandSecondaryColor:
+            String(state.brandSecondaryColor ?? '').trim() || null,
+        }
+      : {}),
+    ...(state.brandAccentColor !== undefined
+      ? {
+          brandAccentColor:
+            String(state.brandAccentColor ?? '').trim() || null,
+        }
+      : {}),
+    ...(state.brandBackgroundColor !== undefined
+      ? {
+          brandBackgroundColor:
+            String(state.brandBackgroundColor ?? '').trim() || null,
+        }
+      : {}),
+    ...(state.brandTextColor !== undefined
+      ? {
+          brandTextColor: String(state.brandTextColor ?? '').trim() || null,
+        }
+      : {}),
+    ...(state.locationLat !== undefined
+      ? { locationLat: optionalNumberOrNull(state.locationLat) }
+      : {}),
+    ...(state.locationLng !== undefined
+      ? { locationLng: optionalNumberOrNull(state.locationLng) }
+      : {}),
+    ...(state.locationRadiusMeters !== undefined
+      ? {
+          locationRadiusMeters: optionalIntOrNull(state.locationRadiusMeters),
+        }
+      : {}),
   }
+}
+
+/**
+ * @param {unknown} v
+ * @returns {number | null}
+ */
+function optionalNumberOrNull(v) {
+  if (v == null || v === '') return null
+  const n = typeof v === 'number' ? v : Number(String(v).trim())
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * @param {unknown} v
+ * @returns {number | null}
+ */
+function optionalIntOrNull(v) {
+  if (v == null || v === '') return null
+  const n =
+    typeof v === 'number' ? Math.trunc(v) : Number.parseInt(String(v).trim(), 10)
+  return Number.isFinite(n) ? n : null
 }

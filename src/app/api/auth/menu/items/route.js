@@ -115,6 +115,7 @@ export async function POST(request) {
           sortOrder: d.sortOrder ?? 0,
           active: d.active ?? true,
           loyaltyRedeemable: d.loyaltyRedeemable ?? false,
+          calories: d.calories ?? null,
         },
       })
       await replaceMenuItemModifiers(

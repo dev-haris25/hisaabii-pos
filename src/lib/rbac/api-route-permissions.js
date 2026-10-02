@@ -8,6 +8,12 @@
  */
 const ROUTE_PERMISSIONS = [
   {
+    pattern: /^\/orders\/[^/]+\/cancel$/,
+    methods: {
+      POST: { action: 'update', subject: 'KitchenBoard' },
+    },
+  },
+  {
     pattern: /^\/orders\/[^/]+\/status/,
     methods: {
       PATCH: { action: 'update', subject: 'KitchenBoard' },
@@ -53,6 +59,59 @@ const ROUTE_PERMISSIONS = [
       PATCH: { action: 'update', subject: 'Loyalty' },
       POST: { action: 'update', subject: 'Loyalty' },
       DELETE: { action: 'delete', subject: 'Loyalty' },
+    },
+  },
+  // E-Waiter tables (admin).
+  {
+    // Existence check for Open tables / POS Tables tab (cashiers included).
+    pattern: /^\/tables\/active-exists$/,
+    methods: {
+      GET: { action: 'read', subject: 'TableSession' },
+    },
+  },
+  {
+    // Floor action for Cashiers (TableSession) — waiter flags live on Table but
+    // live Tables view is gated by TableSession, not ETable CRUD.
+    pattern: /^\/tables\/[^/]+\/resolve-waiter-call$/,
+    methods: {
+      POST: { action: 'update', subject: 'TableSession' },
+    },
+  },
+  {
+    pattern: /^\/tables\/[^/]+\/qr$/,
+    methods: {
+      GET: { action: 'read', subject: 'ETable' },
+    },
+  },
+  {
+    pattern: /^\/tables\/[^/]+\/regenerate-qr$/,
+    methods: {
+      POST: { action: 'update', subject: 'ETable' },
+    },
+  },
+  {
+    pattern: /^\/tables/,
+    methods: {
+      GET: { action: 'read', subject: 'ETable' },
+      POST: { action: 'create', subject: 'ETable' },
+      PATCH: { action: 'update', subject: 'ETable' },
+      DELETE: { action: 'delete', subject: 'ETable' },
+    },
+  },
+  {
+    pattern: /^\/table-sessions\/[^/]+\/(settle|close|cancel|reopen-ordering)/,
+    methods: {
+      POST: { action: 'update', subject: 'TableSession' },
+      PATCH: { action: 'update', subject: 'TableSession' },
+    },
+  },
+  {
+    pattern: /^\/table-sessions/,
+    methods: {
+      GET: { action: 'read', subject: 'TableSession' },
+      POST: { action: 'create', subject: 'TableSession' },
+      PATCH: { action: 'update', subject: 'TableSession' },
+      DELETE: { action: 'delete', subject: 'TableSession' },
     },
   },
   {

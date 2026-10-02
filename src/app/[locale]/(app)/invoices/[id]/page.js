@@ -9,6 +9,7 @@ import { requireInvoiceAppUser } from '@/lib/auth/require-invoice-app-user'
 import { sessionNeedsCashierDocumentWindow } from '@/lib/auth/require-invoice-restaurant'
 import { WHERE_NOT_DELETED } from '@/lib/db/soft-delete-scope'
 import { mapInvoiceDetailToJson } from '@/lib/invoices/map-invoice-json'
+import { primaryKitchenOrderInclude } from '@/lib/orders/primary-kitchen-order'
 import { restaurantLogoPreviewUrl } from '@/lib/print/load-receipt-logo'
 import { prisma } from '@/lib/prisma'
 
@@ -34,7 +35,7 @@ export default async function InvoiceDetailPage({ params }) {
       include: {
         lines: { orderBy: { sortOrder: 'asc' } },
         createdByStaff: { select: { id: true, name: true } },
-        kitchenOrder: { select: { orderNumber: true, status: true } },
+        kitchenOrders: primaryKitchenOrderInclude(),
         creditNotes: {
           where: WHERE_NOT_DELETED,
           include: {

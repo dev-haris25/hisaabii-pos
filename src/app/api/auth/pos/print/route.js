@@ -11,6 +11,7 @@ import { WHERE_NOT_DELETED } from '@/lib/db/soft-delete-scope'
 import { buildReceiptPayloadFromInvoice } from '@/lib/print/build-receipt-from-invoice'
 import { buildReceiptPayloadFromNote } from '@/lib/print/build-receipt-from-note'
 import { loadReceiptLogoPngBase64 } from '@/lib/print/load-receipt-logo'
+import { primaryKitchenOrderInclude } from '@/lib/orders/primary-kitchen-order'
 import {
   RECEIPT_COPY_KINDS,
   receiptCopyLabel,
@@ -71,7 +72,7 @@ export async function POST(request) {
           include: {
             lines: { orderBy: { sortOrder: 'asc' } },
             createdByStaff: { select: { name: true } },
-            kitchenOrder: { select: { orderNumber: true } },
+            kitchenOrders: primaryKitchenOrderInclude({ withStatus: false }),
           },
         })
         if (!invoice) {

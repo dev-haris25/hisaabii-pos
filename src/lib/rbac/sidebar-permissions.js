@@ -10,6 +10,7 @@ export const SIDEBAR_HREF_PERMISSIONS = {
   '/restaurants': { subject: 'BusinessProfile', action: 'read' },
   '/restaurants/create': { subject: 'BusinessProfile', action: 'create' },
   '/pos': { subject: 'Pos', action: 'read' },
+  '/pos?tab=tables': { subject: 'TableSession', action: 'read' },
   '/kitchen': { subject: 'KitchenBoard', action: 'read' },
   '/queue': { subject: 'KitchenBoard', action: 'read' },
   '/menu': { subject: 'MenuItem', action: 'read' },
@@ -26,6 +27,9 @@ export const SIDEBAR_HREF_PERMISSIONS = {
   '/loyalty': { subject: 'Loyalty', action: 'read' },
   '/loyalty/settings': { subject: 'Loyalty', action: 'read' },
   '/loyalty/customers': { subject: 'Loyalty', action: 'read' },
+  // E-Waiter: manage tables & QR (admins/managers). Floor is /pos?tab=tables.
+  '/tables': { subject: 'ETable', action: 'read' },
+  '/table-sessions': { subject: 'TableSession', action: 'read' },
   '/invoices': { subject: 'Invoice', action: 'read' },
   '/invoices/credit-notes': { subject: 'CreditNote', action: 'read' },
   '/invoices/debit-notes': { subject: 'DebitNote', action: 'read' },
@@ -104,6 +108,7 @@ export function getFirstAccessibleRouteFromAbility(ability, options = {}) {
   const order = [
     '/',
     '/pos',
+    '/pos?tab=tables',
     '/invoices',
     '/menu',
     '/stock',

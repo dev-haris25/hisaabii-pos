@@ -18,6 +18,7 @@ import {
   canEditOrCancelInvoice,
   canRepairFailedInvoice,
 } from '@/lib/notes/can-edit-or-cancel-invoice'
+import { primaryKitchenOrderInclude } from '@/lib/orders/primary-kitchen-order'
 import { restaurantLogoPreviewUrl } from '@/lib/print/load-receipt-logo'
 import { prisma } from '@/lib/prisma'
 
@@ -42,7 +43,7 @@ export default async function InvoiceEditPage({ params }) {
     include: {
       lines: { orderBy: { sortOrder: 'asc' } },
       createdByStaff: { select: { id: true, name: true } },
-      kitchenOrder: { select: { orderNumber: true, status: true } },
+      kitchenOrders: primaryKitchenOrderInclude(),
     },
   })
   const canCorrection = canEditOrCancelInvoice(invoice)

@@ -81,6 +81,7 @@ function emptyOption(isDefault = false) {
     nameAr: '',
     nameEn: '',
     priceChange: '0',
+    calories: '',
     isDefault,
   }
 }
@@ -367,6 +368,7 @@ export function MenuItemFormView({ mode, itemId }) {
   const [nameAr, setNameAr] = useState('')
   const [nameEn, setNameEn] = useState('')
   const [price, setPrice] = useState('')
+  const [calories, setCalories] = useState('')
   const [vatPreset, setVatPreset] = useState(
     /** @type {'standard'|'zero'|'exempt'} */ ('standard'),
   )
@@ -461,6 +463,9 @@ export function MenuItemFormView({ mode, itemId }) {
     setNameArBaseline(item.nameAr ?? '')
     setNameEnBaseline(item.nameEn ?? '')
     setPrice(item.price ?? '')
+    setCalories(
+      typeof item.calories === 'number' ? String(item.calories) : '',
+    )
     setVatPreset(item.vatPreset ?? 'standard')
     setCategoryId(item.categoryId ?? '')
     setSortOrder(String(item.sortOrder ?? 0))
@@ -481,6 +486,10 @@ export function MenuItemFormView({ mode, itemId }) {
           nameArBaseline: option.nameAr ?? '',
           nameEnBaseline: option.nameEn ?? '',
           priceChange: String(option.priceChange ?? '0'),
+          calories:
+            typeof option.calories === 'number'
+              ? String(option.calories)
+              : '',
           isDefault: Boolean(option.isDefault),
         })),
       })),
@@ -518,6 +527,12 @@ export function MenuItemFormView({ mode, itemId }) {
         nameAr: nameAr.trim(),
         nameEn: nameEn.trim() || null,
         price: price.trim(),
+        calories: (() => {
+          const raw = calories.trim()
+          if (!raw) return null
+          const n = Number.parseInt(raw, 10)
+          return Number.isFinite(n) ? n : null
+        })(),
         vatPreset,
         categoryId: categoryId || null,
         sortOrder: Number.parseInt(sortOrder, 10) || 0,
@@ -526,12 +541,17 @@ export function MenuItemFormView({ mode, itemId }) {
         variantGroups: variantGroups.map((group) => ({
           nameAr: group.nameAr.trim(),
           nameEn: group.nameEn.trim() || null,
-          options: group.options.map((option) => ({
-            nameAr: option.nameAr.trim(),
-            nameEn: option.nameEn.trim() || null,
-            priceChange: option.priceChange.trim() || '0',
-            isDefault: Boolean(option.isDefault),
-          })),
+          options: group.options.map((option) => {
+            const calRaw = String(option.calories ?? '').trim()
+            const calN = calRaw ? Number.parseInt(calRaw, 10) : NaN
+            return {
+              nameAr: option.nameAr.trim(),
+              nameEn: option.nameEn.trim() || null,
+              priceChange: option.priceChange.trim() || '0',
+              calories: Number.isFinite(calN) ? calN : null,
+              isDefault: Boolean(option.isDefault),
+            }
+          }),
         })),
         customizations: customizations.map((row) => ({
           nameAr: row.nameAr.trim(),
@@ -594,6 +614,9 @@ export function MenuItemFormView({ mode, itemId }) {
     if (!/^\d+(\.\d{1,4})?$/.test(price.trim())) {
       errors.price = t('validationPrice')
     }
+    if (calories.trim() && !/^\d+$/.test(calories.trim())) {
+      errors.calories = t('validationCalories')
+    }
     for (const group of variantGroups) {
       let groupInvalid = false
       if (!group.nameAr.trim()) {
@@ -612,6 +635,11 @@ export function MenuItemFormView({ mode, itemId }) {
         }
         if (!/^\d+(\.\d{1,4})?$/.test(option.priceChange.trim())) {
           errors[`vo-price-${option.clientId}`] = t('validationPrice')
+          groupInvalid = true
+        }
+        const optCal = String(option.calories ?? '').trim()
+        if (optCal && !/^\d+$/.test(optCal)) {
+          errors[`vo-cal-${option.clientId}`] = t('validationCalories')
           groupInvalid = true
         }
       }
@@ -953,6 +981,54 @@ export function MenuItemFormView({ mode, itemId }) {
                   role="alert"
                 >
                   {fieldErrors.price}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-hisabi-xs">
+              <label
+                className={cn(
+                  'type-label-md text-hisabi-on-surface-variant block',
+                  alignDoc,
+                )}
+                htmlFor="item-calories"
+              >
+                {t('caloriesLabel')}
+              </label>
+              <input
+                id="item-calories"
+                inputMode="numeric"
+                value={calories}
+                onChange={(e) => {
+                  setCalories(e.target.value)
+                  clearFieldError('calories')
+                }}
+                placeholder={t('caloriesPlaceholder')}
+                dir="ltr"
+                className={cn(
+                  fieldClass,
+                  fieldErrors.calories && fieldInvalidClass,
+                )}
+                aria-invalid={fieldErrors.calories ? true : undefined}
+                aria-describedby={
+                  fieldErrors.calories
+                    ? 'item-calories-error'
+                    : 'item-calories-hint'
+                }
+              />
+              <p
+                id="item-calories-hint"
+                className="type-body-sm text-hisabi-on-surface-variant"
+              >
+                {t('caloriesHint')}
+              </p>
+              {fieldErrors.calories ? (
+                <p
+                  id="item-calories-error"
+                  className="type-body-sm text-hisabi-error"
+                  role="alert"
+                >
+                  {fieldErrors.calories}
                 </p>
               ) : null}
             </div>
@@ -1360,6 +1436,35 @@ export function MenuItemFormView({ mode, itemId }) {
                           dir="ltr"
                           alignDoc={alignDoc}
                         />
+                        <ModifierTextField
+                          id={`vo-cal-${option.clientId}`}
+                          label={t('optionCaloriesLabel')}
+                          error={fieldErrors[`vo-cal-${option.clientId}`] ?? ''}
+                          value={String(option.calories ?? '')}
+                          onChange={(next) => {
+                            setVariantGroups((prev) =>
+                              prev.map((g) =>
+                                g.clientId !== group.clientId
+                                  ? g
+                                  : {
+                                      ...g,
+                                      options: g.options.map((o) =>
+                                        o.clientId === option.clientId
+                                          ? { ...o, calories: next }
+                                          : o,
+                                      ),
+                                    },
+                              ),
+                            )
+                            clearFieldError(`vo-cal-${option.clientId}`)
+                          }}
+                          placeholder={t('optionCaloriesPlaceholder')}
+                          dir="ltr"
+                          alignDoc={alignDoc}
+                        />
+                        <p className="type-body-sm text-hisabi-on-surface-variant">
+                          {t('optionCaloriesHint')}
+                        </p>
                         <label className="type-body-md text-hisabi-on-surface-variant flex items-center gap-hisabi-sm">
                           <input
                             type="radio"
@@ -1585,7 +1690,7 @@ export function MenuItemFormView({ mode, itemId }) {
           </button>
           <AuthSubmitButton
             type="submit"
-            variant="gold"
+            variant="muted"
             pending={saveMutation.isPending}
             className="min-h-0 w-full min-w-0 py-4 min-[500px]:w-auto min-[500px]:min-w-[12rem]"
           >

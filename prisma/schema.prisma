@@ -57,6 +57,19 @@ model BusinessProfile {
   logoMimeType      String?
   /// Local/object storage path for the restaurant logo (receipt header, UI branding).
   logoStoragePath   String?
+  /// Optional white-label E-Waiter menu colors (CSS hex strings, e.g. "#00342b").
+  /// Fallbacks live in `src/lib/e-waiter/default-brand-colors.js` (not stored in DB).
+  brandPrimaryColor     String?
+  brandSecondaryColor   String?
+  brandAccentColor      String?
+  brandBackgroundColor  String?
+  brandTextColor        String?
+
+  /// Restaurant geofence center for E-Waiter (admin-set; enforced on public menu later).
+  locationLat            Float?
+  locationLng            Float?
+  /// Allowed customer distance from lat/lng in meters (null = unset; app default applied later).
+  locationRadiusMeters   Int?
 
   /// First receipt printer (kept in sync with receiptPrinters[0] for older clients).
   /// Extra printers live in ReceiptPrinter. The on-site print bridge reads these
@@ -117,6 +130,8 @@ model BusinessProfile {
   couponCodes           CouponCode[]
   loyaltySettings       LoyaltySettings?
   loyaltyAccounts       LoyaltyAccount[]
+  tables                Table[]
+  tableSessions         TableSession[]
 
   @@index([ownerUserId])
   @@map("business_profiles")
@@ -684,15 +699,18 @@ model MenuItem {
   loyaltyRedeemable Boolean @default(false)
   sortOrder Int       @default(0)
   imageUrl  String?
+  /// Optional calorie count for E-Waiter / menu display.
+  calories  Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  invoiceLines    InvoiceLine[]
-  variantGroups   MenuItemVariantGroup[]
-  customizations  MenuItemCustomization[]
-  recipe          MenuItemRecipe?
-  couponItemRules CouponItemRule[]
+  invoiceLines      InvoiceLine[]
+  variantGroups     MenuItemVariantGroup[]
+  customizations    MenuItemCustomization[]
+  recipe            MenuItemRecipe?
+  couponItemRules   CouponItemRule[]
+  tableSessionLines TableSessionLine[]
 
   @@index([businessProfileId, active, sortOrder])
   @@index([categoryId])
@@ -765,6 +783,8 @@ model MenuItemVariantOption {
   nameAr      String
   nameEn      String?
   priceChange String  @default("0")
+  /// Optional total calories for this option (not a delta). Empty → use MenuItem.calories.
+  calories    Int?
   isDefault   Boolean @default(false)
   sortOrder   Int     @default(0)
 
@@ -929,7 +949,9 @@ model Invoice {
   lines        InvoiceLine[]
   creditNotes  CreditNote[]
   debitNotes   DebitNote[]
-  kitchenOrder KitchenOrder?
+  /// POS: one ticket; E-Waiter settlement: many round tickets share one invoice.
+  kitchenOrders KitchenOrder[]
+  tableSession  TableSession?
   couponUsages CouponUsage[]
   loyaltyTransactions LoyaltyTransaction[]
 
@@ -953,13 +975,20 @@ enum KitchenOrderStatus {
   cancelled
 }
 
-/// Kitchen ticket for a POS invoice — daily # per restaurant (not ZATCA/invoice number).
+/// Kitchen ticket — POS invoice sale, or one E-Waiter table-session round.
 model KitchenOrder {
   id                String              @id @default(cuid())
   businessProfileId String
   businessProfile   BusinessProfile     @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
-  invoiceId         String              @unique
-  invoice           Invoice             @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  /// Null while an E-Waiter round is open; set at POS create or table settlement.
+  invoiceId         String?
+  invoice           Invoice?            @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  /// E-Waiter round linkage (null for classic POS checkout tickets).
+  tableSessionId String?
+  tableSession   TableSession? @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  /// Sequential round within a table session (1, 2, …); null for classic POS.
+  roundNumber    Int?
 
   orderNumber Int
   /// Calendar date in Asia/Riyadh used for the daily counter.
@@ -977,9 +1006,13 @@ model KitchenOrder {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  sessionLines TableSessionLine[]
+
   @@unique([businessProfileId, orderDate, orderNumber])
+  @@unique([tableSessionId, roundNumber])
   @@index([businessProfileId, status])
   @@index([invoiceId])
+  @@index([tableSessionId])
   @@map("kitchen_orders")
 }
 
@@ -995,6 +1028,119 @@ model KitchenOrderCounter {
 
   @@unique([businessProfileId, orderDate])
   @@map("kitchen_order_counters")
+}
+
+enum TableStatus {
+  available
+  occupied
+}
+
+enum TableSessionStatus {
+  open
+  closed
+  cancelled
+}
+
+/// Floor table with a public E-Waiter QR token.
+model Table {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  /// Admin-facing label (e.g. "Table 5") — same single-name pattern as PosTill.
+  name String
+  /// Opaque token encoded in the public QR URL (globally unique, not sequential).
+  qrToken String @unique
+  status  TableStatus @default(available)
+
+  /// Soft delete — retired tables stay for session history.
+  deletedAt DateTime?
+
+  /// Customer called a waiter (session-independent). Active while requestedAt is set and resolvedAt is null or earlier than requestedAt.
+  waiterCallRequestedAt DateTime?
+  waiterCallResolvedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions TableSession[]
+
+  @@index([businessProfileId, status])
+  @@index([businessProfileId, deletedAt])
+  @@index([businessProfileId, waiterCallRequestedAt])
+  @@map("tables")
+}
+
+/// One dine-in visit at a table (may span multiple kitchen rounds before settlement).
+model TableSession {
+  id                String             @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile    @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  tableId           String
+  table             Table              @relation(fields: [tableId], references: [id], onDelete: Restrict)
+
+  status TableSessionStatus @default(open)
+
+  /// Set when staff settles the session into a ZATCA invoice.
+  invoiceId String?  @unique
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  /// Customer asked for the bill — locks further public round submission until staff clears it.
+  billRequestedAt DateTime?
+  /// Optional loyalty points the customer wants to redeem at settlement (decimal string, same as LoyaltyAccount.balance / LoyaltyTransaction.points). Convenience prefill only — settlement re-validates.
+  requestedRedeemPoints String?
+
+  /// Linked when a real order is submitted with a held loyaltyAccountId (never at phone-login time).
+  loyaltyAccountId String?
+  loyaltyAccount   LoyaltyAccount? @relation(fields: [loyaltyAccountId], references: [id], onDelete: SetNull)
+
+  openedAt DateTime  @default(now())
+  closedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  kitchenOrders KitchenOrder[]
+  lines         TableSessionLine[]
+
+  @@index([businessProfileId, status])
+  @@index([tableId, status])
+  @@index([invoiceId])
+  @@index([businessProfileId, billRequestedAt])
+  @@index([loyaltyAccountId])
+  /// At most one open session per table — partial unique index in migration
+  /// `20261001120000_e_waiter_open_session_unique_and_brand_colors`
+  /// (`CREATE UNIQUE INDEX … ON table_sessions (tableId) WHERE status = 'open'`).
+  @@map("table_sessions")
+}
+
+/// Settlement-ready line for an E-Waiter round (keeps live selection IDs, unlike linesSnapshot).
+model TableSessionLine {
+  id             String       @id @default(cuid())
+  tableSessionId String
+  tableSession   TableSession  @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  kitchenOrderId String
+  kitchenOrder   KitchenOrder @relation(fields: [kitchenOrderId], references: [id], onDelete: Cascade)
+
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+
+  quantity Int
+  /// Selected MenuItemVariantOption ids — Json array (same array storage pattern as PosTill.lanPrinters).
+  variantOptionIds  Json @default("[]")
+  /// Selected MenuItemCustomization ids — Json array.
+  customizationIds  Json @default("[]")
+  lineNote          String?
+  /// Soft-exclude from settlement (cancelled round / voided line) without deleting history.
+  cancelled         Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tableSessionId])
+  @@index([kitchenOrderId])
+  @@index([menuItemId])
+  @@map("table_session_lines")
 }
 
 model InvoiceLine {
@@ -1751,6 +1897,7 @@ model LoyaltyAccount {
 
   transactions LoyaltyTransaction[]
   invoices     Invoice[]
+  tableSessions TableSession[]
 
   @@unique([businessProfileId, phone])
   @@index([businessProfileId])

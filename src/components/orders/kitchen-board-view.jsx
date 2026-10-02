@@ -2,14 +2,15 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Clock3, LayoutList } from 'lucide-react'
+import { CheckCircle2, Clock3, LayoutList, XCircle } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 
 import { AppLoader } from '@/components/app-loader'
+import { HisabiStatusModal } from '@/components/hisabi-status-modal'
 import { KitchenOrderCard } from '@/components/orders/kitchen-order-card'
 import { KitchenQueueHeader } from '@/components/orders/kitchen-queue-header'
-import { AuthApiError, authGet, authPatch } from '@/lib/api/auth-client'
+import { AuthApiError, authGet, authPatch, authPost } from '@/lib/api/auth-client'
 import { formatKitchenAverage } from '@/lib/orders/kitchen-wait-time'
 import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
@@ -40,6 +41,11 @@ export function KitchenBoardView({
   )
   const [boardTab, setBoardTab] = useState('active')
   const [nowMs, setNowMs] = useState(() => Date.now())
+  const [cancelTarget, setCancelTarget] = useState(
+    /** @type {{ id: string, invoiceId: string, orderNumber: number, tableName?: string | null, roundNumber?: number | null } | null} */ (
+      null
+    ),
+  )
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), TICK_MS)
@@ -59,6 +65,51 @@ export function KitchenBoardView({
       queryClient.setQueryData(['kitchen-board', profileId], (old) => {
         if (!old) return old
         return moveOrderInBoardData(old, invoiceId, nextStatus)
+      })
+    },
+    [profileId, queryClient],
+  )
+
+  const applyLocalRemove = useCallback(
+    (invoiceId) => {
+      queryClient.setQueryData(['kitchen-board', profileId], (old) => {
+        if (!old) return old
+        /** @type {Record<string, unknown>} */
+        const next = { ...old }
+        /** @type {Record<string, unknown> | null} */
+        let removed = null
+        for (const key of [
+          'pending',
+          'preparing',
+          'ready',
+          'completed',
+          'cancelled',
+        ]) {
+          const list = Array.isArray(old[key]) ? old[key] : []
+          const idx = list.findIndex((o) => o.invoiceId === invoiceId)
+          if (idx >= 0) {
+            removed = { ...list[idx], status: 'cancelled' }
+            next[key] = list.filter((o) => o.invoiceId !== invoiceId)
+          } else if (!Array.isArray(next[key])) {
+            next[key] = list
+          }
+        }
+        if (removed) {
+          const cancelled = Array.isArray(next.cancelled) ? next.cancelled : []
+          next.cancelled = [removed, ...cancelled.filter((o) => o.invoiceId !== invoiceId)]
+        }
+        const stats =
+          old.stats && typeof old.stats === 'object' ? { ...old.stats } : {}
+        const active =
+          (next.pending?.length ?? 0) +
+          (next.preparing?.length ?? 0) +
+          (next.ready?.length ?? 0)
+        stats.activeCount = active
+        stats.cancelledCount = Array.isArray(next.cancelled)
+          ? next.cancelled.length
+          : 0
+        next.stats = stats
+        return next
       })
     },
     [profileId, queryClient],
@@ -85,19 +136,48 @@ export function KitchenBoardView({
     },
   })
 
+  const cancelMutation = useMutation({
+    mutationFn: async ({ kitchenOrderId }) =>
+      authPost(`/orders/${kitchenOrderId}/cancel`, {}),
+    onMutate: async ({ invoiceId }) => {
+      await queryClient.cancelQueries({ queryKey: ['kitchen-board', profileId] })
+      const previous = queryClient.getQueryData(['kitchen-board', profileId])
+      applyLocalRemove(invoiceId)
+      return { previous }
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(['kitchen-board', profileId], ctx.previous)
+      }
+      const code = err instanceof AuthApiError ? err.code : undefined
+      toast.error(code ? tErr(code) : tErr('generic'))
+    },
+    onSuccess: () => {
+      toast.success(t('roundCancelled'))
+      setCancelTarget(null)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['kitchen-board'] })
+    },
+  })
+
   const pending = query.data?.pending ?? []
   const preparing = query.data?.preparing ?? []
   const ready = query.data?.ready ?? []
   const completed = query.data?.completed ?? []
+  const cancelled = query.data?.cancelled ?? []
   const stats = query.data?.stats ?? {
     activeCount: 0,
     completedCount: 0,
+    cancelledCount: 0,
     averagePrepMs: 0,
   }
   const showLoader = query.isLoading && !query.data
   const busyId = statusMutation.isPending
     ? statusMutation.variables?.invoiceId
-    : null
+    : cancelMutation.isPending
+      ? cancelMutation.variables?.invoiceId
+      : null
 
   function requestStatus(invoiceId, status) {
     const current = [...pending, ...preparing, ...ready].find(
@@ -105,6 +185,21 @@ export function KitchenBoardView({
     )
     if (!current || current.status === status) return
     statusMutation.mutate({ invoiceId, status })
+  }
+
+  /**
+   * @param {Record<string, unknown>} order
+   */
+  function requestCancel(order) {
+    if (!order?.tableSessionId) return
+    setCancelTarget({
+      id: String(order.id ?? order.invoiceId),
+      invoiceId: String(order.invoiceId),
+      orderNumber: Number(order.orderNumber) || 0,
+      tableName: order.tableName != null ? String(order.tableName) : null,
+      roundNumber:
+        typeof order.roundNumber === 'number' ? order.roundNumber : null,
+    })
   }
 
   return (
@@ -145,6 +240,12 @@ export function KitchenBoardView({
                 >
                   {t('tabCompleted')}
                 </BoardTab>
+                <BoardTab
+                  active={boardTab === 'cancelled'}
+                  onClick={() => setBoardTab('cancelled')}
+                >
+                  {t('tabCancelled')}
+                </BoardTab>
               </div>
               <div className="flex flex-wrap gap-hisabi-sm">
                 <StatChip
@@ -156,6 +257,11 @@ export function KitchenBoardView({
                   icon={CheckCircle2}
                   label={t('statCompleted')}
                   value={String(stats.completedCount)}
+                />
+                <StatChip
+                  icon={XCircle}
+                  label={t('statCancelled')}
+                  value={String(stats.cancelledCount ?? 0)}
                 />
                 <StatChip
                   icon={Clock3}
@@ -182,6 +288,7 @@ export function KitchenBoardView({
                   onDropStatus={(invoiceId) =>
                     requestStatus(invoiceId, 'pending')
                   }
+                  onRequestCancel={requestCancel}
                 />
                 <KanbanColumn
                   title={t('preparing')}
@@ -198,6 +305,7 @@ export function KitchenBoardView({
                   onDropStatus={(invoiceId) =>
                     requestStatus(invoiceId, 'preparing')
                   }
+                  onRequestCancel={requestCancel}
                 />
                 <KanbanColumn
                   title={t('readyToServe')}
@@ -214,8 +322,31 @@ export function KitchenBoardView({
                   onDropStatus={(invoiceId) =>
                     requestStatus(invoiceId, 'ready')
                   }
+                  onRequestCancel={requestCancel}
                 />
               </div>
+            ) : boardTab === 'cancelled' ? (
+              <section className="flex-1">
+                <h2 className="type-headline-md mb-hisabi-md font-bold text-hisabi-on-surface">
+                  {t('cancelledHeading')}
+                </h2>
+                {cancelled.length === 0 ? (
+                  <p className="type-body-md text-hisabi-on-surface-variant">
+                    {t('emptyCancelled')}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-hisabi-md sm:grid-cols-2 xl:grid-cols-3">
+                    {cancelled.map((order) => (
+                      <KitchenOrderCard
+                        key={order.invoiceId}
+                        order={order}
+                        locale={locale}
+                        nowMs={nowMs}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
             ) : (
               <section className="flex-1">
                 <h2 className="type-headline-md mb-hisabi-md font-bold text-hisabi-on-surface">
@@ -242,6 +373,33 @@ export function KitchenBoardView({
           </>
         )}
       </div>
+
+      <HisabiStatusModal
+        open={Boolean(cancelTarget)}
+        onOpenChange={(open) => {
+          if (!open && !cancelMutation.isPending) setCancelTarget(null)
+        }}
+        variant="error"
+        title={t('cancelRoundTitle')}
+        description={t('cancelRoundBody', {
+          number: String(cancelTarget?.orderNumber ?? ''),
+          table: String(cancelTarget?.tableName ?? ''),
+          round: String(cancelTarget?.roundNumber ?? ''),
+        })}
+        primaryLabel={t('cancelRoundConfirm')}
+        primaryPending={cancelMutation.isPending}
+        onPrimary={() => {
+          if (!cancelTarget) return
+          cancelMutation.mutate({
+            kitchenOrderId: cancelTarget.id,
+            invoiceId: cancelTarget.invoiceId,
+          })
+        }}
+        secondaryLabel={t('cancelRoundKeep')}
+        onSecondary={() => {
+          if (!cancelMutation.isPending) setCancelTarget(null)
+        }}
+      />
     </div>
   )
 }
@@ -288,6 +446,7 @@ function KanbanColumn({
   busyId,
   onAction,
   onDropStatus,
+  onRequestCancel,
 }) {
   const [over, setOver] = useState(false)
 
@@ -332,8 +491,12 @@ function KanbanColumn({
               nowMs={nowMs}
               actionLabel={actionLabel}
               actionPending={busyId === order.invoiceId}
+              cancelPending={busyId === order.invoiceId}
               draggable
               onAction={() => onAction(order.invoiceId)}
+              onCancel={
+                order.tableSessionId ? () => onRequestCancel(order) : null
+              }
             />
           ))}
         </div>

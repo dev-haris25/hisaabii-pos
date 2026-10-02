@@ -136,7 +136,7 @@ export function PosItemModifiersFlow({
               <p className="type-label-md font-bold text-hisabi-on-surface">
                 {bilingualName(group)}
               </p>
-              <div className="flex flex-wrap gap-hisabi-xs">
+              <div className="grid grid-cols-2 gap-hisabi-sm">
                 {(group.options ?? []).map((option) => {
                   const selected = selection[group.id] === option.id
                   return (
@@ -150,7 +150,7 @@ export function PosItemModifiersFlow({
                         }))
                       }
                       className={cn(
-                        'type-label-sm cursor-pointer rounded-lg px-hisabi-md py-2 font-bold transition-colors',
+                        'type-label-md flex min-h-hisabi-btn w-full cursor-pointer items-center justify-center rounded-xl px-hisabi-lg py-hisabi-btn text-center font-bold transition-colors active:scale-[0.98]',
                         selected
                           ? 'bg-hisabi-primary-container text-white'
                           : 'border border-hisabi-outline-variant/50 bg-white text-hisabi-on-surface-variant hover:bg-hisabi-surface-container',
@@ -197,12 +197,12 @@ export function PosItemModifiersFlow({
         <p dir="ltr" className="type-label-md mb-hisabi-md font-bold text-hisabi-teal">
           {formatSarAmount(unitPrice, locale)}
         </p>
-        <ul className="space-y-hisabi-sm">
+        <ul className="space-y-hisabi-md">
           {(item.customizations ?? []).map((row) => {
             const checked = customIds.includes(row.id)
             return (
               <li key={row.id}>
-                <label className="flex cursor-pointer items-center gap-hisabi-sm rounded-lg border border-hisabi-outline-variant/30 bg-hisabi-surface px-hisabi-md py-hisabi-sm">
+                <label className="flex min-h-[calc(var(--size-hisabi-btn-min-h)+0.5rem)] cursor-pointer items-center gap-hisabi-md rounded-xl border border-hisabi-outline-variant/30 bg-hisabi-surface px-hisabi-lg py-hisabi-btn active:bg-hisabi-surface-container">
                   <input
                     type="checkbox"
                     checked={checked}
@@ -213,12 +213,12 @@ export function PosItemModifiersFlow({
                           : [...prev, row.id],
                       )
                     }}
-                    className="size-4 accent-hisabi-primary"
+                    className="size-7 shrink-0 accent-hisabi-primary"
                   />
-                  <span className="type-body-md min-w-0 flex-1 text-hisabi-on-surface">
+                  <span className="type-label-md min-w-0 flex-1 font-bold text-hisabi-on-surface">
                     {bilingualName(row)}
                   </span>
-                  <span dir="ltr" className="type-body-sm text-hisabi-on-surface-variant">
+                  <span dir="ltr" className="type-label-md shrink-0 font-bold text-hisabi-on-surface-variant">
                     +{formatSarAmount(row.priceChange ?? '0', locale)}
                   </span>
                 </label>

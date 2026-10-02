@@ -7,7 +7,7 @@ import { resolveNotificationRecipients } from '@/lib/notifications/resolve-notif
  *
  * @param {{
  *   businessProfileId: string
- *   audience: 'zatca' | 'hr' | 'salesOps' | 'team' | 'ownerAdmin'
+ *   audience: 'zatca' | 'hr' | 'salesOps' | 'eWaiterFloor' | 'team' | 'ownerAdmin'
  *   type: string
  *   kind?: string
  *   title?: string

@@ -50,6 +50,14 @@ function mapProfileDetailJson(row) {
     useCustomVatRate: false,
     customVatPercent: null,
     hasLogo: Boolean(row.logoStoragePath),
+    brandPrimaryColor: row.brandPrimaryColor ?? null,
+    brandSecondaryColor: row.brandSecondaryColor ?? null,
+    brandAccentColor: row.brandAccentColor ?? null,
+    brandBackgroundColor: row.brandBackgroundColor ?? null,
+    brandTextColor: row.brandTextColor ?? null,
+    locationLat: row.locationLat ?? null,
+    locationLng: row.locationLng ?? null,
+    locationRadiusMeters: row.locationRadiusMeters ?? null,
     updatedAt: row.updatedAt.toISOString(),
     zatcaOnboardingSkipped: row.zatcaOnboardingSkipped === true,
     zatcaCompleted,
@@ -172,6 +180,31 @@ export async function PATCH(request, ctx) {
       phone: d.phone?.trim() || null,
       defaultVatPercent: defaultVatPercentFromPreset(d.defaultVatPreset ?? 'standard'),
       zatcaEnvironment: getZatcaEnvironment(),
+    }
+
+    if (d.brandPrimaryColor !== undefined) {
+      data.brandPrimaryColor = d.brandPrimaryColor
+    }
+    if (d.brandSecondaryColor !== undefined) {
+      data.brandSecondaryColor = d.brandSecondaryColor
+    }
+    if (d.brandAccentColor !== undefined) {
+      data.brandAccentColor = d.brandAccentColor
+    }
+    if (d.brandBackgroundColor !== undefined) {
+      data.brandBackgroundColor = d.brandBackgroundColor
+    }
+    if (d.brandTextColor !== undefined) {
+      data.brandTextColor = d.brandTextColor
+    }
+    if (d.locationLat !== undefined) {
+      data.locationLat = d.locationLat
+    }
+    if (d.locationLng !== undefined) {
+      data.locationLng = d.locationLng
+    }
+    if (d.locationRadiusMeters !== undefined) {
+      data.locationRadiusMeters = d.locationRadiusMeters
     }
 
     if (d.preserveLogo === true) {

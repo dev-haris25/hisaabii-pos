@@ -208,6 +208,18 @@ const COPY = {
       message: 'تقرير نهاية اليوم {date} يتضمن هدراً مرتفعاً ({items}).',
     },
   },
+  e_waiter_round_cancelled: {
+    en: {
+      title: 'Guest cancelled a round',
+      message:
+        'Order #{orderNumber} · Table {tableName} · Round {roundNumber} was cancelled by the guest.',
+    },
+    ar: {
+      title: 'ألغى الضيف جولة',
+      message:
+        'الطلب رقم {orderNumber} · طاولة {tableName} · الجولة {roundNumber} ألغاه الضيف.',
+    },
+  },
 }
 
 /** @param {string} template @param {Record<string, string>} vars */

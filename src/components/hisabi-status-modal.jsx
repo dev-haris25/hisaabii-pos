@@ -48,6 +48,7 @@ const VARIANT_CONFIG = {
  *   primaryStartIcon?: import('react').ReactNode
  *   onPrimary?: () => void
  *   primaryPending?: boolean
+ *   primaryButtonVariant?: import('@/components/auth/auth-submit-button').AuthSubmitButtonVariant
  *   secondaryLabel?: string
  *   onSecondary?: () => void
  *   className?: string
@@ -63,6 +64,7 @@ export function HisabiStatusModal({
   primaryStartIcon,
   onPrimary,
   primaryPending = false,
+  primaryButtonVariant,
   secondaryLabel,
   onSecondary,
   className,
@@ -157,7 +159,10 @@ export function HisabiStatusModal({
             <div className="space-y-hisabi-md">
               <AuthSubmitButton
                 type="button"
-                variant={variant === 'error' ? 'destructive' : 'muted'}
+                variant={
+                  primaryButtonVariant ??
+                  (variant === 'error' ? 'destructive' : 'muted')
+                }
                 pending={primaryPending}
                 onClick={() => {
                   onPrimary?.()

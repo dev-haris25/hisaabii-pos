@@ -63,6 +63,9 @@ export async function PATCH(request, context) {
     if (d.loyaltyRedeemable !== undefined) {
       data.loyaltyRedeemable = d.loyaltyRedeemable
     }
+    if (d.calories !== undefined) {
+      data.calories = d.calories ?? null
+    }
     if (d.categoryId !== undefined) {
       const categoryId = d.categoryId || null
       if (categoryId) {

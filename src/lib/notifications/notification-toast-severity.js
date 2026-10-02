@@ -16,6 +16,7 @@ const WARNING_TYPES = new Set([
   'stock_low',
   'kitchen_waste_high',
   'day_end_waste_high',
+  'e_waiter_round_cancelled',
 ])
 
 const INFO_TYPES = new Set(['role_changed', 'member_joined'])

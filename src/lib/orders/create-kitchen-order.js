@@ -7,8 +7,17 @@ import { riyadhOrderDate } from '@/lib/orders/riyadh-order-date'
  * @param {import('@/generated/prisma/client').Prisma.TransactionClient} tx
  * @param {{
  *   businessProfileId: string
- *   invoiceId: string
- *   lines: Array<{ nameAr?: string | null, nameEn?: string | null, quantity?: number }>
+ *   invoiceId?: string | null
+ *   tableSessionId?: string | null
+ *   roundNumber?: number | null
+ *   lines: Array<{
+ *     menuItemId?: string | null
+ *     nameAr?: string | null
+ *     nameEn?: string | null
+ *     quantity?: number
+ *     lineNote?: string | null
+ *     modifiersSnapshot?: unknown
+ *   }>
  * }} opts
  */
 export async function createKitchenOrderInTx(tx, opts) {
@@ -32,7 +41,12 @@ export async function createKitchenOrderInTx(tx, opts) {
   return tx.kitchenOrder.create({
     data: {
       businessProfileId: opts.businessProfileId,
-      invoiceId: opts.invoiceId,
+      invoiceId: opts.invoiceId ?? null,
+      tableSessionId: opts.tableSessionId ?? null,
+      roundNumber:
+        opts.roundNumber != null && Number.isFinite(Number(opts.roundNumber))
+          ? Number(opts.roundNumber)
+          : null,
       orderNumber: counter.lastNumber,
       orderDate,
       status: 'pending',

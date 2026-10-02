@@ -28,7 +28,7 @@ export async function PATCH(request, context) {
 
     const { invoiceId } = await context.params
     if (!invoiceId) {
-      return jsonError(400, 'VALIDATION_ERROR', 'Invoice id required')
+      return jsonError(400, 'VALIDATION_ERROR', 'Order id required')
     }
 
     let body
@@ -42,15 +42,33 @@ export async function PATCH(request, context) {
       return jsonError(400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.issues)
     }
 
+    const invoiceOk = { ...WHERE_NOT_DELETED, status: { not: 'voided' } }
     const ticket = await prisma.kitchenOrder.findFirst({
       where: {
-        invoiceId,
         businessProfileId: auth.profileId,
-        invoice: { ...WHERE_NOT_DELETED, status: { not: 'voided' } },
+        OR: [
+          { invoiceId, invoice: invoiceOk },
+          { id: invoiceId },
+        ],
       },
     })
     if (!ticket) {
       return jsonError(404, 'NOT_FOUND', 'Order not found')
+    }
+    // Reject voided-invoice POS tickets (E-Waiter tickets have no invoice).
+    if (ticket.invoiceId) {
+      const inv = await prisma.invoice.findFirst({
+        where: {
+          id: ticket.invoiceId,
+          businessProfileId: auth.profileId,
+          ...WHERE_NOT_DELETED,
+          status: { not: 'voided' },
+        },
+        select: { id: true },
+      })
+      if (!inv) {
+        return jsonError(404, 'NOT_FOUND', 'Order not found')
+      }
     }
     if (!canTransitionKitchenStatus(ticket.status, parsed.data.status)) {
       return jsonError(409, 'INVALID_ORDER_STATUS', 'That status change is not allowed')
@@ -66,7 +84,8 @@ export async function PATCH(request, context) {
         data: kitchenStatusUpdateData(nextStatus),
       })
       return jsonOk({
-        invoiceId: updated.invoiceId,
+        id: updated.id,
+        invoiceId: updated.invoiceId ?? updated.id,
         orderNumber: updated.orderNumber,
         status: updated.status,
       })
@@ -138,7 +157,8 @@ export async function PATCH(request, context) {
       }
 
       return jsonOk({
-        invoiceId: updated.invoiceId,
+        id: updated.id,
+        invoiceId: updated.invoiceId ?? updated.id,
         orderNumber: updated.orderNumber,
         status: updated.status,
       })

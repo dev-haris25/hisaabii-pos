@@ -36,7 +36,17 @@ export function predefinedRolePermissionMap() {
   return {
     [ADMIN_ROLE_NAME]: [],
     [MANAGER_ROLE_NAME]: [
-      ...crudFor([...menu, ...stock, ...invoicesAll, 'Pos', 'Coupon', 'Loyalty', ...allHr]),
+      ...crudFor([
+        ...menu,
+        ...stock,
+        ...invoicesAll,
+        'Pos',
+        'Coupon',
+        'Loyalty',
+        'ETable',
+        'TableSession',
+        ...allHr,
+      ]),
       ...readFor(['Dashboard', ...ALL_REPORT_SUBJECTS]),
     ],
     [ACCOUNTANT_ROLE_NAME]: [
@@ -53,6 +63,7 @@ export function predefinedRolePermissionMap() {
     [HR_ROLE_NAME]: [...crudFor(allHr), ...readFor(['Dashboard', ...HR_REPORT_SUBJECTS])],
     [CASHIER_ROLE_NAME]: [
       ...crudFor(['Pos']),
+      ...crudFor(['TableSession']),
       { action: 'create', subject: 'Invoice' },
       { action: 'read', subject: 'Invoice' },
       { action: 'update', subject: 'Invoice' },

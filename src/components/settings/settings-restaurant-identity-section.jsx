@@ -1,7 +1,7 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, FileBadge } from 'lucide-react'
+import { Building2, FileBadge, MapPin, Palette } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import {
   forwardRef,
@@ -42,11 +42,53 @@ import {
   buildBusinessProfileConfirmSnapshot,
   validateBusinessProfileInvoiceFields,
 } from '@/lib/business-profile/validate-business-profile-invoice'
+import { DEFAULT_E_WAITER_BRAND_COLORS } from '@/lib/e-waiter/default-brand-colors'
 import { useBilingualFieldOrigin } from '@/lib/i18n/use-bilingual-field-origin'
 import { hasFullAccess } from '@/lib/rbac/ability-utils'
 import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
+
+const BRAND_HEX_RE = /^#[0-9A-Fa-f]{6}$/
+
+/** @param {unknown} v */
+function isValidBrandHex(v) {
+  return BRAND_HEX_RE.test(String(v ?? '').trim())
+}
+
+/**
+ * @param {unknown} v
+ * @returns {string}
+ */
+function brandHexFromProfile(v) {
+  const s = String(v ?? '').trim()
+  return isValidBrandHex(s) ? s : ''
+}
+
+/**
+ * @param {unknown} v
+ * @returns {string}
+ */
+function coordFromProfile(v) {
+  if (v == null || v === '') return ''
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? String(n) : ''
+}
+
+/**
+ * @param {unknown} a
+ * @param {unknown} b
+ */
+function coordsEqual(a, b) {
+  const sa = String(a ?? '').trim()
+  const sb = String(b ?? '').trim()
+  if (sa === '' && sb === '') return true
+  if (sa === '' || sb === '') return false
+  const na = Number(sa)
+  const nb = Number(sb)
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na === nb
+  return sa === sb
+}
 
 /**
  * @param {File} file
@@ -192,6 +234,16 @@ export const SettingsRestaurantIdentitySection = forwardRef(
     const [logoUploadError, setLogoUploadError] = useState(false)
     const [logoRemovedByUser, setLogoRemovedByUser] = useState(false)
 
+    const [brandPrimaryColor, setBrandPrimaryColor] = useState('')
+    const [brandSecondaryColor, setBrandSecondaryColor] = useState('')
+    const [brandAccentColor, setBrandAccentColor] = useState('')
+    const [brandBackgroundColor, setBrandBackgroundColor] = useState('')
+    const [brandTextColor, setBrandTextColor] = useState('')
+    const [locationLat, setLocationLat] = useState('')
+    const [locationLng, setLocationLng] = useState('')
+    const [locationRadiusMeters, setLocationRadiusMeters] = useState('')
+    const [geoPending, setGeoPending] = useState(false)
+
     const [submitError, setSubmitError] = useState('')
     const [fieldErrors, setFieldErrors] = useState({
       companyNameAr: '',
@@ -203,6 +255,14 @@ export const SettingsRestaurantIdentitySection = forwardRef(
       postalCode: '',
       buildingNumber: '',
       customVatPercent: '',
+      brandPrimaryColor: '',
+      brandSecondaryColor: '',
+      brandAccentColor: '',
+      brandBackgroundColor: '',
+      brandTextColor: '',
+      locationLat: '',
+      locationLng: '',
+      locationRadiusMeters: '',
     })
 
     const profileId =
@@ -257,6 +317,19 @@ export const SettingsRestaurantIdentitySection = forwardRef(
       setLogoFile(null)
       setLogoRemovedByUser(false)
       setLogoUploadError(false)
+      setBrandPrimaryColor(brandHexFromProfile(profile.brandPrimaryColor))
+      setBrandSecondaryColor(brandHexFromProfile(profile.brandSecondaryColor))
+      setBrandAccentColor(brandHexFromProfile(profile.brandAccentColor))
+      setBrandBackgroundColor(brandHexFromProfile(profile.brandBackgroundColor))
+      setBrandTextColor(brandHexFromProfile(profile.brandTextColor))
+      setLocationLat(coordFromProfile(profile.locationLat))
+      setLocationLng(coordFromProfile(profile.locationLng))
+      setLocationRadiusMeters(
+        profile.locationRadiusMeters == null
+          ? ''
+          : String(profile.locationRadiusMeters),
+      )
+      setGeoPending(false)
       setSubmitError('')
       setFieldErrors({
         companyNameAr: '',
@@ -268,6 +341,14 @@ export const SettingsRestaurantIdentitySection = forwardRef(
         postalCode: '',
         buildingNumber: '',
         customVatPercent: '',
+        brandPrimaryColor: '',
+        brandSecondaryColor: '',
+        brandAccentColor: '',
+        brandBackgroundColor: '',
+        brandTextColor: '',
+        locationLat: '',
+        locationLng: '',
+        locationRadiusMeters: '',
       })
       setConfirmOpen(false)
       setTaxConfirmOpen(false)
@@ -321,6 +402,14 @@ export const SettingsRestaurantIdentitySection = forwardRef(
         defaultVat: vat.defaultVat,
         useCustomRate: vat.useCustomRate,
         customVatPercent: vat.customVatPercent,
+        brandPrimaryColor,
+        brandSecondaryColor,
+        brandAccentColor,
+        brandBackgroundColor,
+        brandTextColor,
+        locationLat,
+        locationLng,
+        locationRadiusMeters,
       })
 
       /** @type {Record<string, unknown>} */
@@ -426,6 +515,35 @@ export const SettingsRestaurantIdentitySection = forwardRef(
       if (logoFile != null) return true
       if (logoRemovedByUser && p.hasLogo) return true
 
+      if (brandPrimaryColor.trim() !== brandHexFromProfile(p.brandPrimaryColor)) {
+        return true
+      }
+      if (
+        brandSecondaryColor.trim() !== brandHexFromProfile(p.brandSecondaryColor)
+      ) {
+        return true
+      }
+      if (brandAccentColor.trim() !== brandHexFromProfile(p.brandAccentColor)) {
+        return true
+      }
+      if (
+        brandBackgroundColor.trim() !==
+        brandHexFromProfile(p.brandBackgroundColor)
+      ) {
+        return true
+      }
+      if (brandTextColor.trim() !== brandHexFromProfile(p.brandTextColor)) {
+        return true
+      }
+      if (!coordsEqual(locationLat, p.locationLat)) return true
+      if (!coordsEqual(locationLng, p.locationLng)) return true
+      if (
+        String(locationRadiusMeters).trim() !==
+        (p.locationRadiusMeters == null ? '' : String(p.locationRadiusMeters))
+      ) {
+        return true
+      }
+
       return false
     }, [
       savedProfile,
@@ -445,6 +563,14 @@ export const SettingsRestaurantIdentitySection = forwardRef(
       vatNumber,
       logoFile,
       logoRemovedByUser,
+      brandPrimaryColor,
+      brandSecondaryColor,
+      brandAccentColor,
+      brandBackgroundColor,
+      brandTextColor,
+      locationLat,
+      locationLng,
+      locationRadiusMeters,
     ])
 
     useEffect(() => {
@@ -482,6 +608,32 @@ export const SettingsRestaurantIdentitySection = forwardRef(
       if (logoInputRef.current) {
         logoInputRef.current.value = ''
       }
+    }
+
+    function handleUseCurrentLocation() {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        toast.error(t('locationGeoUnavailable'))
+        return
+      }
+      setGeoPending(true)
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLocationLat(String(pos.coords.latitude))
+          setLocationLng(String(pos.coords.longitude))
+          setFieldErrors((prev) => ({
+            ...prev,
+            locationLat: '',
+            locationLng: '',
+          }))
+          setGeoPending(false)
+          toast.success(t('locationGeoFilled'))
+        },
+        () => {
+          setGeoPending(false)
+          toast.error(t('locationGeoDenied'))
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+      )
     }
 
     /**
@@ -552,7 +704,9 @@ export const SettingsRestaurantIdentitySection = forwardRef(
           resolve('invalid')
           return
         }
-        setFieldErrors({
+
+        /** @type {typeof fieldErrors} */
+        const nextFieldErrors = {
           companyNameAr: '',
           crNumber: '',
           vatNumber: '',
@@ -562,7 +716,66 @@ export const SettingsRestaurantIdentitySection = forwardRef(
           postalCode: '',
           buildingNumber: '',
           customVatPercent: '',
-        })
+          brandPrimaryColor: '',
+          brandSecondaryColor: '',
+          brandAccentColor: '',
+          brandBackgroundColor: '',
+          brandTextColor: '',
+          locationLat: '',
+          locationLng: '',
+          locationRadiusMeters: '',
+        }
+
+        /** @type {Array<[keyof typeof nextFieldErrors, string]>} */
+        const brandEntries = [
+          ['brandPrimaryColor', brandPrimaryColor],
+          ['brandSecondaryColor', brandSecondaryColor],
+          ['brandAccentColor', brandAccentColor],
+          ['brandBackgroundColor', brandBackgroundColor],
+          ['brandTextColor', brandTextColor],
+        ]
+        let brandOrGeoInvalid = false
+        for (const [key, val] of brandEntries) {
+          const s = val.trim()
+          if (s && !isValidBrandHex(s)) {
+            nextFieldErrors[key] = t('brandColorInvalid')
+            brandOrGeoInvalid = true
+          }
+        }
+
+        const latTrim = locationLat.trim()
+        if (latTrim) {
+          const latN = Number(latTrim)
+          if (!Number.isFinite(latN) || latN < -90 || latN > 90) {
+            nextFieldErrors.locationLat = t('locationLatInvalid')
+            brandOrGeoInvalid = true
+          }
+        }
+        const lngTrim = locationLng.trim()
+        if (lngTrim) {
+          const lngN = Number(lngTrim)
+          if (!Number.isFinite(lngN) || lngN < -180 || lngN > 180) {
+            nextFieldErrors.locationLng = t('locationLngInvalid')
+            brandOrGeoInvalid = true
+          }
+        }
+        const radiusTrim = locationRadiusMeters.trim()
+        if (radiusTrim) {
+          const radiusN = Number.parseInt(radiusTrim, 10)
+          if (!Number.isFinite(radiusN) || radiusN < 1 || radiusN > 50000) {
+            nextFieldErrors.locationRadiusMeters = t('locationRadiusInvalid')
+            brandOrGeoInvalid = true
+          }
+        }
+
+        if (brandOrGeoInvalid) {
+          setFieldErrors(nextFieldErrors)
+          scrollAfterFieldValidation()
+          resolve('invalid')
+          return
+        }
+
+        setFieldErrors(nextFieldErrors)
 
         saveFlowResolveRef.current = resolve
 
@@ -782,6 +995,269 @@ export const SettingsRestaurantIdentitySection = forwardRef(
                     }}
                     fieldClass={fieldClass}
                   />
+                </SettingsSection>
+
+                <SettingsSection title={t('sectionBrandColors')} icon={Palette}>
+                  <p className="type-body-sm text-hisabi-on-surface-variant">
+                    {t('brandColorsHint')}
+                  </p>
+                  <div className="grid grid-cols-1 gap-hisabi-lg md:grid-cols-2">
+                    {(
+                      /** @type {const} */ ([
+                        [
+                          'brandPrimaryColor',
+                          brandPrimaryColor,
+                          setBrandPrimaryColor,
+                          DEFAULT_E_WAITER_BRAND_COLORS.primary,
+                          'fieldBrandPrimary',
+                        ],
+                        [
+                          'brandSecondaryColor',
+                          brandSecondaryColor,
+                          setBrandSecondaryColor,
+                          DEFAULT_E_WAITER_BRAND_COLORS.secondary,
+                          'fieldBrandSecondary',
+                        ],
+                        [
+                          'brandAccentColor',
+                          brandAccentColor,
+                          setBrandAccentColor,
+                          DEFAULT_E_WAITER_BRAND_COLORS.accent,
+                          'fieldBrandAccent',
+                        ],
+                        [
+                          'brandBackgroundColor',
+                          brandBackgroundColor,
+                          setBrandBackgroundColor,
+                          DEFAULT_E_WAITER_BRAND_COLORS.background,
+                          'fieldBrandBackground',
+                        ],
+                        [
+                          'brandTextColor',
+                          brandTextColor,
+                          setBrandTextColor,
+                          DEFAULT_E_WAITER_BRAND_COLORS.text,
+                          'fieldBrandText',
+                        ],
+                      ])
+                    ).map(([key, value, setValue, fallback, labelKey]) => {
+                      const pickerValue = isValidBrandHex(value)
+                        ? value.trim()
+                        : fallback
+                      const err = fieldErrors[key]
+                      return (
+                        <div key={key} className="space-y-hisabi-xs">
+                          <label
+                            className="type-label-md text-hisabi-on-surface-variant mb-hisabi-xs block"
+                            htmlFor={`${idPrefix}-${key}`}
+                          >
+                            {t(labelKey)}
+                          </label>
+                          <div className="flex items-center gap-hisabi-sm">
+                            <input
+                              id={`${idPrefix}-${key}-picker`}
+                              type="color"
+                              value={pickerValue}
+                              disabled={!canUpdate}
+                              aria-label={t(labelKey)}
+                              onChange={(e) => {
+                                setValue(e.target.value)
+                                setFieldErrors((prev) =>
+                                  prev[key] ? { ...prev, [key]: '' } : prev,
+                                )
+                              }}
+                              className="border-hisabi-outline-variant h-11 w-12 shrink-0 cursor-pointer rounded-lg border bg-hisabi-surface-container-lowest p-1 disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                            <input
+                              id={`${idPrefix}-${key}`}
+                              type="text"
+                              inputMode="text"
+                              maxLength={7}
+                              placeholder={fallback}
+                              value={value}
+                              onChange={(e) => {
+                                setValue(e.target.value)
+                                setFieldErrors((prev) =>
+                                  prev[key] ? { ...prev, [key]: '' } : prev,
+                                )
+                              }}
+                              className={cn(
+                                fieldClass,
+                                err &&
+                                  'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                              )}
+                              aria-invalid={err ? true : undefined}
+                            />
+                            {value.trim() ? (
+                              <button
+                                type="button"
+                                className="type-label-md text-hisabi-on-surface-variant hover:text-hisabi-on-surface shrink-0 px-hisabi-sm py-2 underline-offset-2 hover:underline disabled:opacity-50"
+                                disabled={!canUpdate}
+                                onClick={() => {
+                                  setValue('')
+                                  setFieldErrors((prev) =>
+                                    prev[key] ? { ...prev, [key]: '' } : prev,
+                                  )
+                                }}
+                              >
+                                {t('brandColorClear')}
+                              </button>
+                            ) : null}
+                          </div>
+                          {err ? (
+                            <p
+                              className="type-body-sm text-hisabi-error"
+                              role="alert"
+                            >
+                              {err}
+                            </p>
+                          ) : null}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </SettingsSection>
+
+                <SettingsSection title={t('sectionRestaurantLocation')} icon={MapPin}>
+                  <p className="type-body-sm text-hisabi-on-surface-variant">
+                    {t('restaurantLocationHint')}
+                  </p>
+                  <div className="flex flex-wrap gap-hisabi-sm">
+                    <button
+                      type="button"
+                      disabled={!canUpdate || geoPending}
+                      onClick={handleUseCurrentLocation}
+                      className="type-label-md border-hisabi-teal-container text-hisabi-teal hover:bg-hisabi-teal-container/10 inline-flex items-center gap-hisabi-xs rounded-xl border-2 px-hisabi-lg py-2.5 font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <MapPin className="size-4 shrink-0" aria-hidden />
+                      {geoPending
+                        ? t('locationGeoPending')
+                        : t('locationUseCurrent')}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-hisabi-lg md:grid-cols-2">
+                    <div className="space-y-hisabi-xs">
+                      <label
+                        className="type-label-md text-hisabi-on-surface-variant mb-hisabi-xs block"
+                        htmlFor={`${idPrefix}-location-lat`}
+                      >
+                        {t('fieldLocationLat')}
+                      </label>
+                      <input
+                        id={`${idPrefix}-location-lat`}
+                        type="text"
+                        inputMode="decimal"
+                        placeholder={t('fieldLocationLatPlaceholder')}
+                        value={locationLat}
+                        onChange={(e) => {
+                          setLocationLat(e.target.value)
+                          setFieldErrors((prev) =>
+                            prev.locationLat
+                              ? { ...prev, locationLat: '' }
+                              : prev,
+                          )
+                        }}
+                        className={cn(
+                          fieldClass,
+                          fieldErrors.locationLat &&
+                            'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                        )}
+                        aria-invalid={
+                          fieldErrors.locationLat ? true : undefined
+                        }
+                      />
+                      {fieldErrors.locationLat ? (
+                        <p
+                          className="type-body-sm text-hisabi-error"
+                          role="alert"
+                        >
+                          {fieldErrors.locationLat}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="space-y-hisabi-xs">
+                      <label
+                        className="type-label-md text-hisabi-on-surface-variant mb-hisabi-xs block"
+                        htmlFor={`${idPrefix}-location-lng`}
+                      >
+                        {t('fieldLocationLng')}
+                      </label>
+                      <input
+                        id={`${idPrefix}-location-lng`}
+                        type="text"
+                        inputMode="decimal"
+                        placeholder={t('fieldLocationLngPlaceholder')}
+                        value={locationLng}
+                        onChange={(e) => {
+                          setLocationLng(e.target.value)
+                          setFieldErrors((prev) =>
+                            prev.locationLng
+                              ? { ...prev, locationLng: '' }
+                              : prev,
+                          )
+                        }}
+                        className={cn(
+                          fieldClass,
+                          fieldErrors.locationLng &&
+                            'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                        )}
+                        aria-invalid={
+                          fieldErrors.locationLng ? true : undefined
+                        }
+                      />
+                      {fieldErrors.locationLng ? (
+                        <p
+                          className="type-body-sm text-hisabi-error"
+                          role="alert"
+                        >
+                          {fieldErrors.locationLng}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="space-y-hisabi-xs md:col-span-2">
+                      <label
+                        className="type-label-md text-hisabi-on-surface-variant mb-hisabi-xs block"
+                        htmlFor={`${idPrefix}-location-radius`}
+                      >
+                        {t('fieldLocationRadius')}
+                      </label>
+                      <input
+                        id={`${idPrefix}-location-radius`}
+                        type="text"
+                        inputMode="numeric"
+                        placeholder={t('fieldLocationRadiusPlaceholder')}
+                        value={locationRadiusMeters}
+                        onChange={(e) => {
+                          setLocationRadiusMeters(e.target.value)
+                          setFieldErrors((prev) =>
+                            prev.locationRadiusMeters
+                              ? { ...prev, locationRadiusMeters: '' }
+                              : prev,
+                          )
+                        }}
+                        className={cn(
+                          fieldClass,
+                          'max-w-xs',
+                          fieldErrors.locationRadiusMeters &&
+                            'border-hisabi-error focus:border-hisabi-error focus:ring-hisabi-error/25',
+                        )}
+                        aria-invalid={
+                          fieldErrors.locationRadiusMeters ? true : undefined
+                        }
+                      />
+                      <p className="type-body-sm text-hisabi-on-surface-variant">
+                        {t('fieldLocationRadiusHint')}
+                      </p>
+                      {fieldErrors.locationRadiusMeters ? (
+                        <p
+                          className="type-body-sm text-hisabi-error"
+                          role="alert"
+                        >
+                          {fieldErrors.locationRadiusMeters}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
                 </SettingsSection>
 
                 <SettingsSection title={t('sectionTaxRegistration')} icon={FileBadge}>

@@ -53,6 +53,7 @@ function appendDigits(current, digits) {
  *   onKey: (key: string) => void
  *   onClose: () => void
  *   onDone: () => void
+ *   className?: string
  * }} props
  */
 export function PosOnScreenNumpad({
@@ -62,12 +63,18 @@ export function PosOnScreenNumpad({
   onKey,
   onClose,
   onDone,
+  className,
 }) {
   const t = useTranslations('Pos')
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+    <div
+      className={cn(
+        'fixed inset-0 z-50 flex flex-col justify-end',
+        className,
+      )}
+    >
       <button
         type="button"
         className="absolute inset-0 bg-hisabi-on-surface/35"

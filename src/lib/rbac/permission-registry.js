@@ -42,6 +42,8 @@ export const PERMISSION_REGISTRY = {
       Pos: { labelKey: 'navPos' },
       Coupon: { labelKey: 'subCoupons' },
       Loyalty: { labelKey: 'subLoyalty' },
+      ETable: { labelKey: 'subETables' },
+      TableSession: { labelKey: 'subTableSessions' },
     },
   },
   kitchen: {

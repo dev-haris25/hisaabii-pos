@@ -13,24 +13,42 @@ export async function GET(request) {
     if (auth.error) return auth.error
 
     const invoiceOk = { ...WHERE_NOT_DELETED, status: { not: 'voided' } }
-    const completedSince = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
 
     const select = {
+      id: true,
       invoiceId: true,
+      tableSessionId: true,
+      roundNumber: true,
       orderNumber: true,
       status: true,
       itemsUpdatedAt: true,
       linesSnapshot: true,
       createdAt: true,
       completedAt: true,
+      updatedAt: true,
+      tableSession: {
+        select: {
+          id: true,
+          table: { select: { name: true } },
+        },
+      },
     }
 
-    const [activeRows, completedRows] = await Promise.all([
+    /** POS tickets (have invoice) or open E-Waiter rounds (session, no invoice yet). */
+    const kitchenVisibility = {
+      OR: [
+        { invoice: invoiceOk },
+        { tableSessionId: { not: null } },
+      ],
+    }
+
+    const [activeRows, completedRows, cancelledRows] = await Promise.all([
       prisma.kitchenOrder.findMany({
         where: {
           businessProfileId: auth.profileId,
           status: { in: ACTIVE_STATUSES },
-          invoice: invoiceOk,
+          AND: [kitchenVisibility],
         },
         orderBy: [{ createdAt: 'asc' }],
         select,
@@ -39,13 +57,34 @@ export async function GET(request) {
         where: {
           businessProfileId: auth.profileId,
           status: 'completed',
-          invoice: invoiceOk,
-          OR: [
-            { completedAt: { gte: completedSince } },
-            { completedAt: null, updatedAt: { gte: completedSince } },
+          AND: [
+            kitchenVisibility,
+            {
+              OR: [
+                { completedAt: { gte: since } },
+                { completedAt: null, updatedAt: { gte: since } },
+              ],
+            },
           ],
         },
         orderBy: [{ completedAt: 'desc' }, { updatedAt: 'desc' }],
+        select,
+      }),
+      prisma.kitchenOrder.findMany({
+        where: {
+          businessProfileId: auth.profileId,
+          status: 'cancelled',
+          AND: [
+            kitchenVisibility,
+            {
+              OR: [
+                { itemsUpdatedAt: { gte: since } },
+                { updatedAt: { gte: since } },
+              ],
+            },
+          ],
+        },
+        orderBy: [{ updatedAt: 'desc' }, { itemsUpdatedAt: 'desc' }],
         select,
       }),
     ])
@@ -77,9 +116,11 @@ export async function GET(request) {
       preparing,
       ready,
       completed: completedRows.map((row) => mapKitchenBoardOrder(row, 'kitchen')),
+      cancelled: cancelledRows.map((row) => mapKitchenBoardOrder(row, 'kitchen')),
       stats: {
         activeCount: activeRows.length,
         completedCount: completedRows.length,
+        cancelledCount: cancelledRows.length,
         averagePrepMs,
       },
     })

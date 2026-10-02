@@ -5,6 +5,7 @@ import {
   checkoutPosSale,
   posCheckoutBodySchema,
 } from '@/lib/pos/checkout-pos-sale'
+import { primaryKitchenOrder } from '@/lib/orders/primary-kitchen-order'
 
 export async function POST(request) {
   try {
@@ -41,7 +42,7 @@ export async function POST(request) {
           changeGiven: invoice.changeGiven,
           qrCode: invoice.qrCode,
           zatcaStatus: invoice.zatcaStatus,
-          orderNumber: invoice.kitchenOrder?.orderNumber ?? null,
+          orderNumber: primaryKitchenOrder(invoice)?.orderNumber ?? null,
           invoiceDate: invoice.invoiceDate.toISOString(),
           sellerCompanyNameAr: invoice.sellerCompanyNameAr,
           sellerCompanyNameEn: invoice.sellerCompanyNameEn,

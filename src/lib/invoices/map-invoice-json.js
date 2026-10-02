@@ -1,4 +1,5 @@
 import { mapNoteSummaryForInvoice } from '@/lib/notes/map-note-json'
+import { primaryKitchenOrder } from '@/lib/orders/primary-kitchen-order'
 
 /**
  * @param {unknown} value
@@ -36,10 +37,11 @@ function moneyString(value) {
  *   createdByStaff?: { id: string, name: string } | null
  *   creditNotes?: Array<{ id: string, creditNoteNumber: string }>
  *   debitNotes?: Array<{ id: string, debitNoteNumber: string }>
- *   kitchenOrder?: { orderNumber?: number | null } | null
+ *   kitchenOrders?: Array<{ orderNumber?: number | null }> | null
  * }} row
  */
 export function mapInvoiceListItemToJson(row) {
+  const kitchen = primaryKitchenOrder(row)
   return {
     id: row.id,
     invoiceNumber: row.invoiceNumber,
@@ -55,7 +57,7 @@ export function mapInvoiceListItemToJson(row) {
     loyaltyPointsAwarded: row.loyaltyPointsAwarded === true,
     staffName: row.createdByStaff?.name ?? null,
     staffId: row.createdByStaff?.id ?? null,
-    orderNumber: row.kitchenOrder?.orderNumber ?? null,
+    orderNumber: kitchen?.orderNumber ?? null,
     creditNotes: (row.creditNotes ?? []).map((n) => ({
       id: n.id,
       noteNumber: n.creditNoteNumber,
@@ -106,6 +108,8 @@ export function mapInvoiceDetailToJson(invoice) {
       new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime(),
   )
 
+  const kitchen = primaryKitchenOrder(invoice)
+
   return {
     id: invoice.id,
     invoiceNumber: invoice.invoiceNumber,
@@ -136,8 +140,8 @@ export function mapInvoiceDetailToJson(invoice) {
     zatcaLastError: invoice.zatcaLastError,
     staffName: invoice.createdByStaff?.name ?? null,
     staffId: invoice.createdByStaff?.id ?? null,
-    orderNumber: invoice.kitchenOrder?.orderNumber ?? null,
-    orderStatus: invoice.kitchenOrder?.status ?? null,
+    orderNumber: kitchen?.orderNumber ?? null,
+    orderStatus: kitchen?.status ?? null,
     lines,
     createdAt: invoice.createdAt.toISOString(),
   }

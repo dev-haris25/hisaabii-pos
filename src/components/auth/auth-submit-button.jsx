@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 /**
  * Primary CTA — shared by auth flows, business profile, and in-app forms.
  * All variants use the same label typography (`type-label-md` + bold); only fill/text/hover differ.
+ * `gold` and `muted` both use the soft gold CTA (`bg-hisabi-gold-muted`) — same as list “Add” buttons.
  *
  * @param {{
  *   children: import('react').ReactNode
@@ -36,7 +37,8 @@ export function AuthSubmitButton({
       ? 'bg-hisabi-error text-white shadow-sm hover:bg-[color-mix(in_srgb,var(--hisabi-error)_82%,#000)] disabled:opacity-60 disabled:hover:bg-hisabi-error'
       : variant === 'secondary'
         ? 'border border-hisabi-outline-variant/60 bg-white text-hisabi-on-surface shadow-none hover:bg-hisabi-surface-container disabled:opacity-60 disabled:hover:bg-white'
-        : 'bg-hisabi-gold-muted text-hisabi-on-secondary-container shadow-sm hover:bg-hisabi-gold-muted-hover disabled:opacity-60 disabled:hover:bg-hisabi-gold-muted'
+        : // `gold` === muted soft gold (project-wide primary CTA; matches Add menu item)
+          'bg-hisabi-gold-muted text-hisabi-on-secondary-container shadow-sm hover:bg-hisabi-gold-muted-hover disabled:opacity-60 disabled:hover:bg-hisabi-gold-muted'
 
   return (
     <button

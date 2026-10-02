@@ -642,3 +642,188 @@ body[data-locale='en'] {
 .hisabi-moyasar-custom-pay-label div#mysr .bg-primary .currency-amount {
   display: none !important;
 }
+
+/* ---------------------------------------------------------------------------
+ * E-Waiter public menu (white-label). Brand vars overridden per-restaurant
+ * via a scoped <style> block on the order page — defaults match Hisabi tokens.
+ * --------------------------------------------------------------------------- */
+.e-waiter-shell {
+  --e-waiter-primary: var(--hisabi-primary);
+  --e-waiter-secondary: var(--hisabi-secondary);
+  --e-waiter-accent: var(--hisabi-gold);
+  --e-waiter-background: var(--hisabi-background);
+  --e-waiter-text: var(--hisabi-on-background);
+  --e-waiter-on-primary: #ffffff;
+  --e-waiter-surface: #ffffff;
+  --e-waiter-muted: color-mix(in srgb, var(--e-waiter-text) 55%, transparent);
+  --e-waiter-chip-bg: color-mix(in srgb, var(--e-waiter-primary) 10%, var(--e-waiter-surface));
+  --e-waiter-border: color-mix(in srgb, var(--e-waiter-text) 12%, transparent);
+  --e-waiter-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --e-waiter-cart-bar-h: clamp(4.5rem, 14vw, 5.25rem);
+  --e-waiter-tap: clamp(2.75rem, 11vw, 3.25rem);
+  --e-waiter-logo: clamp(2.5rem, 10vw, 3rem);
+  --e-waiter-thumb: clamp(4.5rem, 18vw, 5.5rem);
+  background-color: var(--e-waiter-background);
+  color: var(--e-waiter-text);
+  min-height: 100dvh;
+}
+
+.e-waiter-surface {
+  background-color: var(--e-waiter-surface);
+}
+
+.e-waiter-text-muted {
+  color: var(--e-waiter-muted);
+}
+
+.e-waiter-border {
+  border-color: var(--e-waiter-border);
+}
+
+.e-waiter-chip {
+  background-color: var(--e-waiter-chip-bg);
+  color: var(--e-waiter-primary);
+}
+
+.e-waiter-chip-active {
+  background-color: var(--e-waiter-primary);
+  color: var(--e-waiter-on-primary);
+}
+
+.e-waiter-btn-primary {
+  background-color: var(--e-waiter-primary);
+  color: var(--e-waiter-on-primary);
+}
+
+.e-waiter-btn-accent {
+  background-color: var(--e-waiter-accent);
+  color: var(--e-waiter-text);
+}
+
+.e-waiter-accent-text {
+  color: var(--e-waiter-accent);
+}
+
+.e-waiter-primary-text {
+  color: var(--e-waiter-primary);
+}
+
+.e-waiter-tap {
+  min-height: var(--e-waiter-tap);
+  min-width: var(--e-waiter-tap);
+}
+
+.e-waiter-logo {
+  width: var(--e-waiter-logo);
+  height: var(--e-waiter-logo);
+}
+
+.e-waiter-thumb {
+  width: var(--e-waiter-thumb);
+  height: var(--e-waiter-thumb);
+}
+
+/* Mobile-first content column; widens into a web catalog layout. */
+.e-waiter-content {
+  width: 100%;
+  max-width: 32rem;
+  margin-inline: auto;
+}
+
+.e-waiter-content-narrow {
+  width: 100%;
+  max-width: 32rem;
+  margin-inline: auto;
+}
+
+.e-waiter-menu-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-hisabi-md);
+}
+
+.e-waiter-menu-card {
+  display: flex;
+  flex-direction: row;
+  gap: var(--spacing-hisabi-md);
+}
+
+.e-waiter-main {
+  padding-bottom: calc(var(--spacing-hisabi-xxl) + var(--e-waiter-safe-bottom));
+}
+
+.e-waiter-cart-bar {
+  padding-bottom: calc(var(--spacing-hisabi-sm) + var(--e-waiter-safe-bottom));
+}
+
+.e-waiter-sheet {
+  max-height: min(88dvh, 40rem);
+  padding-bottom: calc(var(--spacing-hisabi-md) + var(--e-waiter-safe-bottom));
+}
+
+@media (min-width: 768px) {
+  .e-waiter-content {
+    max-width: 48rem;
+  }
+
+  .e-waiter-content-narrow {
+    max-width: 40rem;
+  }
+
+  .e-waiter-menu-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-hisabi-lg);
+  }
+
+  .e-waiter-menu-card {
+    flex-direction: column;
+  }
+
+  .e-waiter-menu-card .e-waiter-thumb {
+    width: 100%;
+    height: clamp(7.5rem, 18vw, 10rem);
+  }
+
+  .e-waiter-logo {
+    --e-waiter-logo: clamp(2.75rem, 4vw, 3.5rem);
+  }
+}
+
+@media (min-width: 1100px) {
+  .e-waiter-content {
+    max-width: 72rem;
+  }
+
+  .e-waiter-menu-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.e-waiter-fade-in {
+  animation: e-waiter-fade-in 280ms ease-out both;
+}
+
+@keyframes e-waiter-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.e-waiter-sheet-up {
+  animation: e-waiter-sheet-up 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes e-waiter-sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -5,6 +5,8 @@ export const NOTIFICATION_AUDIENCE_ROLES = {
   zatca: ['Admin', 'Manager', 'Accountant'],
   hr: ['Admin', 'Manager', 'HR'],
   salesOps: ['Admin', 'Manager', 'Accountant'],
+  /** E-Waiter floor alerts: Admin, Manager, Cashier (+ owner). */
+  eWaiterFloor: ['Admin', 'Manager', 'Cashier'],
   team: ['Admin', 'Manager', 'HR'],
   /** High kitchen wastage: owner (always) + Admin only. */
   ownerAdmin: ['Admin'],

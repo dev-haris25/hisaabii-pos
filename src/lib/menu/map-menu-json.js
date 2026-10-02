@@ -108,6 +108,10 @@ export function mapMenuItemToJson(row) {
     vatPreset: row.vatPreset,
     active: row.active,
     loyaltyRedeemable: row.loyaltyRedeemable === true,
+    calories:
+      typeof row.calories === 'number' && Number.isFinite(row.calories)
+        ? row.calories
+        : null,
     sortOrder: row.sortOrder,
     hasImage,
     // Authenticated serve URL (DB `imageUrl` holds relative UPLOADS_DIR key).
@@ -134,6 +138,11 @@ export function mapMenuItemToJson(row) {
           nameAr: option.nameAr,
           nameEn: option.nameEn,
           priceChange: option.priceChange,
+          calories:
+            typeof option.calories === 'number' &&
+            Number.isFinite(option.calories)
+              ? option.calories
+              : null,
           isDefault: option.isDefault,
           sortOrder: option.sortOrder,
         })),

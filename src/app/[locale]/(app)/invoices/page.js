@@ -11,6 +11,7 @@ import {
   buildPaginationMeta,
   parseListPagination,
 } from '@/lib/list-views/parse-list-pagination'
+import { primaryKitchenOrderInclude } from '@/lib/orders/primary-kitchen-order'
 import { restaurantLogoPreviewUrl } from '@/lib/print/load-receipt-logo'
 import { prisma } from '@/lib/prisma'
 
@@ -74,8 +75,8 @@ export default async function InvoicesPage({ params, searchParams }) {
               name: { contains: search, mode: 'insensitive' },
             },
           },
-          ...(Number.isFinite(orderNum)
-            ? [{ kitchenOrder: { is: { orderNumber: orderNum } } }]
+            ...(Number.isFinite(orderNum)
+            ? [{ kitchenOrders: { some: { orderNumber: orderNum } } }]
             : []),
         ],
       },
@@ -107,7 +108,7 @@ export default async function InvoicesPage({ params, searchParams }) {
         qrCode: true,
         loyaltyPointsAwarded: true,
         createdByStaff: { select: { id: true, name: true } },
-        kitchenOrder: { select: { orderNumber: true, status: true } },
+        kitchenOrders: primaryKitchenOrderInclude(),
         creditNotes: {
           where: { deletedAt: null },
           orderBy: { noteDate: 'asc' },

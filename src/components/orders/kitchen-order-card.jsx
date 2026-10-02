@@ -81,6 +81,10 @@ const AGE_CARD = {
  *     orderNumber: number
  *     createdAt: string
  *     completedAt?: string | null
+ *     tableSessionId?: string | null
+ *     tableName?: string | null
+ *     roundNumber?: number | null
+ *     status?: string
  *     lines?: Array<{
  *       nameAr?: string
  *       nameEn?: string | null
@@ -95,6 +99,8 @@ const AGE_CARD = {
  *   actionLabel?: string | null
  *   actionPending?: boolean
  *   onAction?: () => void
+ *   cancelPending?: boolean
+ *   onCancel?: (() => void) | null
  *   draggable?: boolean
  * }} props
  */
@@ -105,6 +111,8 @@ export function KitchenOrderCard({
   actionLabel = null,
   actionPending = false,
   onAction,
+  cancelPending = false,
+  onCancel = null,
   draggable = false,
 }) {
   const t = useTranslations('KitchenQueue')
@@ -114,6 +122,17 @@ export function KitchenOrderCard({
   const tone = kitchenAgeTone(waitMs)
   const ageLabel =
     tone === 'late' ? t('ageLate') : tone === 'warn' ? t('ageWaiting') : t('ageOnTime')
+  const tableName = String(order.tableName ?? '').trim()
+  const showTableBadge = Boolean(order.tableSessionId && tableName)
+  const roundNumber =
+    typeof order.roundNumber === 'number' && order.roundNumber > 0
+      ? order.roundNumber
+      : null
+  const status = String(order.status ?? '')
+  const showCancel =
+    Boolean(order.tableSessionId) &&
+    (status === 'pending' || status === 'preparing' || status === 'ready') &&
+    typeof onCancel === 'function'
 
   return (
     <article
@@ -133,9 +152,27 @@ export function KitchenOrderCard({
       )}
     >
       <div className="flex items-start justify-between gap-hisabi-sm">
-        <p className="type-headline-sm font-bold text-hisabi-on-surface" dir="ltr">
-          {formatOrderNumber(order.orderNumber)}
-        </p>
+        <div className="min-w-0 space-y-1">
+          <p className="type-headline-sm font-bold text-hisabi-on-surface" dir="ltr">
+            {formatOrderNumber(order.orderNumber)}
+          </p>
+          {showTableBadge ? (
+            <p
+              className="type-label-sm inline-flex max-w-full items-center rounded-hisabi-md bg-hisabi-tertiary-fixed px-hisabi-sm py-0.5 font-bold text-hisabi-on-tertiary-fixed"
+              title={t('tableRoundBadge', {
+                table: tableName,
+                round: String(roundNumber ?? 1),
+              })}
+            >
+              <span className="truncate">
+                {t('tableRoundBadge', {
+                  table: tableName,
+                  round: String(roundNumber ?? 1),
+                })}
+              </span>
+            </p>
+          ) : null}
+        </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <span
             className={cn(
@@ -243,6 +280,17 @@ export function KitchenOrderCard({
         >
           {actionLabel}
         </AuthSubmitButton>
+      ) : null}
+
+      {showCancel && onCancel ? (
+        <button
+          type="button"
+          disabled={actionPending || cancelPending}
+          onClick={onCancel}
+          className="type-label-md mt-hisabi-xs flex min-h-hisabi-btn-sm w-full items-center justify-center rounded-hisabi-xl border border-hisabi-error/40 font-bold text-hisabi-error disabled:opacity-50"
+        >
+          {cancelPending ? t('cancellingRound') : t('cancelRound')}
+        </button>
       ) : null}
     </article>
   )
