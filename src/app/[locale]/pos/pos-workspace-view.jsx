@@ -8,7 +8,10 @@ import { useSearchParams } from 'next/navigation'
 
 import { AuthButtonSpinner } from '@/components/auth/auth-button-spinner'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
-import { TableSessionAlertToastListener } from '@/components/app-shell/table-session-alert-toast-listener'
+import {
+  TableSessionAlertToastListener,
+  useTableSessionAlertCount,
+} from '@/components/app-shell/table-session-alert-toast-listener'
 import { PosCheckoutView } from './pos-checkout-view'
 import { TableSessionsFloorView } from '../(app)/table-sessions/table-sessions-floor-view'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
@@ -66,6 +69,10 @@ export function PosWorkspaceView({
 
   const logoutMutation = useMutation({
     mutationFn: () => logoutOnlineOrOffline(),
+  })
+
+  const tableAlertCount = useTableSessionAlertCount({
+    disabled: !canUseTablesTab,
   })
 
   return (
@@ -150,15 +157,28 @@ export function PosWorkspaceView({
                 type="button"
                 role="tab"
                 aria-selected={activeTab === 'tables'}
+                aria-label={
+                  tableAlertCount > 0
+                    ? t('tabTablesAlertAria', { count: tableAlertCount })
+                    : t('tabTables')
+                }
                 onClick={() => setTab('tables')}
                 className={cn(
-                  'type-label-sm flex min-h-10 flex-1 cursor-pointer items-center justify-center rounded-lg px-hisabi-md font-bold transition-colors',
+                  'type-label-sm relative flex min-h-10 flex-1 cursor-pointer items-center justify-center gap-hisabi-xs rounded-lg px-hisabi-md font-bold transition-colors',
                   activeTab === 'tables'
                     ? 'bg-hisabi-primary-container text-white'
                     : 'text-hisabi-on-surface-variant hover:bg-hisabi-surface-container',
                 )}
               >
                 {t('tabTables')}
+                {tableAlertCount > 0 ? (
+                  <span
+                    aria-hidden
+                    className="type-label-sm flex min-h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-hisabi-error px-1 font-bold tabular-nums text-white"
+                  >
+                    {tableAlertCount > 99 ? '99+' : tableAlertCount}
+                  </span>
+                ) : null}
               </button>
             </div>
           </div>

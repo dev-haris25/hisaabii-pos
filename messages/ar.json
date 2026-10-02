@@ -2083,6 +2083,7 @@
     "title": "نقطة البيع",
     "tabPos": "نقطة البيع",
     "tabTables": "خدمة الطاولات",
+    "tabTablesAlertAria": "خدمة الطاولات، {count} طلبات طاولات مفتوحة",
     "workspaceTabsAria": "مساحة نقطة البيع",
     "staffLabel": "الموظف",
     "restaurantLabel": "المطعم",

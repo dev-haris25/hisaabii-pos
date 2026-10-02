@@ -23,6 +23,43 @@ export function tableSessionAlertsQueryKey(activeBusinessProfileId) {
 export const TABLE_SESSION_ALERTS_POLL_MS = 4000
 
 /**
+ * @param {{ disabled?: boolean }} [options]
+ */
+export function useTableSessionAlertsQuery({ disabled = false } = {}) {
+  const ability = useAppAbility()
+  const canReadSessions =
+    hasFullAccess(ability) || ability.can('read', 'TableSession')
+  const activeBusinessProfileId = useAuthStore(
+    (s) => s.user?.activeBusinessProfileId ?? s.user?.businessProfileId ?? null,
+  )
+
+  const isEnabled =
+    Boolean(activeBusinessProfileId) && canReadSessions && !disabled
+
+  const query = useQuery({
+    queryKey: tableSessionAlertsQueryKey(activeBusinessProfileId),
+    queryFn: async () => authGet('/table-sessions/notifications'),
+    refetchInterval: TABLE_SESSION_ALERTS_POLL_MS,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    enabled: isEnabled,
+  })
+
+  return { ...query, isEnabled }
+}
+
+/**
+ * Open table calls (waiter and/or bill), one count per table until resolved.
+ *
+ * @param {{ disabled?: boolean }} [options]
+ */
+export function useTableSessionAlertCount({ disabled = false } = {}) {
+  const { data } = useTableSessionAlertsQuery({ disabled })
+  const total = data?.counts?.total
+  return typeof total === 'number' && total > 0 ? total : 0
+}
+
+/**
  * Ephemeral live toasts for call-waiter / ask-for-bill.
  * Polls the lightweight alerts endpoint; primes on first fetch so late logins
  * do not see backlog toasts. Never writes to the in-app notifications sheet.
@@ -31,9 +68,6 @@ export const TABLE_SESSION_ALERTS_POLL_MS = 4000
  */
 export function TableSessionAlertToastListener({ disabled = false }) {
   const t = useTranslations('TableSessions')
-  const ability = useAppAbility()
-  const canReadSessions =
-    hasFullAccess(ability) || ability.can('read', 'TableSession')
   const activeBusinessProfileId = useAuthStore(
     (s) => s.user?.activeBusinessProfileId ?? s.user?.businessProfileId ?? null,
   )
@@ -47,20 +81,10 @@ export function TableSessionAlertToastListener({ disabled = false }) {
     primedRef.current = false
   }, [activeBusinessProfileId])
 
-  const enabled =
-    Boolean(activeBusinessProfileId) && canReadSessions && !disabled
-
-  const { data, isSuccess } = useQuery({
-    queryKey: tableSessionAlertsQueryKey(activeBusinessProfileId),
-    queryFn: async () => authGet('/table-sessions/notifications'),
-    refetchInterval: TABLE_SESSION_ALERTS_POLL_MS,
-    refetchIntervalInBackground: true,
-    refetchOnWindowFocus: true,
-    enabled,
-  })
+  const { data, isSuccess, isEnabled } = useTableSessionAlertsQuery({ disabled })
 
   useEffect(() => {
-    if (!enabled || !isSuccess) return
+    if (!isEnabled || !isSuccess) return
 
     const rows = Array.isArray(data?.notifications) ? data.notifications : []
 
@@ -110,7 +134,7 @@ export function TableSessionAlertToastListener({ disabled = false }) {
     // re-request after resolve still toasts.
     seenRef.current = nextSeen
     primedRef.current = true
-  }, [data, enabled, isSuccess, t])
+  }, [data, isEnabled, isSuccess, t])
 
   return null
 }

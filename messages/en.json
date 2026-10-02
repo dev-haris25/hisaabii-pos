@@ -2090,6 +2090,7 @@
     "title": "Point of sale",
     "tabPos": "POS",
     "tabTables": "Table service",
+    "tabTablesAlertAria": "Table service, {count} open table calls",
     "workspaceTabsAria": "POS workspace",
     "staffLabel": "Staff",
     "restaurantLabel": "Restaurant",
