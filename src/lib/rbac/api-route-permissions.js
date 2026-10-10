@@ -53,6 +53,15 @@ const ROUTE_PERMISSIONS = [
     },
   },
   {
+    pattern: /^\/offers/,
+    methods: {
+      GET: { action: 'read', subject: 'Offer' },
+      POST: { action: 'create', subject: 'Offer' },
+      PATCH: { action: 'update', subject: 'Offer' },
+      DELETE: { action: 'delete', subject: 'Offer' },
+    },
+  },
+  {
     pattern: /^\/loyalty/,
     methods: {
       GET: { action: 'read', subject: 'Loyalty' },
@@ -154,6 +163,13 @@ const ROUTE_PERMISSIONS = [
     pattern: /^\/pos\/loyalty/,
     methods: {
       POST: { action: 'create', subject: 'Pos' },
+    },
+  },
+  {
+    // Offer images on POS cards (cashiers included).
+    pattern: /^\/pos\/offers\/[^/]+\/image$/,
+    methods: {
+      GET: { action: 'read', subject: 'Pos' },
     },
   },
   {

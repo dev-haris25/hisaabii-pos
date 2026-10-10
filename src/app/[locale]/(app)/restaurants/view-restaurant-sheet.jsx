@@ -11,6 +11,7 @@ import { authGet } from '@/lib/api/auth-client'
 import { cn } from '@/lib/utils'
 import { companyDisplayNameForLocale } from '@/lib/business-profile/company-display-name'
 
+/** Keep in sync with the `duration-300` transition classes on the overlay + panel. */
 const SHEET_TRANSITION_MS = 300
 
 function companyInitials(name) {
@@ -141,10 +142,9 @@ export function ViewRestaurantSheet({
       <button
         type="button"
         className={cn(
-          'absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity ease-out',
+          'absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ease-out',
           animateIn ? 'opacity-100' : 'opacity-0',
         )}
-        style={{ transitionDuration: `${SHEET_TRANSITION_MS}ms` }}
         aria-label={t('viewCloseAria')}
         onClick={handleClose}
       />
@@ -154,10 +154,9 @@ export function ViewRestaurantSheet({
         aria-modal="true"
         aria-labelledby={titleId}
         className={cn(
-          'border-hisabi-outline-variant/30 relative z-10 flex h-full w-full max-w-[calc(600px*var(--hisabi-ui-scale))] flex-col overflow-hidden border-s bg-hisabi-surface-container-lowest shadow-2xl transition-transform ease-out',
+          'border-hisabi-outline-variant/30 relative z-10 flex h-full w-full max-w-[calc(600px*var(--hisabi-ui-scale))] flex-col overflow-hidden border-s bg-hisabi-surface-container-lowest shadow-2xl transition-transform duration-300 ease-out',
           animateIn ? 'translate-x-0' : 'translate-x-full',
         )}
-        style={{ transitionDuration: `${SHEET_TRANSITION_MS}ms` }}
         onTransitionEnd={handleSheetTransitionEnd}
         onMouseDown={(e) => e.stopPropagation()}
       >

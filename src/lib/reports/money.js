@@ -1,12 +1,14 @@
-/** @param {string | number | null | undefined} v */
-export function parseMoney(v) {
-  const n = Number.parseFloat(String(v ?? '').replace(/,/g, '').trim())
-  return Number.isFinite(n) ? n : 0
-}
+import {
+  decimalStringFromNumber,
+  parseMoney,
+} from '@/lib/invoices/invoice-compute-totals'
+
+// Reports share the invoice money helpers (rules §23) — re-exported for callers.
+export { parseMoney }
 
 /** @param {number} n */
 export function toMoneyStr(n) {
-  return (Math.round(n * 100) / 100).toFixed(2)
+  return decimalStringFromNumber(n)
 }
 
 /**

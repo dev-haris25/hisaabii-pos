@@ -21,13 +21,21 @@ export function estimateTableSessionBilling(
   loyaltySettings,
 ) {
   let gross = 0
+  let offerSavings = 0
   const list = Array.isArray(lines) ? lines : []
   for (const line of list) {
-    gross += computeLineAmounts({
+    const base = {
       quantity: Number(line.quantity) || 0,
       unitPrice: String(line.unitPrice ?? '0'),
       vatPreset: String(line.vatPreset ?? 'standard'),
-    }).lineTotal
+    }
+    const full = computeLineAmounts(base).lineTotal
+    // Offer / deal price locked when the round was placed.
+    const net = line.offerId
+      ? computeLineAmounts({ ...base, discount: String(line.offerDiscount ?? '0') }).lineTotal
+      : full
+    gross += net
+    offerSavings += full - net
   }
 
   const totalInclVat = decimalStringFromNumber(gross)
@@ -51,6 +59,7 @@ export function estimateTableSessionBilling(
   )
 
   return {
+    offerSavingsInclVat: decimalStringFromNumber(offerSavings),
     totalInclVat,
     loyaltyRedeemPoints: redeemRaw,
     loyaltyDiscountMoney,

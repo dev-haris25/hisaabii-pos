@@ -106,6 +106,7 @@ export default async function InvoicesPage({ params, searchParams }) {
         zatcaStatus: true,
         zatcaLastError: true,
         qrCode: true,
+        cryptographicStamp: true,
         loyaltyPointsAwarded: true,
         createdByStaff: { select: { id: true, name: true } },
         kitchenOrders: primaryKitchenOrderInclude(),

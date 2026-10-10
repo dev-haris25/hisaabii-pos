@@ -1,8 +1,8 @@
 'use client'
 
-import { Loader2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { useIsRtl } from '@/components/auth/use-is-rtl'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { useGeminiArSuggestion } from '@/hooks/use-gemini-ar-suggestion'
@@ -200,10 +200,7 @@ export function BilingualCompanyAddressFields({
           >
             {t('fieldDistrictEn')}
             {loadingDistrictEn ? (
-              <Loader2
-                className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                aria-label={t('translating')}
-              />
+              <HisabiSpinner size="inline" className="text-hisabi-teal" label={t('translating')} />
             ) : null}
           </label>
           <input
@@ -233,10 +230,7 @@ export function BilingualCompanyAddressFields({
             {t('fieldDistrictAr')}
             <RequiredMark />
             {loadingDistrictAr ? (
-              <Loader2
-                className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                aria-label={t('translating')}
-              />
+              <HisabiSpinner size="inline" className="text-hisabi-teal" label={t('translating')} />
             ) : null}
           </label>
           <input
@@ -283,10 +277,7 @@ export function BilingualCompanyAddressFields({
           >
             {t('fieldCityEn')}
             {loadingCityEn ? (
-              <Loader2
-                className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                aria-label={t('translating')}
-              />
+              <HisabiSpinner size="inline" className="text-hisabi-teal" label={t('translating')} />
             ) : null}
           </label>
           <input
@@ -316,10 +307,7 @@ export function BilingualCompanyAddressFields({
             {t('fieldCityAr')}
             <RequiredMark />
             {loadingCityAr ? (
-              <Loader2
-                className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                aria-label={t('translating')}
-              />
+              <HisabiSpinner size="inline" className="text-hisabi-teal" label={t('translating')} />
             ) : null}
           </label>
           <input
@@ -366,10 +354,7 @@ export function BilingualCompanyAddressFields({
           >
             {t('fieldStreetEn')}
             {loadingStreetEn ? (
-              <Loader2
-                className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                aria-label={t('translating')}
-              />
+              <HisabiSpinner size="inline" className="text-hisabi-teal" label={t('translating')} />
             ) : null}
           </label>
           <input
@@ -399,10 +384,7 @@ export function BilingualCompanyAddressFields({
             {t('fieldStreetAr')}
             <RequiredMark />
             {loadingStreetAr ? (
-              <Loader2
-                className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                aria-label={t('translating')}
-              />
+              <HisabiSpinner size="inline" className="text-hisabi-teal" label={t('translating')} />
             ) : null}
           </label>
           <input

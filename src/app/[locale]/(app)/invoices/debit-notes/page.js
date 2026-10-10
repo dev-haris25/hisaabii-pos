@@ -91,6 +91,7 @@ export default async function DebitNotesPage({ params, searchParams }) {
         zatcaStatus: true,
         zatcaLastError: true,
         qrCode: true,
+        cryptographicStamp: true,
         createdByStaff: { select: { id: true, name: true } },
       },
     }),

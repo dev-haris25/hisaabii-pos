@@ -19,6 +19,13 @@ import { prisma } from '@/lib/prisma'
 
 const patchBodySchema = z.object({
   lines: eWaiterOrderLinesSchema,
+  /** Offer discount on the edited (non-deal) lines the guest saw. */
+  expectedOfferDiscount: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d{1,4})?$/)
+    .optional()
+    .nullable(),
 })
 
 /**
@@ -110,6 +117,8 @@ export async function PATCH(request, context) {
     }
 
     const result = await replaceEWaiterRoundLines({
+      businessProfileId: resolved.profile.id,
+      expectedOfferDiscount: parsed.data.expectedOfferDiscount ?? null,
       kitchenOrderId: existing.id,
       tableSessionId: existing.tableSessionId,
       resolvedLines: resolvedLines.lines,

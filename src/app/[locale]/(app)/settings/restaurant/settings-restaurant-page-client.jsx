@@ -7,7 +7,6 @@ import {
   Copy,
   FileText,
   Keyboard,
-  Loader2,
   Mail,
   SlidersHorizontal,
   Tv,
@@ -17,6 +16,7 @@ import { useTranslations } from 'next-intl'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
+import { AppLoader } from '@/components/app-loader'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { HisabiStatusModal } from '@/components/hisabi-status-modal'
 import { useAppAbility } from '@/components/rbac/ability-provider'
@@ -343,7 +343,7 @@ export function SettingsRestaurantPageClient() {
         subtitle={t('restaurantSubtitle')}
       >
         <div className="flex justify-center py-16">
-          <Loader2 className="size-8 animate-spin text-hisabi-primary" />
+          <AppLoader size="lg" />
         </div>
       </SettingsPageShell>
     )

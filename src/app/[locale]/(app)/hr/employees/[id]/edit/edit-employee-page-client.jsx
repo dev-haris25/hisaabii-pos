@@ -1,9 +1,9 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 
+import { AppLoader } from '@/components/app-loader'
 import { EmployeeFormPage } from '@/components/hr/employee-form-page'
 import { authGet } from '@/lib/api/auth-client'
 
@@ -22,7 +22,7 @@ export function EditEmployeePageClient({ employeeId, hasBusinessProfile }) {
   if (isPending) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
-        <Loader2 className="size-8 animate-spin text-hisabi-primary" aria-hidden />
+        <AppLoader size="lg" />
       </div>
     )
   }

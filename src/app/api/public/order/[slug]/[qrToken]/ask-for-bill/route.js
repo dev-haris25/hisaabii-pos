@@ -73,6 +73,16 @@ export async function POST(request, context) {
     /** @type {string | null} */
     let requestedRedeemPoints = null
     if (redeemRaw) {
+      const offerLines = await prisma.tableSessionLine.count({
+        where: { tableSessionId: session.id, cancelled: false, offerId: { not: null } },
+      })
+      if (offerLines > 0) {
+        return jsonError(
+          409,
+          'OFFERS_EXCLUSIVE_DISCOUNT',
+          'Offers and deals cannot be combined with loyalty points',
+        )
+      }
       if (!session.loyaltyAccountId) {
         return jsonError(
           400,

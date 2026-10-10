@@ -21,6 +21,7 @@ import {
   UserCircle,
   Warehouse,
   TicketPercent,
+  BadgePercent,
   Gift,
   Table2,
   X,
@@ -44,7 +45,7 @@ import { AbilityProvider, useOptionalAppAbility } from '@/components/rbac/abilit
 import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
 import { authGet, authPost } from '@/lib/api/auth-client'
-import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth'
+import { logoutSession } from '@/lib/desktop/desktop-auth'
 import { resolveActiveSidebarChildHref } from '@/lib/app-shell/sidebar-nav'
 import { tourIdForSidebarHref } from '@/lib/product-tour/tour-dom-ids'
 import { hasFullAccess } from '@/lib/rbac/ability-utils'
@@ -327,6 +328,12 @@ function AdminAppShellInner({
         icon: TicketPercent,
       },
       {
+        id: 'offers',
+        href: '/offers',
+        labelKey: 'navOffers',
+        icon: BadgePercent,
+      },
+      {
         id: 'loyalty',
         labelKey: 'navLoyalty',
         icon: Gift,
@@ -486,7 +493,7 @@ function AdminAppShellInner({
     'type-body-sm focus:ring-hisabi-teal-container w-full min-w-0 rounded-xl border-0 bg-hisabi-surface-container py-2.5 pe-hisabi-md ps-11 text-hisabi-on-surface outline-none ring-1 ring-hisabi-outline-variant/40 focus:ring-2'
 
   const logoutMutation = useMutation({
-    mutationFn: () => logoutOnlineOrOffline(),
+    mutationFn: () => logoutSession(),
     onSuccess: () => {
       setUser(null)
       queryClient.clear()

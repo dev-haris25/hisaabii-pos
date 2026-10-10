@@ -25,61 +25,61 @@ datasource db {
 
 /// Restaurant/business tenant. Users may belong to many via BusinessMembership.
 model BusinessProfile {
-  id             String  @id @default(cuid())
+  id                   String  @id @default(cuid())
   /// Canonical restaurant owner (not an RBAC role). Exactly one per restaurant.
-  ownerUserId    String
-  owner          User    @relation("BusinessProfileOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  ownerUserId          String
+  owner                User    @relation("BusinessProfileOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
   /// Arabic company name — used as seller name on ZATCA invoices and receipts.
-  companyNameAr  String
+  companyNameAr        String
   /// Optional English name for bilingual receipts/UI.
-  companyNameEn  String?
-  crNumber       String
-  vatNumber      String
+  companyNameEn        String?
+  crNumber             String
+  vatNumber            String
   /// Composed Arabic address line — seller address on invoices.
-  addressAr      String
+  addressAr            String
   /// Optional composed English address line.
-  addressEn      String?
-  streetAr       String  @default("")
-  streetEn       String  @default("")
-  districtAr     String  @default("")
-  districtEn     String  @default("")
-  cityAr         String  @default("")
-  cityEn         String  @default("")
-  buildingNumber String  @default("")
-  secondaryNumber String @default("")
-  postalCode     String  @default("")
+  addressEn            String?
+  streetAr             String  @default("")
+  streetEn             String  @default("")
+  districtAr           String  @default("")
+  districtEn           String  @default("")
+  cityAr               String  @default("")
+  cityEn               String  @default("")
+  buildingNumber       String  @default("")
+  secondaryNumber      String  @default("")
+  postalCode           String  @default("")
   /// Optional short address (national short address code) for display/receipts.
-  shortAddress   String  @default("")
-  email          String?
-  phone          String?
+  shortAddress         String  @default("")
+  email                String?
+  phone                String?
   /// Standard KSA VAT rate applied when a menu item's vatPreset is `standard`, e.g. "15".
-  defaultVatPercent String @default("15")
-  logoMimeType      String?
+  defaultVatPercent    String  @default("15")
+  logoMimeType         String?
   /// Local/object storage path for the restaurant logo (receipt header, UI branding).
-  logoStoragePath   String?
+  logoStoragePath      String?
   /// Optional white-label E-Waiter menu colors (CSS hex strings, e.g. "#00342b").
   /// Fallbacks live in `src/lib/e-waiter/default-brand-colors.js` (not stored in DB).
-  brandPrimaryColor     String?
-  brandSecondaryColor   String?
-  brandAccentColor      String?
-  brandBackgroundColor  String?
-  brandTextColor        String?
+  brandPrimaryColor    String?
+  brandSecondaryColor  String?
+  brandAccentColor     String?
+  brandBackgroundColor String?
+  brandTextColor       String?
 
   /// Restaurant geofence center for E-Waiter (admin-set; enforced on public menu later).
-  locationLat            Float?
-  locationLng            Float?
+  locationLat          Float?
+  locationLng          Float?
   /// Allowed customer distance from lat/lng in meters (null = unset; app default applied later).
-  locationRadiusMeters   Int?
+  locationRadiusMeters Int?
 
   /// First receipt printer (kept in sync with receiptPrinters[0] for older clients).
   /// Extra printers live in ReceiptPrinter. The on-site print bridge reads these
   /// via the API, not from a global .env (each restaurant has its own LAN).
-  printerIp   String?
-  printerPort Int     @default(9100)
+  printerIp       String?
+  printerPort     Int              @default(9100)
   receiptPrinters ReceiptPrinter[]
 
   /// System-generated unique slug (e.g. r-a7k2m9xq) — public customer queue URL.
-  slug String @unique
+  slug                String @unique
   /// ar | en — default language for the public customer queue.
   customerQueueLocale String @default("ar")
 
@@ -92,46 +92,44 @@ model BusinessProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  activeForUsers    User[]                 @relation("UserActiveBusinessProfile")
-  memberships       BusinessMembership[]
-  roles             Role[]
-  invitations       UserInvitation[]
-  menuCategories    MenuCategory[]
-  menuItems         MenuItem[]
-  invoices          Invoice[]
-  invoiceCounter    InvoiceCounter?
-  kitchenOrders     KitchenOrder[]
+  activeForUsers       User[]                @relation("UserActiveBusinessProfile")
+  memberships          BusinessMembership[]
+  roles                Role[]
+  invitations          UserInvitation[]
+  menuCategories       MenuCategory[]
+  menuItems            MenuItem[]
+  invoices             Invoice[]
+  invoiceCounter       InvoiceCounter?
+  kitchenOrders        KitchenOrder[]
   kitchenOrderCounters KitchenOrderCounter[]
-  creditNotes       CreditNote[]
-  debitNotes        DebitNote[]
-  creditNoteCounter CreditNoteCounter?
-  debitNoteCounter  DebitNoteCounter?
-  zatcaDevice       ZatcaDevice?
-  notifications     Notification[]
+  creditNotes          CreditNote[]
+  debitNotes           DebitNote[]
+  creditNoteCounter    CreditNoteCounter?
+  debitNoteCounter     DebitNoteCounter?
+  zatcaDevice          ZatcaDevice?
+  notifications        Notification[]
 
-  idTypes               IdType[]
-  payslipCategories     PayslipCategory[]
-  employees             Employee[]
-  employeePromotions    EmployeePromotion[]
-  salarySlipCounter     SalarySlipCounter?
-  salarySlips           SalarySlip[]
-  employeePayments      EmployeePayment[]
-  businessSettings      BusinessSettings?
-  posTills              PosTill[] @relation("BusinessPosTills")
-  /// Till allowed to sell when the restaurant is offline (one per restaurant).
-  primaryPosTillId      String?   @unique
-  primaryPosTill        PosTill?  @relation("BusinessPrimaryPosTill", fields: [primaryPosTillId], references: [id], onDelete: SetNull)
-  stockItems            StockItem[]
-  stockMovements        StockMovement[]
+  idTypes                 IdType[]
+  payslipCategories       PayslipCategory[]
+  employees               Employee[]
+  employeePromotions      EmployeePromotion[]
+  salarySlipCounter       SalarySlipCounter?
+  salarySlips             SalarySlip[]
+  employeePayments        EmployeePayment[]
+  businessSettings        BusinessSettings?
+  posTills                PosTill[]                @relation("BusinessPosTills")
+  stockItems              StockItem[]
+  stockMovements          StockMovement[]
   kitchenStockAllocations KitchenStockAllocation[]
-  stockDayEndReports    StockDayEndReport[]
-  syncProcessedEvents   SyncProcessedEvent[]
-  coupons               Coupon[]
-  couponCodes           CouponCode[]
-  loyaltySettings       LoyaltySettings?
-  loyaltyAccounts       LoyaltyAccount[]
-  tables                Table[]
-  tableSessions         TableSession[]
+  stockDayEndReports      StockDayEndReport[]
+  coupons                 Coupon[]
+  couponCodes             CouponCode[]
+  loyaltySettings         LoyaltySettings?
+  loyaltyAccounts         LoyaltyAccount[]
+  tables                  Table[]
+  tableSessions           TableSession[]
+  offers                  Offer[]
+  offerUsages             OfferUsage[]
 
   @@index([ownerUserId])
   @@map("business_profiles")
@@ -154,43 +152,17 @@ model PosTill {
   drawerProtocol String  @default("escpos_pulse")
 
   /// lan | usb — how this till prints receipts.
-  printVia     String @default("lan")
+  printVia    String @default("lan")
   /// [{ ip, port }]
-  lanPrinters  Json   @default("[]")
+  lanPrinters Json   @default("[]")
   /// [{ id, kind, label }] kind = serial | winprinter
-  usbPrinters  Json   @default("[]")
-
-  /// Last successful sync heartbeat from this desktop till (Step 8).
-  lastHeartbeatAt    DateTime?
-  /// Local outbox rows still waiting to upload (Step 7/8).
-  pendingUploadCount Int      @default(0)
-
-  /// Inverse of BusinessProfile.primaryPosTill (at most one profile points here).
-  primaryForProfile BusinessProfile? @relation("BusinessPrimaryPosTill")
-  syncProcessedEvents SyncProcessedEvent[]
+  usbPrinters Json   @default("[]")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([businessProfileId])
   @@map("pos_tills")
-}
-
-/// Idempotent outbox event ids from desktop tills (Step 7 sync push).
-model SyncProcessedEvent {
-  id                String          @id @default(cuid())
-  businessProfileId String
-  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
-  eventId           String
-  eventType         String
-  posTillId         String?
-  posTill           PosTill?        @relation(fields: [posTillId], references: [id], onDelete: SetNull)
-  processedAt       DateTime        @default(now())
-
-  @@unique([businessProfileId, eventId])
-  @@index([businessProfileId, processedAt])
-  @@index([posTillId])
-  @@map("sync_processed_events")
 }
 
 /// Extra LAN thermal printers for a restaurant (same receipt printed to each).
@@ -229,11 +201,11 @@ model BusinessSettings {
   posOnScreenKeypad Boolean @default(false)
 
   /// When false, POS/kitchen block sales that would drive stock below zero.
-  allowNegativeStock Boolean @default(false)
+  allowNegativeStock             Boolean @default(false)
   /// When true, missing/short kitchen stock may deduct the rest from main warehouse.
   allowMainStockIfNoKitchenStock Boolean @default(false)
   /// When true, email low-stock alerts (in-app highlight/notify is always on).
-  lowStockAlertsEnabled Boolean @default(true)
+  lowStockAlertsEnabled          Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -275,17 +247,17 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships        BusinessMembership[]
-  ownedBusinesses    BusinessProfile[]    @relation("BusinessProfileOwner")
-  invoicesCreated    Invoice[]            @relation("InvoiceCreatedBy")
-  creditNotesCreated CreditNote[]         @relation("CreditNoteCreatedBy")
-  debitNotesCreated  DebitNote[]          @relation("DebitNoteCreatedBy")
-  couponUsagesAsCashier CouponUsage[]     @relation("CouponUsageCashier")
+  memberships                  BusinessMembership[]
+  ownedBusinesses              BusinessProfile[]    @relation("BusinessProfileOwner")
+  invoicesCreated              Invoice[]            @relation("InvoiceCreatedBy")
+  creditNotesCreated           CreditNote[]         @relation("CreditNoteCreatedBy")
+  debitNotesCreated            DebitNote[]          @relation("DebitNoteCreatedBy")
+  couponUsagesAsCashier        CouponUsage[]        @relation("CouponUsageCashier")
   loyaltyTransactionsAsCashier LoyaltyTransaction[] @relation("LoyaltyTransactionCashier")
-  otpCodes           OtpCode[]
-  salarySlipsCreated SalarySlip[]         @relation("SalarySlipCreatedBy")
-  notifications      Notification[]
-  stockMovementsCreated StockMovement[]   @relation("StockMovementCreatedBy")
+  otpCodes                     OtpCode[]
+  salarySlipsCreated           SalarySlip[]         @relation("SalarySlipCreatedBy")
+  notifications                Notification[]
+  stockMovementsCreated        StockMovement[]      @relation("StockMovementCreatedBy")
 
   @@index([activeBusinessProfileId])
   @@map("users")
@@ -303,8 +275,8 @@ model BusinessMembership {
   /// This user wants high-waste kitchen reports emailed (owner/admin only).
   emailHighWasteReports Boolean @default(false)
 
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   employeeRoles EmployeeRole[]
   employee      Employee?
@@ -348,9 +320,9 @@ model Role {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
-  permissions RolePermission[]
+  permissions   RolePermission[]
   employeeRoles EmployeeRole[]
-  invitations UserInvitation[]
+  invitations   UserInvitation[]
 
   @@unique([businessProfileId, name])
   @@index([businessProfileId])
@@ -434,11 +406,11 @@ model StockItem {
   unit StockUnit
 
   /// On-hand qty as a decimal string (never float) in `unit`.
-  quantityOnHand String @default("0")
+  quantityOnHand    String  @default("0")
   /// Optional low-stock threshold in the same unit. Null = no per-item alert.
   lowStockThreshold String?
   /// Optional unit cost (SAR) as a decimal string.
-  unitCost String?
+  unitCost          String?
 
   /// Bulk usage (e.g. fryer oil) — kitchen stock / AI waste in later steps.
   isBulk Boolean @default(false)
@@ -448,8 +420,8 @@ model StockItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  movements StockMovement[]
-  recipeIngredients MenuItemRecipeIngredient[]
+  movements               StockMovement[]
+  recipeIngredients       MenuItemRecipeIngredient[]
   kitchenStockAllocations KitchenStockAllocation[]
   dayEndLines             StockDayEndLine[]
 
@@ -480,11 +452,11 @@ model StockMovement {
   stockItemId String
   stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
 
-  type StockMovementType
+  type           StockMovementType
   /// Always positive magnitude in the item's unit at time of movement.
-  quantity String
+  quantity       String
   /// Snapshot of stock item unit when the movement was recorded.
-  unit StockUnit
+  unit           StockUnit
   quantityBefore String
   quantityAfter  String
 
@@ -519,7 +491,7 @@ model StockDayEndReport {
   reportDate DateTime          @db.Date
   status     StockDayEndStatus @default(draft)
 
-  submittedAt      DateTime?
+  submittedAt       DateTime?
   submittedByUserId String?
 
   aiAnalysis   String?
@@ -550,12 +522,12 @@ model StockDayEndLine {
   nameEn String?
 
   /// Recipe deducts for this day (0 for bulk).
-  recipeUsed String @default("0")
+  recipeUsed String  @default("0")
   /// Owner-entered used. Bulk starts empty (null).
   userUsed   String?
 
   /// Non-bulk: max(0, userUsed - recipeUsed). Bulk: 0 (AI judges used vs sales).
-  quantityWaste String @default("0")
+  quantityWaste String                @default("0")
   wasteSeverity KitchenWasteSeverity?
 
   createdAt DateTime @default(now())
@@ -591,24 +563,24 @@ model KitchenStockAllocation {
   status KitchenStockAllocationStatus @default(open)
 
   /// Total issued into this cycle (grows on top-up).
-  quantityIssued String @default("0")
+  quantityIssued String   @default("0")
   /// Recipe use taken from this kitchen pool.
-  quantityUsed   String @default("0")
+  quantityUsed   String   @default("0")
   /// On mark-consumed: non-bulk = issued − used; bulk = AI estimate after MVP 3 (else "0").
   quantityWaste  String?
   /// Snapshot of StockItem.isBulk when closed.
   isBulkAtClose  Boolean?
 
   /// AI estimated used (bulk). Recipe `quantityUsed` is unchanged.
-  aiQuantityUsed String?
+  aiQuantityUsed    String?
   /// True when `quantityWaste` was written by AI (bulk).
-  wasteIsAiEstimate Boolean @default(false)
+  wasteIsAiEstimate Boolean               @default(false)
   wasteSeverity     KitchenWasteSeverity?
   /// Human-readable AI write-up (not ledger math).
-  aiAnalysis   String?
-  aiAnalyzedAt DateTime?
+  aiAnalysis        String?
+  aiAnalyzedAt      DateTime?
 
-  openedAt DateTime @default(now())
+  openedAt DateTime  @default(now())
   closedAt DateTime?
 
   openedByUserId String?
@@ -640,7 +612,7 @@ model KitchenStockUsageLine {
   menuItemNameEn String?
 
   /// Sold / kitchen servings of this menu item on this ticket.
-  servings Int @default(1)
+  servings     Int    @default(1)
   /// Qty of the allocation's stock item used (in the stock item unit).
   quantityUsed String
 
@@ -693,14 +665,14 @@ model MenuItem {
   /// Stored as a string, never a float — see rules.md #23.
   price  String
 
-  vatPreset VatPreset @default(standard)
-  active    Boolean   @default(true)
+  vatPreset         VatPreset @default(standard)
+  active            Boolean   @default(true)
   /// When true, this item can be paid for with loyalty points at POS.
-  loyaltyRedeemable Boolean @default(false)
-  sortOrder Int       @default(0)
-  imageUrl  String?
+  loyaltyRedeemable Boolean   @default(false)
+  sortOrder         Int       @default(0)
+  imageUrl          String?
   /// Optional calorie count for E-Waiter / menu display.
-  calories  Int?
+  calories          Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -711,6 +683,7 @@ model MenuItem {
   recipe            MenuItemRecipe?
   couponItemRules   CouponItemRule[]
   tableSessionLines TableSessionLine[]
+  offerItems        OfferItem[]
 
   @@index([businessProfileId, active, sortOrder])
   @@index([categoryId])
@@ -724,7 +697,7 @@ model MenuItemRecipe {
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 
   /// Free-text method / steps in English for kitchen + AI (does not move stock).
-  steps String?
+  steps   String?
   /// Arabic method / steps (bilingual with `steps`).
   stepsAr String?
 
@@ -745,9 +718,9 @@ model MenuItemRecipeIngredient {
   stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
 
   /// Qty per 1 menu item, in `unit` (same family as stock item).
-  quantity String
-  unit     StockUnit
-  sortOrder Int @default(0)
+  quantity  String
+  unit      StockUnit
+  sortOrder Int       @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -764,7 +737,7 @@ model MenuItemVariantGroup {
 
   nameAr    String
   nameEn    String?
-  sortOrder Int      @default(0)
+  sortOrder Int     @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -792,6 +765,7 @@ model MenuItemVariantOption {
   updatedAt DateTime @updatedAt
 
   couponItemRuleLinks CouponItemRuleVariantOption[]
+  offerItemLinks      OfferItemVariantOption[]
 
   @@index([groupId, sortOrder])
   @@map("menu_item_variant_options")
@@ -868,30 +842,30 @@ model Invoice {
   /// (users are deactivated, never hard-deleted, so this relation is never orphaned).
   /// Column name kept as createdByStaffId for migration stability.
   createdByStaffId String
-  createdByStaff   User @relation("InvoiceCreatedBy", fields: [createdByStaffId], references: [id], onDelete: Restrict)
+  createdByStaff   User   @relation("InvoiceCreatedBy", fields: [createdByStaffId], references: [id], onDelete: Restrict)
 
   // Seller snapshot — copied from BusinessProfile at creation time so a later
   // profile edit never changes the seller details on an already-issued invoice.
-  sellerCompanyNameAr    String
-  sellerCompanyNameEn    String?
-  sellerVatNumber        String
-  sellerCrNumber         String
-  sellerAddressAr        String
-  sellerAddressEn        String?
-  sellerStreetAr         String  @default("")
-  sellerStreetEn         String  @default("")
-  sellerDistrictAr       String  @default("")
-  sellerDistrictEn       String  @default("")
-  sellerCityAr           String  @default("")
-  sellerCityEn           String  @default("")
-  sellerBuildingNumber   String  @default("")
-  sellerSecondaryNumber  String  @default("")
-  sellerPostalCode       String  @default("")
-  sellerShortAddress     String  @default("")
-  sellerCountryCode      String  @default("SA")
+  sellerCompanyNameAr   String
+  sellerCompanyNameEn   String?
+  sellerVatNumber       String
+  sellerCrNumber        String
+  sellerAddressAr       String
+  sellerAddressEn       String?
+  sellerStreetAr        String  @default("")
+  sellerStreetEn        String  @default("")
+  sellerDistrictAr      String  @default("")
+  sellerDistrictEn      String  @default("")
+  sellerCityAr          String  @default("")
+  sellerCityEn          String  @default("")
+  sellerBuildingNumber  String  @default("")
+  sellerSecondaryNumber String  @default("")
+  sellerPostalCode      String  @default("")
+  sellerShortAddress    String  @default("")
+  sellerCountryCode     String  @default("SA")
   /// Optional contact snapshotted at sale time for receipt footer.
-  sellerEmail            String?
-  sellerPhone            String?
+  sellerEmail           String?
+  sellerPhone           String?
 
   // Payment — record-only, no gateway (rules.md / plan decision).
   paymentMethod  PaymentMethod
@@ -900,9 +874,9 @@ model Invoice {
   changeGiven    String?
 
   // Totals — strings, never floats (rules.md #23).
-  subtotal      String
-  totalVat      String
-  grandTotal    String
+  subtotal   String
+  totalVat   String
+  grandTotal String
 
   notes String?
 
@@ -915,7 +889,7 @@ model Invoice {
   discountAmount String?
 
   /// One-shot guard — server enforces awarding loyalty points at most once per invoice.
-  loyaltyPointsAwarded  Boolean @default(false)
+  loyaltyPointsAwarded  Boolean         @default(false)
   loyaltyAccountId      String?
   loyaltyAccount        LoyaltyAccount? @relation(fields: [loyaltyAccountId], references: [id], onDelete: SetNull)
   /// Points redeemed on this sale, if any (decimal string).
@@ -924,19 +898,19 @@ model Invoice {
   loyaltyDiscountAmount String?
 
   // ZATCA artifacts — field names match Hisabi's Invoice model exactly.
-  xmlPayload         String?
+  xmlPayload             String?
   /// Base64 TLV QR — must always be the full 9-tag Phase-2 QR before printing,
   /// never a partial Phase-1 QR (rules.md #20).
-  qrCode             String?
-  cryptographicStamp String?
-  pih                String?
-  zatcaStatus        ZatcaClearanceStatus?
-  zatcaClearedAt     DateTime?
+  qrCode                 String?
+  cryptographicStamp     String?
+  pih                    String?
+  zatcaStatus            ZatcaClearanceStatus?
+  zatcaClearedAt         DateTime?
   /// Background report attempts (checkout + worker). Used for bounded retries.
-  zatcaReportAttempts Int       @default(0)
-  zatcaLastAttemptAt  DateTime?
+  zatcaReportAttempts    Int                   @default(0)
+  zatcaLastAttemptAt     DateTime?
   /// Human-readable last failure (never raw ZATCA XML).
-  zatcaLastError      String?
+  zatcaLastError         String?
   /// Set when the ~23h ZATCA deadline sweep has claimed/run a retry for this invoice.
   zatcaDeadlineRetriedAt DateTime?
 
@@ -946,13 +920,14 @@ model Invoice {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  lines        InvoiceLine[]
-  creditNotes  CreditNote[]
-  debitNotes   DebitNote[]
+  lines               InvoiceLine[]
+  creditNotes         CreditNote[]
+  debitNotes          DebitNote[]
   /// POS: one ticket; E-Waiter settlement: many round tickets share one invoice.
-  kitchenOrders KitchenOrder[]
-  tableSession  TableSession?
-  couponUsages CouponUsage[]
+  kitchenOrders       KitchenOrder[]
+  tableSession        TableSession?
+  couponUsages        CouponUsage[]
+  offerUsages         OfferUsage[]
   loyaltyTransactions LoyaltyTransaction[]
 
   @@unique([businessProfileId, invoiceNumber])
@@ -977,12 +952,12 @@ enum KitchenOrderStatus {
 
 /// Kitchen ticket — POS invoice sale, or one E-Waiter table-session round.
 model KitchenOrder {
-  id                String              @id @default(cuid())
+  id                String          @id @default(cuid())
   businessProfileId String
-  businessProfile   BusinessProfile     @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
   /// Null while an E-Waiter round is open; set at POS create or table settlement.
   invoiceId         String?
-  invoice           Invoice?            @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  invoice           Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
   /// E-Waiter round linkage (null for classic POS checkout tickets).
   tableSessionId String?
@@ -992,14 +967,14 @@ model KitchenOrder {
 
   orderNumber Int
   /// Calendar date in Asia/Riyadh used for the daily counter.
-  orderDate   DateTime @db.Date
+  orderDate   DateTime           @db.Date
   status      KitchenOrderStatus @default(pending)
 
   /// Display lines for the kitchen board (refreshed on invoice edit/repair).
-  linesSnapshot  Json
-  itemsUpdatedAt DateTime @default(now())
+  linesSnapshot   Json
+  itemsUpdatedAt  DateTime  @default(now())
   /// Set when the ticket is marked served (`completed`).
-  completedAt    DateTime?
+  completedAt     DateTime?
   /// Set when recipe stock was deducted for this ticket (idempotent on re-ready).
   stockDeductedAt DateTime?
 
@@ -1007,6 +982,8 @@ model KitchenOrder {
   updatedAt DateTime @updatedAt
 
   sessionLines TableSessionLine[]
+
+  offerUsages OfferUsage[]
 
   @@unique([businessProfileId, orderDate, orderNumber])
   @@unique([tableSessionId, roundNumber])
@@ -1048,9 +1025,9 @@ model Table {
   businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
 
   /// Admin-facing label (e.g. "Table 5") — same single-name pattern as PosTill.
-  name String
+  name    String
   /// Opaque token encoded in the public QR URL (globally unique, not sequential).
-  qrToken String @unique
+  qrToken String      @unique
   status  TableStatus @default(available)
 
   /// Soft delete — retired tables stay for session history.
@@ -1073,11 +1050,11 @@ model Table {
 
 /// One dine-in visit at a table (may span multiple kitchen rounds before settlement).
 model TableSession {
-  id                String             @id @default(cuid())
+  id                String          @id @default(cuid())
   businessProfileId String
-  businessProfile   BusinessProfile    @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
   tableId           String
-  table             Table              @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  table             Table           @relation(fields: [tableId], references: [id], onDelete: Restrict)
 
   status TableSessionStatus @default(open)
 
@@ -1086,7 +1063,7 @@ model TableSession {
   invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
   /// Customer asked for the bill — locks further public round submission until staff clears it.
-  billRequestedAt DateTime?
+  billRequestedAt       DateTime?
   /// Optional loyalty points the customer wants to redeem at settlement (decimal string, same as LoyaltyAccount.balance / LoyaltyTransaction.points). Convenience prefill only — settlement re-validates.
   requestedRedeemPoints String?
 
@@ -1118,21 +1095,27 @@ model TableSession {
 model TableSessionLine {
   id             String       @id @default(cuid())
   tableSessionId String
-  tableSession   TableSession  @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  tableSession   TableSession @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
   kitchenOrderId String
   kitchenOrder   KitchenOrder @relation(fields: [kitchenOrderId], references: [id], onDelete: Cascade)
 
   menuItemId String
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
 
-  quantity Int
+  quantity         Int
   /// Selected MenuItemVariantOption ids — Json array (same array storage pattern as PosTill.lanPrinters).
-  variantOptionIds  Json @default("[]")
+  variantOptionIds Json    @default("[]")
   /// Selected MenuItemCustomization ids — Json array.
-  customizationIds  Json @default("[]")
-  lineNote          String?
+  customizationIds Json    @default("[]")
+  lineNote         String?
   /// Soft-exclude from settlement (cancelled round / voided line) without deleting history.
-  cancelled         Boolean @default(false)
+  cancelled        Boolean @default(false)
+  /// Offer / deal price locked when the guest placed the round (kept at settle).
+  offerId          String?
+  offer            Offer?  @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  offerGroupKey    String?
+  /// Locked total discount for this line (decimal string, ex-VAT).
+  offerDiscount    String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1140,35 +1123,42 @@ model TableSessionLine {
   @@index([tableSessionId])
   @@index([kitchenOrderId])
   @@index([menuItemId])
+  @@index([offerId])
   @@map("table_session_lines")
 }
 
 model InvoiceLine {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   invoiceId String
-  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   /// Nullable so a later menu item deletion never breaks historical invoice lines
   /// — the line already snapshots name/price/VAT below.
   menuItemId String?
   menuItem   MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
 
-  nameAr    String
-  nameEn    String?
-  quantity  Int
+  nameAr            String
+  nameEn            String?
+  quantity          Int
   /// Snapshotted unit price at time of sale — strings, never floats.
-  unitPrice String
-  discount  String    @default("0")
-  vatPreset VatPreset
-  vatAmount String
-  lineTotal String
-  sortOrder Int       @default(0)
-  lineNote  String?
+  unitPrice         String
+  discount          String    @default("0")
+  vatPreset         VatPreset
+  vatAmount         String
+  lineTotal         String
+  sortOrder         Int       @default(0)
+  lineNote          String?
   /// Chosen variants + customizations at sale time (names + price changes).
   modifiersSnapshot Json?
+  /// Offer / deal that priced this line (discount already in `discount`).
+  offerId           String?
+  offer             Offer?    @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  /// Groups the component lines of one combo deal added to the cart.
+  offerGroupKey     String?
 
   @@index([invoiceId])
   @@index([menuItemId])
+  @@index([offerId])
   @@map("invoice_lines")
 }
 
@@ -1207,7 +1197,7 @@ model CreditNote {
 
   /// Snapshots of the original invoice — survive even if invoiceId is nulled.
   invoiceNumberSnapshot    String
-  invoiceUuidSnapshot      String   @default("")
+  invoiceUuidSnapshot      String    @default("")
   invoiceIssueDateSnapshot DateTime?
 
   /// KSA-10 reason — Arabic is legally authoritative (ZATCA guideline).
@@ -1215,7 +1205,7 @@ model CreditNote {
   reasonEn String?
 
   createdByStaffId String
-  createdByStaff   User @relation("CreditNoteCreatedBy", fields: [createdByStaffId], references: [id], onDelete: Restrict)
+  createdByStaff   User   @relation("CreditNoteCreatedBy", fields: [createdByStaffId], references: [id], onDelete: Restrict)
 
   sellerCompanyNameAr   String
   sellerCompanyNameEn   String?
@@ -1223,17 +1213,17 @@ model CreditNote {
   sellerCrNumber        String
   sellerAddressAr       String
   sellerAddressEn       String?
-  sellerStreetAr        String @default("")
-  sellerStreetEn        String @default("")
-  sellerDistrictAr      String @default("")
-  sellerDistrictEn      String @default("")
-  sellerCityAr          String @default("")
-  sellerCityEn          String @default("")
-  sellerBuildingNumber  String @default("")
-  sellerSecondaryNumber String @default("")
-  sellerPostalCode      String @default("")
-  sellerShortAddress    String @default("")
-  sellerCountryCode     String @default("SA")
+  sellerStreetAr        String  @default("")
+  sellerStreetEn        String  @default("")
+  sellerDistrictAr      String  @default("")
+  sellerDistrictEn      String  @default("")
+  sellerCityAr          String  @default("")
+  sellerCityEn          String  @default("")
+  sellerBuildingNumber  String  @default("")
+  sellerSecondaryNumber String  @default("")
+  sellerPostalCode      String  @default("")
+  sellerShortAddress    String  @default("")
+  sellerCountryCode     String  @default("SA")
   sellerEmail           String?
   sellerPhone           String?
 
@@ -1241,13 +1231,13 @@ model CreditNote {
   totalVat   String
   grandTotal String
 
-  xmlPayload         String?
-  qrCode             String?
-  cryptographicStamp String?
-  pih                String?
-  zatcaStatus        ZatcaClearanceStatus?
-  zatcaClearedAt     DateTime?
-  zatcaReportAttempts Int       @default(0)
+  xmlPayload          String?
+  qrCode              String?
+  cryptographicStamp  String?
+  pih                 String?
+  zatcaStatus         ZatcaClearanceStatus?
+  zatcaClearedAt      DateTime?
+  zatcaReportAttempts Int                   @default(0)
   zatcaLastAttemptAt  DateTime?
   zatcaLastError      String?
 
@@ -1299,14 +1289,14 @@ model DebitNote {
   invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
   invoiceNumberSnapshot    String
-  invoiceUuidSnapshot      String   @default("")
+  invoiceUuidSnapshot      String    @default("")
   invoiceIssueDateSnapshot DateTime?
 
   reasonAr String
   reasonEn String?
 
   createdByStaffId String
-  createdByStaff   User @relation("DebitNoteCreatedBy", fields: [createdByStaffId], references: [id], onDelete: Restrict)
+  createdByStaff   User   @relation("DebitNoteCreatedBy", fields: [createdByStaffId], references: [id], onDelete: Restrict)
 
   sellerCompanyNameAr   String
   sellerCompanyNameEn   String?
@@ -1314,17 +1304,17 @@ model DebitNote {
   sellerCrNumber        String
   sellerAddressAr       String
   sellerAddressEn       String?
-  sellerStreetAr        String @default("")
-  sellerStreetEn        String @default("")
-  sellerDistrictAr      String @default("")
-  sellerDistrictEn      String @default("")
-  sellerCityAr          String @default("")
-  sellerCityEn          String @default("")
-  sellerBuildingNumber  String @default("")
-  sellerSecondaryNumber String @default("")
-  sellerPostalCode      String @default("")
-  sellerShortAddress    String @default("")
-  sellerCountryCode     String @default("SA")
+  sellerStreetAr        String  @default("")
+  sellerStreetEn        String  @default("")
+  sellerDistrictAr      String  @default("")
+  sellerDistrictEn      String  @default("")
+  sellerCityAr          String  @default("")
+  sellerCityEn          String  @default("")
+  sellerBuildingNumber  String  @default("")
+  sellerSecondaryNumber String  @default("")
+  sellerPostalCode      String  @default("")
+  sellerShortAddress    String  @default("")
+  sellerCountryCode     String  @default("SA")
   sellerEmail           String?
   sellerPhone           String?
 
@@ -1332,13 +1322,13 @@ model DebitNote {
   totalVat   String
   grandTotal String
 
-  xmlPayload         String?
-  qrCode             String?
-  cryptographicStamp String?
-  pih                String?
-  zatcaStatus        ZatcaClearanceStatus?
-  zatcaClearedAt     DateTime?
-  zatcaReportAttempts Int       @default(0)
+  xmlPayload          String?
+  qrCode              String?
+  cryptographicStamp  String?
+  pih                 String?
+  zatcaStatus         ZatcaClearanceStatus?
+  zatcaClearedAt      DateTime?
+  zatcaReportAttempts Int                   @default(0)
   zatcaLastAttemptAt  DateTime?
   zatcaLastError      String?
 
@@ -1385,9 +1375,9 @@ model DebitNoteLine {
 /// Field names match Hisabi's ZatcaDevice exactly so src/lib/zatca/* can be
 /// copied with minimal changes.
 model ZatcaDevice {
-  id                  String          @id @default(cuid())
-  businessProfileId   String          @unique
-  businessProfile     BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  id                String          @id @default(cuid())
+  businessProfileId String          @unique
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
 
   /// sandbox | simulation | production
   environment         String    @default("sandbox")
@@ -1422,10 +1412,10 @@ model Notification {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   /// e.g. "zatca_report_failed", "visa_expiring"
-  type    String
-  title   String
-  message String
-  link    String?
+  type      String
+  title     String
+  message   String
+  link      String?
   /// Prevents duplicate notifications for the same event per user.
   dedupeKey String?
   readAt    DateTime?
@@ -1498,9 +1488,9 @@ enum MaritalStatus {
 /// employee has login access (non-empty role union). Kitchen/Staff or zero-role
 /// employees have businessMembershipId = null.
 model Employee {
-  id                           String          @id @default(cuid())
-  businessProfileId            String
-  businessProfile              BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
 
   /// Optional link to login membership at this restaurant.
   businessMembershipId String?             @unique
@@ -1516,8 +1506,8 @@ model Employee {
   resumeStoragePath            String?
   appointmentLetterStoragePath String?
   reportingToId                String?
-  reportingTo                  Employee?  @relation("EmployeeReportsTo", fields: [reportingToId], references: [id], onDelete: SetNull)
-  directReports                Employee[] @relation("EmployeeReportsTo")
+  reportingTo                  Employee?           @relation("EmployeeReportsTo", fields: [reportingToId], references: [id], onDelete: SetNull)
+  directReports                Employee[]          @relation("EmployeeReportsTo")
   nationality                  String?
   dateOfBirth                  DateTime?
   mobilePersonal               String?
@@ -1525,12 +1515,12 @@ model Employee {
   emergencyContactName         String?
   emergencyContactNumber       String?
   address                      String?
-  shortAddress                 String     @default("")
+  shortAddress                 String              @default("")
   bloodGroup                   String?
-  gender                       Gender     @default(unspecified)
-  maritalStatus                MaritalStatus @default(unspecified)
+  gender                       Gender              @default(unspecified)
+  maritalStatus                MaritalStatus       @default(unspecified)
   idTypeId                     String?
-  idType                       IdType?    @relation(fields: [idTypeId], references: [id], onDelete: SetNull)
+  idType                       IdType?             @relation(fields: [idTypeId], references: [id], onDelete: SetNull)
   idNumber                     String?
   idExpiry                     DateTime?
   idDocumentStoragePath        String?
@@ -1549,10 +1539,10 @@ model Employee {
   visaExpiry                   DateTime?
   visaStoragePath              String?
   remark                       String?
-  status                       EmployeeStatus @default(active)
+  status                       EmployeeStatus      @default(active)
   deletedAt                    DateTime?
-  createdAt                    DateTime       @default(now())
-  updatedAt                    DateTime       @updatedAt
+  createdAt                    DateTime            @default(now())
+  updatedAt                    DateTime            @updatedAt
   salarySlips                  SalarySlip[]
   payments                     EmployeePayment[]
   promotions                   EmployeePromotion[]
@@ -1730,7 +1720,7 @@ model Coupon {
 
   startDate DateTime?
   expiresAt DateTime?
-  active    Boolean  @default(true)
+  active    Boolean   @default(true)
 
   /// Soft delete — retired coupons stay for usage history; codes are cleared for reuse.
   deletedAt DateTime?
@@ -1777,17 +1767,17 @@ model CouponCode {
 }
 
 model CouponItemRule {
-  id         String   @id @default(cuid())
-  couponId   String
-  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  couponId String
+  coupon   Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
 
-  ruleType   CouponItemRuleType
-  menuItemId String
-  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
-  quantity   Int
+  ruleType        CouponItemRuleType
+  menuItemId      String
+  menuItem        MenuItem           @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+  quantity        Int
   /// For GET rows — e.g. "50" or "100" for fully free (decimal string).
   discountPercent String?
-  sortOrder  Int      @default(0)
+  sortOrder       Int                @default(0)
 
   allowedVariantOptions CouponItemRuleVariantOption[]
 
@@ -1799,9 +1789,9 @@ model CouponItemRule {
 /// Allowed MenuItemVariantOption ids for a CouponItemRule (OR within a group,
 /// AND across groups that appear on the rule). Same join shape as EmployeeRole.
 model CouponItemRuleVariantOption {
-  id               String         @id @default(cuid())
+  id               String                @id @default(cuid())
   couponItemRuleId String
-  couponItemRule   CouponItemRule @relation(fields: [couponItemRuleId], references: [id], onDelete: Cascade)
+  couponItemRule   CouponItemRule        @relation(fields: [couponItemRuleId], references: [id], onDelete: Cascade)
   variantOptionId  String
   variantOption    MenuItemVariantOption @relation(fields: [variantOptionId], references: [id], onDelete: Restrict)
 
@@ -1812,9 +1802,9 @@ model CouponItemRuleVariantOption {
 }
 
 model CouponUsage {
-  id           String  @id @default(cuid())
+  id           String      @id @default(cuid())
   couponId     String
-  coupon       Coupon  @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  coupon       Coupon      @relation(fields: [couponId], references: [id], onDelete: Restrict)
   couponCodeId String?
   couponCode   CouponCode? @relation(fields: [couponCodeId], references: [id], onDelete: SetNull)
 
@@ -1826,7 +1816,7 @@ model CouponUsage {
   cashierUser   User   @relation("CouponUsageCashier", fields: [cashierUserId], references: [id], onDelete: Restrict)
 
   /// Code actually typed/scanned; survives coupon edits/deletion.
-  codeSnapshot String
+  codeSnapshot   String
   /// Ex-VAT total discount for this redemption (decimal string).
   discountAmount String
 
@@ -1861,9 +1851,9 @@ model LoyaltySettings {
   redeemRateAmount String
 
   /// Minimum balance required to redeem (decimal string). Null = no minimum.
-  minBalanceToRedeem String?
+  minBalanceToRedeem    String?
   /// Cap on points redeemable per order (decimal string, POINTS). Null = no cap.
-  maxPointsPerOrder String?
+  maxPointsPerOrder     String?
   /// Minimum VAT-inclusive order total to redeem (decimal string). Null = no minimum.
   minOrderValueToRedeem String?
 
@@ -1886,7 +1876,7 @@ model LoyaltyAccount {
   /// pattern as CouponCode.code).
   phone   String?
   /// Fractional points balance kept exact — never rounded (decimal string).
-  balance String @default("0")
+  balance String  @default("0")
 
   /// Soft delete — account hidden from active views/lookups and POS resolution;
   /// LoyaltyTransaction history is preserved and never deleted.
@@ -1895,8 +1885,8 @@ model LoyaltyAccount {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  transactions LoyaltyTransaction[]
-  invoices     Invoice[]
+  transactions  LoyaltyTransaction[]
+  invoices      Invoice[]
   tableSessions TableSession[]
 
   @@unique([businessProfileId, phone])
@@ -1912,16 +1902,16 @@ enum LoyaltyTransactionType {
 }
 
 model LoyaltyTransaction {
-  id      String         @id @default(cuid())
+  id        String         @id @default(cuid())
   accountId String
   account   LoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
   invoiceId String
   invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
 
-  type   LoyaltyTransactionType
+  type           LoyaltyTransactionType
   /// Always positive; `type` determines direction (decimal string).
-  points String
+  points         String
   /// Set only for REDEEM — ex-VAT discount given (decimal string).
   discountAmount String?
 
@@ -1935,4 +1925,136 @@ model LoyaltyTransaction {
   @@index([invoiceId])
   @@index([cashierUserId])
   @@map("loyalty_transactions")
+}
+
+// ---------------------------------------------------------------------------
+// Offers & Deals — automatic promotions (no code). Separate from coupons.
+// ---------------------------------------------------------------------------
+
+enum OfferKind {
+  DISCOUNT
+  BUY_X_GET_Y
+  COMBO
+}
+
+enum OfferDiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum OfferItemRole {
+  /// DISCOUNT offer limited to selected items
+  TARGET
+  BUY
+  GET
+  COMBO_ITEM
+}
+
+model Offer {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+
+  nameAr String
+  nameEn String?
+  kind   OfferKind
+
+  /// DISCOUNT only.
+  discountType      OfferDiscountType?
+  /// DISCOUNT: percent, or SAR (ex-VAT, like menu prices) off each unit. Decimal string.
+  discountValue     String?
+  /// DISCOUNT: true = every menu item; false = TARGET items only.
+  appliesToAllItems Boolean            @default(false)
+  /// COMBO: fixed deal price (ex-VAT, like menu prices). Decimal string.
+  comboPrice        String?
+
+  startsAt         DateTime?
+  endsAt           DateTime?
+  /// Minutes after Asia/Riyadh midnight (0–1439). Both null = all day. start > end crosses midnight.
+  dailyStartMinute Int?
+  dailyEndMinute   Int?
+  /// Asia/Riyadh weekdays (0 = Sunday … 6 = Saturday). Empty = every day.
+  weekdays         Int[]     @default([])
+
+  /// Uses: one per order for DISCOUNT / BUY_X_GET_Y, one per box for COMBO. Null = unlimited.
+  totalUsageLimit Int?
+  dailyUsageLimit Int?
+  /// DISCOUNT: discounted units; BUY_X_GET_Y: reward sets; COMBO: boxes — per order.
+  maxPerOrder     Int?
+
+  /// Relative UPLOADS_DIR keys.
+  bannerImagePath String?
+  imagePath       String?
+
+  active    Boolean   @default(true)
+  sortOrder Int       @default(0)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items             OfferItem[]
+  usages            OfferUsage[]
+  invoiceLines      InvoiceLine[]
+  tableSessionLines TableSessionLine[]
+
+  @@index([businessProfileId, active, deletedAt])
+  @@map("offers")
+}
+
+model OfferItem {
+  id              String        @id @default(cuid())
+  offerId         String
+  offer           Offer         @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  role            OfferItemRole
+  menuItemId      String
+  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+  quantity        Int           @default(1)
+  /// GET rows: percent off the free item ("100" = free). Decimal string.
+  discountPercent String?
+  sortOrder       Int           @default(0)
+
+  allowedVariantOptions OfferItemVariantOption[]
+
+  @@index([offerId])
+  @@index([menuItemId])
+  @@map("offer_items")
+}
+
+/// Empty set on an item = any variant qualifies (customer/cashier chooses).
+model OfferItemVariantOption {
+  id              String                @id @default(cuid())
+  offerItemId     String
+  offerItem       OfferItem             @relation(fields: [offerItemId], references: [id], onDelete: Cascade)
+  variantOptionId String
+  variantOption   MenuItemVariantOption @relation(fields: [variantOptionId], references: [id], onDelete: Cascade)
+
+  @@unique([offerItemId, variantOptionId])
+  @@index([variantOptionId])
+  @@map("offer_item_variant_options")
+}
+
+/// One row per offer per order (invoice or E-Waiter round). Released rows give the use back.
+model OfferUsage {
+  id                String          @id @default(cuid())
+  offerId           String
+  offer             Offer           @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  businessProfileId String
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  invoiceId         String?
+  invoice           Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  kitchenOrderId    String?
+  kitchenOrder      KitchenOrder?   @relation(fields: [kitchenOrderId], references: [id], onDelete: SetNull)
+  quantity          Int
+  /// Asia/Riyadh calendar day of the use (YYYY-MM-DD) — daily limit bucket.
+  riyadhDay         String
+  discountAmount    String
+  releasedAt        DateTime?
+  createdAt         DateTime        @default(now())
+
+  @@index([offerId, releasedAt])
+  @@index([offerId, riyadhDay])
+  @@index([invoiceId])
+  @@index([kitchenOrderId])
+  @@map("offer_usages")
 }

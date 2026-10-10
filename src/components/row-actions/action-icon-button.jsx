@@ -1,5 +1,6 @@
 'use client'
 
+import { Tooltip } from '@/components/shared/tooltip'
 import { Link } from '@/i18n/navigation'
 import { cn } from '@/lib/utils'
 
@@ -7,7 +8,9 @@ const baseClassName =
   'shrink-0 cursor-pointer rounded-md p-1.5 text-slate-400 transition-colors'
 
 /**
- * Icon button for table row actions — shows a native tooltip via `title`.
+ * Icon button for table row actions (rules §13) — wrapped in the shared `Tooltip`.
+ * `title` is kept for backward compatibility and overrides the tooltip text; it is not
+ * rendered as a native `title` attribute.
  *
  * @param {{
  *   label: string
@@ -30,17 +33,18 @@ export function ActionIconButton({
   const tooltip = title ?? label
 
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={tooltip}
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(baseClassName, className)}
-      {...props}
-    >
-      {children}
-    </button>
+    <Tooltip content={tooltip}>
+      <button
+        type="button"
+        aria-label={label}
+        disabled={disabled}
+        onClick={onClick}
+        className={cn(baseClassName, className)}
+        {...props}
+      >
+        {children}
+      </button>
+    </Tooltip>
   )
 }
 
@@ -57,14 +61,15 @@ export function ActionIconLink({ label, title, href, children, className, ...pro
   const tooltip = title ?? label
 
   return (
-    <Link
-      href={href}
-      aria-label={label}
-      title={tooltip}
-      className={cn(baseClassName, className)}
-      {...props}
-    >
-      {children}
-    </Link>
+    <Tooltip content={tooltip}>
+      <Link
+        href={href}
+        aria-label={label}
+        className={cn(baseClassName, className)}
+        {...props}
+      >
+        {children}
+      </Link>
+    </Tooltip>
   )
 }

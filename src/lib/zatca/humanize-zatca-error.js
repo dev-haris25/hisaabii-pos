@@ -409,30 +409,67 @@ export function humanizeZatcaError(rawErrorString) {
 }
 
 /**
- * Plain-text summary for inline banners (onboarding forms, etc.).
- * @param {string | null | undefined} rawErrorString
+ * Rebuild humanized issues from rule ids (what API responses carry instead of
+ * the raw ZATCA text — rules §5).
+ * @param {string[] | null | undefined} ruleIds
+ * @returns {HumanizedZatcaError}
+ */
+export function humanizedZatcaErrorFromRuleIds(ruleIds) {
+  /** @type {HumanizedZatcaIssue[]} */
+  const issues = []
+  for (const id of Array.isArray(ruleIds) ? ruleIds : []) {
+    const rule = RULES.find((r) => r.id === id)
+    if (!rule || issues.some((i) => i.ruleId === id)) continue
+    issues.push({
+      ruleId: rule.id,
+      title: rule.title,
+      message: rule.message,
+      actionHint: rule.actionHint,
+      codes: [],
+    })
+  }
+  if (issues.length === 0) {
+    issues.push({
+      ruleId: FALLBACK.id,
+      title: FALLBACK.title,
+      message: FALLBACK.message,
+      actionHint: FALLBACK.actionHint,
+      codes: [],
+    })
+  }
+  return {
+    title: issues.length === 1 ? issues[0].title : 'Submission Failed',
+    issues,
+    raw: '',
+    matchedCodes: [],
+  }
+}
+
+/**
+ * Plain-text summary for inline banners (onboarding forms, etc.). Never
+ * includes the raw ZATCA response (rules §5).
+ * @param {string[] | null | undefined} ruleIds from `details.zatcaRuleIds`
  * @param {((key: string, values?: Record<string, unknown>) => string) | null | undefined} [t]
  *   Optional `useTranslations('ZatcaErrors')` translator.
  */
-export function formatHumanizedZatcaErrorText(rawErrorString, t) {
-  const { issues, raw } = localizeHumanizedZatcaError(
-    humanizeZatcaError(rawErrorString),
+export function formatZatcaRuleIdsText(ruleIds, t) {
+  const { issues } = localizeHumanizedZatcaError(
+    humanizedZatcaErrorFromRuleIds(ruleIds),
     t,
   )
-  const lines = issues.flatMap((issue) => [
-    issue.title,
-    issue.message,
-    issue.actionHint,
-  ])
-  if (raw) {
-    lines.push(
-      '',
-      translateOrFallback(t, 'technicalDetails', `Technical details: ${raw}`, {
-        raw,
-      }),
-    )
-  }
-  return lines.join('\n')
+  return issues
+    .flatMap((issue) => [issue.title, issue.message, issue.actionHint])
+    .filter(Boolean)
+    .join('\n')
+}
+
+/**
+ * Rule ids for a raw ZATCA error — safe to send to the client.
+ * @param {string | null | undefined} rawErrorString
+ * @returns {string[]}
+ */
+export function zatcaRuleIdsFromRaw(rawErrorString) {
+  return humanizeZatcaError(rawErrorString).issues.map((i) => i.ruleId)
 }
 
 /**

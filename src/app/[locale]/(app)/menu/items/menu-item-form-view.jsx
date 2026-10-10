@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   CloudUpload,
   ListChecks,
-  Loader2,
   Package,
   Plus,
   Save,
@@ -23,6 +22,7 @@ import {
   MenuItemRecipeEditor,
   emptyRecipeIngredient,
 } from './menu-item-recipe-editor'
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { AppLoader } from '@/components/app-loader'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { RequiredMark } from '@/components/ui/required-mark'
@@ -242,10 +242,7 @@ function BilingualModifierNamePair({
         >
           {labelEn}
           {loadingNameEn ? (
-            <Loader2
-              className="text-hisabi-teal size-4 shrink-0 animate-spin"
-              aria-label={tBi('translating')}
-            />
+            <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
           ) : null}
         </label>
         <input
@@ -271,10 +268,7 @@ function BilingualModifierNamePair({
           {labelAr}
           <RequiredMark />
           {loadingNameAr ? (
-            <Loader2
-              className="text-hisabi-teal size-4 shrink-0 animate-spin"
-              aria-label={tBi('translating')}
-            />
+            <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
           ) : null}
         </label>
         <input
@@ -772,10 +766,7 @@ export function MenuItemFormView({ mode, itemId }) {
                 >
                   {t('itemNameEn')}
                   {loadingNameEn ? (
-                    <Loader2
-                      className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                      aria-label={tBi('translating')}
-                    />
+                    <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
                   ) : null}
                 </label>
                 <input
@@ -801,10 +792,7 @@ export function MenuItemFormView({ mode, itemId }) {
                   {t('itemNameAr')}
                   <RequiredMark />
                   {loadingNameAr ? (
-                    <Loader2
-                      className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                      aria-label={tBi('translating')}
-                    />
+                    <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
                   ) : null}
                 </label>
                 <input

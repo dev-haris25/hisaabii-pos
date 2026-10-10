@@ -1,7 +1,6 @@
 'use client'
 
-import { Loader2 } from 'lucide-react'
-
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { cn } from '@/lib/utils'
 
 /**
@@ -15,10 +14,10 @@ import { cn } from '@/lib/utils'
 export function FieldAutofillSpinner({ loading = false, label, className }) {
   if (!loading) return null
   return (
-    <Loader2
-      className={cn('text-hisabi-teal size-4 shrink-0 animate-spin', className)}
-      aria-label={label}
-      role="status"
+    <HisabiSpinner
+      size="inline"
+      label={label}
+      className={cn('text-hisabi-teal', className)}
     />
   )
 }

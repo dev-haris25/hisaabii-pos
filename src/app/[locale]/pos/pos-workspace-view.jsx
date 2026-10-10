@@ -15,7 +15,7 @@ import {
 import { PosCheckoutView } from './pos-checkout-view'
 import { TableSessionsFloorView } from '../(app)/table-sessions/table-sessions-floor-view'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
-import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth'
+import { logoutSession } from '@/lib/desktop/desktop-auth'
 import { cn } from '@/lib/utils'
 
 /**
@@ -68,7 +68,7 @@ export function PosWorkspaceView({
   )
 
   const logoutMutation = useMutation({
-    mutationFn: () => logoutOnlineOrOffline(),
+    mutationFn: () => logoutSession(),
   })
 
   const tableAlertCount = useTableSessionAlertCount({

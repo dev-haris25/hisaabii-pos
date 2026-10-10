@@ -24,6 +24,8 @@ export const SIDEBAR_HREF_PERMISSIONS = {
   '/stock/day-end': { subject: 'StockItem', action: 'read' },
   '/coupons': { subject: 'Coupon', action: 'read' },
   '/coupons/new': { subject: 'Coupon', action: 'create' },
+  '/offers': { subject: 'Offer', action: 'read' },
+  '/offers/new': { subject: 'Offer', action: 'create' },
   '/loyalty': { subject: 'Loyalty', action: 'read' },
   '/loyalty/settings': { subject: 'Loyalty', action: 'read' },
   '/loyalty/customers': { subject: 'Loyalty', action: 'read' },

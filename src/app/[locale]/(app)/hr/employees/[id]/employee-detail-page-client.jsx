@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   CreditCard,
   Landmark,
-  Loader2,
   Mail,
   Pencil,
   Phone,
@@ -20,6 +19,7 @@ import {
 import { useLocale, useTranslations } from 'next-intl'
 import { useEffect, useState } from 'react'
 
+import { AppLoader } from '@/components/app-loader'
 import { NoCompanyProfileBanner } from '@/components/clients/no-company-profile-banner'
 import {
   DetailTablePagination,
@@ -250,7 +250,7 @@ export function EmployeeDetailPageClient({ employeeId, hasBusinessProfile }) {
   if (isPending) {
     return (
       <div className="text-hisabi-on-surface-variant mx-auto flex min-h-[50vh] max-w-hisabi-container items-center justify-center px-hisabi-md py-hisabi-xxl">
-        <Loader2 className="size-8 animate-spin text-hisabi-primary" aria-hidden />
+        <AppLoader size="lg" />
         <span className="sr-only">{t('loadError')}</span>
       </div>
     )

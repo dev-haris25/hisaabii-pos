@@ -19,6 +19,7 @@ import {
   CLEARED_ZATCA_ARTIFACTS,
 } from '@/lib/notes/repair-failed-document'
 import { prisma } from '@/lib/prisma'
+import { lockUnsignedDocumentForRepair } from '@/lib/zatca/zatca-document-chain'
 
 const repairLineSchema = z.object({
   nameAr: z.string().trim().min(1).max(200),
@@ -161,6 +162,11 @@ export async function PATCH(request, context) {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      if (!(await lockUnsignedDocumentForRepair(tx, 'credit', id))) {
+        throw Object.assign(new Error('Document was signed meanwhile'), {
+          code: 'NOT_EDITABLE',
+        })
+      }
       await tx.creditNoteLine.deleteMany({ where: { creditNoteId: id } })
       return tx.creditNote.update({
         where: { id },

@@ -4,6 +4,7 @@ import {
   settleTableSession,
   settleTableSessionBodySchema,
 } from '@/lib/e-waiter/settle-table-session'
+import { isOfferErrorCode } from '@/lib/offers/resolve-cart-offers'
 import { authorizeBusinessRequest } from '@/lib/rbac/authorize-api-request'
 
 /**
@@ -46,6 +47,9 @@ export async function POST(request, context) {
         e && typeof e === 'object' && 'code' in e ? String(e.code) : ''
       const message = e instanceof Error ? e.message : String(e)
 
+      if (isOfferErrorCode(code)) {
+        return jsonError(409, code, message)
+      }
       if (code === 'SESSION_NOT_FOUND') {
         return jsonError(404, code, message)
       }

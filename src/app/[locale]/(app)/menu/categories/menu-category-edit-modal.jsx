@@ -1,11 +1,12 @@
 'use client'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useEffect, useId, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { useGeminiArSuggestion } from '@/hooks/use-gemini-ar-suggestion'
@@ -210,10 +211,7 @@ export function MenuCategoryEditModal({
                 >
                   {t('categoryNameEn')}
                   {loadingNameEn ? (
-                    <Loader2
-                      className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                      aria-label={tBi('translating')}
-                    />
+                    <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
                   ) : null}
                 </label>
                 <input
@@ -239,10 +237,7 @@ export function MenuCategoryEditModal({
                   {t('categoryNameAr')}
                   <RequiredMark />
                   {loadingNameAr ? (
-                    <Loader2
-                      className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                      aria-label={tBi('translating')}
-                    />
+                    <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
                   ) : null}
                 </label>
                 <input

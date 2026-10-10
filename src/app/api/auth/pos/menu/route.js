@@ -3,6 +3,8 @@ import { handleRouteError } from '@/lib/api/route-error'
 import { requirePosRestaurant } from '@/lib/auth/require-pos-app-user'
 import { businessHasAvailableCoupons } from '@/lib/coupons/has-available-coupons'
 import { mapMenuCategoryToJson, mapMenuItemToJson, menuItemInclude } from '@/lib/menu/map-menu-json'
+import { loadActiveOffers } from '@/lib/offers/load-active-offers'
+import { mapOfferForClient } from '@/lib/offers/map-offer-json'
 import { prisma } from '@/lib/prisma'
 
 /** Active menu catalog for the POS screen (ADMIN or CASHIER). */
@@ -12,7 +14,7 @@ export async function GET() {
     if (auth.error) return auth.error
     const { profileId } = auth
 
-    const [categories, items, settings, loyaltySettings, hasAvailableCoupons] =
+    const [categories, items, settings, loyaltySettings, hasAvailableCoupons, offers] =
       await Promise.all([
         prisma.menuCategory.findMany({
           where: { businessProfileId: profileId, active: true },
@@ -32,6 +34,7 @@ export async function GET() {
           select: { enabled: true },
         }),
         businessHasAvailableCoupons(profileId),
+        loadActiveOffers({ businessProfileId: profileId }),
       ])
 
     return jsonOk({
@@ -41,6 +44,8 @@ export async function GET() {
       posOnScreenKeypad: settings?.posOnScreenKeypad === true,
       loyaltyEnabled: loyaltySettings?.enabled === true,
       hasAvailableCoupons: hasAvailableCoupons === true,
+      /** Live Offers & Deals (pricing + display). Re-checked at checkout. */
+      offers: offers.map((o) => mapOfferForClient(o, { audience: 'pos' })),
     })
   } catch (err) {
     return handleRouteError(err, 'GET /api/auth/pos/menu')

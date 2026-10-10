@@ -18,6 +18,7 @@ import {
   buildRepairedDocumentLines,
   CLEARED_ZATCA_ARTIFACTS,
 } from '@/lib/notes/repair-failed-document'
+import { releaseOfferUsages } from '@/lib/offers/offer-usage'
 import { reconcileLoyaltyPointsForInvoice } from '@/lib/loyalty/reconcile-loyalty-points-for-invoice'
 import {
   cancelKitchenOrderForInvoice,
@@ -25,6 +26,7 @@ import {
 } from '@/lib/orders/sync-kitchen-order'
 import { primaryKitchenOrderInclude } from '@/lib/orders/primary-kitchen-order'
 import { prisma } from '@/lib/prisma'
+import { lockUnsignedDocumentForRepair } from '@/lib/zatca/zatca-document-chain'
 
 const repairLineSchema = z.object({
   menuItemId: z.string().trim().min(1).optional().nullable(),
@@ -116,6 +118,8 @@ export async function DELETE(_request, context) {
         where: { id },
         data: { deletedAt: new Date() },
       })
+      // Offers & Deals: a deleted sale gives its offer uses back.
+      await releaseOfferUsages(tx, { invoiceId: id })
       await cancelKitchenOrderForInvoice(tx, id)
       // Same clawback as cancel/void — no-op when invoice has no loyalty involvement.
       await reconcileLoyaltyPointsForInvoice({
@@ -190,6 +194,11 @@ export async function PATCH(request, context) {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      if (!(await lockUnsignedDocumentForRepair(tx, 'invoice', id))) {
+        throw Object.assign(new Error('Document was signed meanwhile'), {
+          code: 'NOT_EDITABLE',
+        })
+      }
       await tx.invoiceLine.deleteMany({ where: { invoiceId: id } })
       const row = await tx.invoice.update({
         where: { id },

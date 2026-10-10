@@ -2,6 +2,7 @@ import {
   computeInvoiceTotals,
   decimalStringFromNumber,
   parseMoney,
+  vatPercentForPreset,
 } from '@/lib/invoices/invoice-compute-totals'
 
 /**
@@ -52,7 +53,7 @@ export function noteLinesFromSignedDeltas(signedDeltas, documentNature) {
     }
 
     // Fallback: qty=1 carrying the exact absolute grand total via tax-exclusive unit.
-    const rate = d.vatPreset === 'zero' || d.vatPreset === 'exempt' ? 0 : 0.15
+    const rate = vatPercentForPreset(d.vatPreset) / 100
     const taxable = rate > 0 ? absTotal / (1 + rate) : absTotal
     out.push({
       nameAr: d.nameAr,

@@ -1,10 +1,11 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useId, useMemo } from 'react'
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { useGeminiArSuggestion } from '@/hooks/use-gemini-ar-suggestion'
 import { useGeminiEnSuggestion } from '@/hooks/use-gemini-en-suggestion'
@@ -150,10 +151,7 @@ export function MenuItemRecipeEditor({
           <span className="type-label-md flex items-center gap-2 text-hisabi-on-surface">
             {t('fieldRecipeStepsEn')}
             {loadingStepsEn ? (
-              <Loader2
-                className="size-4 shrink-0 animate-spin text-hisabi-teal"
-                aria-label={tBi('translating')}
-              />
+              <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
             ) : null}
           </span>
           <textarea
@@ -177,10 +175,7 @@ export function MenuItemRecipeEditor({
           <span className="type-label-md flex items-center gap-2 text-hisabi-on-surface">
             {t('fieldRecipeStepsAr')}
             {loadingStepsAr ? (
-              <Loader2
-                className="size-4 shrink-0 animate-spin text-hisabi-teal"
-                aria-label={tBi('translating')}
-              />
+              <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
             ) : null}
           </span>
           <textarea

@@ -144,6 +144,12 @@ export function mapTableSessionDetailJson(session, opts) {
       variantOptionIds,
       customizationIds,
       modifiersSnapshot,
+      offerId: line.offerId ?? null,
+      offerGroupKey: line.offerGroupKey ?? null,
+      offerDiscount: line.offerDiscount ?? null,
+      // Name kept even after the offer ends (deal header on the floor view).
+      offerNameAr: line.offer?.nameAr ?? null,
+      offerNameEn: line.offer?.nameEn ?? null,
     })
   }
 

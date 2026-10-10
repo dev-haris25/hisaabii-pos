@@ -10,7 +10,6 @@ import {
   Download,
   Eye,
   Gift,
-  Loader2,
   Pencil,
   Printer,
   Send,
@@ -21,6 +20,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { HisabiStatusModal } from '@/components/hisabi-status-modal'
 import { GiveLoyaltyPointsModal } from '@/components/invoices/give-loyalty-points-modal'
@@ -621,10 +621,7 @@ export function InvoicesListView({
                             onClick={() => reportMutation.mutate(row.id)}
                           >
                             {reportingId === row.id ? (
-                              <Loader2
-                                className="size-5 animate-spin"
-                                aria-hidden
-                              />
+                              <HisabiSpinner size="sm" />
                             ) : (
                               <Send className="size-5" aria-hidden />
                             )}

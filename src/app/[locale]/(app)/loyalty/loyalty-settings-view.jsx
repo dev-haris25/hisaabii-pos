@@ -1,11 +1,12 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Coins, Gift, Loader2, Save, Scale, SlidersHorizontal } from 'lucide-react'
+import { Coins, Gift, Save, Scale, SlidersHorizontal } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
 
+import { AppLoader } from '@/components/app-loader'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { useIsRtl } from '@/components/auth/use-is-rtl'
 import { useAppAbility } from '@/components/rbac/ability-provider'
@@ -351,7 +352,7 @@ export function LoyaltySettingsView() {
   if (isPending && !hydrated) {
     return (
       <div className="mx-auto flex w-full max-w-hisabi-container justify-center px-hisabi-md py-16 sm:px-hisabi-xl">
-        <Loader2 className="size-8 animate-spin text-hisabi-primary" />
+        <AppLoader size="lg" />
       </div>
     )
   }

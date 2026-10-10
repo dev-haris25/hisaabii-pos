@@ -61,7 +61,7 @@ export function orderSubtotalFromLines(lines) {
  * Pre-discount VAT-inclusive cart total — sum of each line’s
  * `(qty × unitPrice) + VAT on that gross` with discount forced to 0.
  * Reuses `computeLineAmounts` (same `vatRateFraction` as `computeInvoiceTotals`:
- * `zero`/`exempt` → 0, else 15%) so the min-order gate matches invoice VAT math.
+ * `vatPercentForPreset`) so the min-order gate matches invoice VAT math.
  *
  * @param {Array<{ quantity: number, unitPrice: string, vatPreset?: string }>} lines
  * @returns {string}

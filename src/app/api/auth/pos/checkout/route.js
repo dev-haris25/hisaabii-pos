@@ -6,6 +6,7 @@ import {
   posCheckoutBodySchema,
 } from '@/lib/pos/checkout-pos-sale'
 import { primaryKitchenOrder } from '@/lib/orders/primary-kitchen-order'
+import { isOfferErrorCode } from '@/lib/offers/resolve-cart-offers'
 
 export async function POST(request) {
   try {
@@ -68,6 +69,12 @@ export async function POST(request) {
       const code =
         e && typeof e === 'object' && 'code' in e ? String(e.code) : ''
       const message = e instanceof Error ? e.message : String(e)
+      if (isOfferErrorCode(code)) {
+        return jsonError(409, code, message, { offerId: e.offerId ?? null })
+      }
+      if (code === 'VALIDATION_ERROR') {
+        return jsonError(400, code, message)
+      }
       if (code === 'BUSINESS_PROFILE_REQUIRED') {
         return jsonError(403, code, 'Complete restaurant profile first')
       }

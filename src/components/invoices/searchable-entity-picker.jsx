@@ -146,12 +146,11 @@ export function SearchableEntityPicker({
     ? Math.max(96, panelMaxHeight - 58 - footerReserve)
     : inlineListMaxHeight
 
-  const panelFixedStyle =
-    !portal
-      ? undefined
-      : menuRect == null
-        ? { display: 'none' }
-        : (() => {
+  /** Measured portal geometry, handed to `.hisabi-floating-panel` via CSS custom properties. */
+  const panelGeometry =
+    !portal || menuRect == null
+      ? null
+      : (() => {
             const triggerW = menuRect.width
             const panelWidth = Math.max(triggerW, 280)
             let left = menuRect.left
@@ -160,14 +159,26 @@ export function SearchableEntityPicker({
               const maxLeft = window.innerWidth - pad - panelWidth
               if (left > maxLeft) left = Math.max(pad, maxLeft)
             }
-            return {
-              position: 'fixed',
-              top: menuRect.bottom + 4,
-              left,
-              width: panelWidth,
-              maxHeight: panelMaxHeight,
-            }
+            return { top: menuRect.bottom + 4, left, width: panelWidth }
           })()
+
+  const panelTop = panelGeometry?.top
+  const panelLeft = panelGeometry?.left
+  const panelWidthPx = panelGeometry?.width
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    if (panel && panelTop != null) {
+      panel.style.setProperty('--hisabi-floating-top', `${panelTop}px`)
+      panel.style.setProperty('--hisabi-floating-left', `${panelLeft}px`)
+      panel.style.setProperty('--hisabi-floating-width', `${panelWidthPx}px`)
+      panel.style.setProperty('--hisabi-floating-max-h', `${panelMaxHeight}px`)
+    }
+    menuRef.current?.style.setProperty(
+      '--hisabi-floating-list-max-h',
+      `${listMaxHeight}px`,
+    )
+  }, [open, portalReady, panelTop, panelLeft, panelWidthPx, panelMaxHeight, listMaxHeight])
 
   const listContent = (
     <div
@@ -175,8 +186,9 @@ export function SearchableEntityPicker({
       className={cn(
         'type-body-md text-hisabi-on-surface z-[200] flex flex-col overflow-hidden rounded-lg border border-hisabi-outline-variant bg-hisabi-surface-container-lowest shadow-xl',
         !portal && 'absolute start-0 top-[calc(100%+4px)] w-full max-h-[240px]',
+        portal && 'hisabi-floating-panel',
+        portal && panelGeometry == null && 'hidden',
       )}
-      style={panelFixedStyle}
     >
       <div className="border-hisabi-outline-variant shrink-0 border-b bg-hisabi-surface-container-lowest px-hisabi-sm py-2">
         <label htmlFor={searchInputId} className="sr-only">
@@ -204,8 +216,7 @@ export function SearchableEntityPicker({
         ref={menuRef}
         id={listboxId}
         role="listbox"
-        className="overflow-y-auto py-1"
-        style={{ maxHeight: listMaxHeight }}
+        className="hisabi-floating-list overflow-y-auto py-1"
       >
         {loading ? (
           <li className="flex items-center justify-center px-hisabi-md py-6">

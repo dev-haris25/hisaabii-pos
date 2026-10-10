@@ -1,11 +1,12 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 
+import { AppLoader } from '@/components/app-loader'
 import { AuthSplitShell } from '@/components/auth/auth-split-shell'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { RequiredMark } from '@/components/ui/required-mark'
@@ -86,7 +87,7 @@ export function InviteAcceptPageClient() {
   if (isPending) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="size-8 animate-spin text-hisabi-primary" aria-hidden />
+        <AppLoader size="lg" />
       </div>
     )
   }

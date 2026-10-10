@@ -3,27 +3,39 @@ import { emitZatcaReportFailed } from '@/lib/notifications/emit-zatca-report-fai
 import { emitZatcaReportStillFailed } from '@/lib/notifications/emit-zatca-report-still-failed'
 import { emitZatcaReportSuccess } from '@/lib/notifications/emit-zatca-report-success'
 import { prisma } from '@/lib/prisma'
-import { reportInvoiceToZatca } from '@/lib/zatca/report-invoice-to-zatca'
 import {
   ZATCA_BACKGROUND_BATCH_PER_BUSINESS,
   ZATCA_BACKGROUND_MAX_BUSINESSES,
   ZATCA_DEADLINE_RETRY_MS,
+  ZATCA_PENDING_MIN_AGE_MS,
 } from '@/lib/zatca/zatca-background-constants'
-import { zatcaAttemptErrorSummary } from '@/lib/zatca/zatca-attempt-error-summary'
+import { reportDocumentToZatca } from '@/lib/zatca/zatca-document-chain'
 
 /**
- * Next pending invoice for a restaurant (chain order = createdAt asc).
- * @param {string} businessProfileId
+ * The worker runs under Bun, whose crypto cannot do ZATCA's secp256k1 ECDSA, so
+ * it only RESENDS documents that the app (Node) already signed into the chain.
+ * Unsigned pending/failed invoices stay visible with "Report to ZATCA" (rules §19).
  */
-async function findNextPendingInvoice(businessProfileId) {
+const SIGNED_ONLY = { cryptographicStamp: { not: null }, xmlPayload: { not: null } }
+
+/**
+ * Next stuck pending invoice for a restaurant (chain order = createdAt asc).
+ * Only invoices older than {@link ZATCA_PENDING_MIN_AGE_MS} — younger ones are
+ * still being reported by their own checkout / note request.
+ * @param {string} businessProfileId
+ * @param {Date} pendingBefore
+ */
+async function findNextPendingInvoice(businessProfileId, pendingBefore) {
   return prisma.invoice.findFirst({
     where: {
       businessProfileId,
       status: 'completed',
       zatcaStatus: 'pending',
+      createdAt: { lte: pendingBefore },
+      ...SIGNED_ONLY,
       ...WHERE_NOT_DELETED,
     },
-    include: { lines: { orderBy: { sortOrder: 'asc' } } },
+    select: { id: true, invoiceNumber: true },
     orderBy: { createdAt: 'asc' },
   })
 }
@@ -41,9 +53,10 @@ async function findNextDeadlineFailedInvoice(businessProfileId, deadlineBefore) 
       zatcaStatus: 'failed',
       zatcaDeadlineRetriedAt: null,
       createdAt: { lte: deadlineBefore },
+      ...SIGNED_ONLY,
       ...WHERE_NOT_DELETED,
     },
-    include: { lines: { orderBy: { sortOrder: 'asc' } } },
+    select: { id: true, invoiceNumber: true },
     orderBy: { createdAt: 'asc' },
   })
 }
@@ -92,26 +105,15 @@ export async function processZatcaQueueForBusiness(
     return { processed: 0, reported: 0, failed: 0 }
   }
 
-  const profile = await prisma.businessProfile.findUnique({
-    where: { id: businessProfileId },
-    select: { zatcaEnvironment: true },
-  })
-  const selectedEnvironment = profile?.zatcaEnvironment ?? null
   const deadlineBefore = new Date(Date.now() - ZATCA_DEADLINE_RETRY_MS)
+  const pendingBefore = new Date(Date.now() - ZATCA_PENDING_MIN_AGE_MS)
 
   let processed = 0
   let reported = 0
   let failed = 0
 
   for (let i = 0; i < limit; i += 1) {
-    const deviceFresh = await prisma.zatcaDevice.findUnique({
-      where: { businessProfileId },
-    })
-    if (!deviceFresh?.productionCsid || !deviceFresh.productionSecretEnc) {
-      break
-    }
-
-    let invoice = await findNextPendingInvoice(businessProfileId)
+    let invoice = await findNextPendingInvoice(businessProfileId, pendingBefore)
     let isDeadlineRetry = false
 
     if (!invoice) {
@@ -123,30 +125,16 @@ export async function processZatcaQueueForBusiness(
       const claimed = await claimDeadlineRetry(invoice.id)
       if (!claimed) continue
       isDeadlineRetry = true
-      invoice = await prisma.invoice.findFirst({
-        where: { id: invoice.id, ...WHERE_NOT_DELETED },
-        include: { lines: { orderBy: { sortOrder: 'asc' } } },
-      })
-      if (!invoice) continue
     }
 
     processed += 1
-    const attemptAt = new Date()
 
     try {
-      await reportInvoiceToZatca({
-        invoice,
-        device: deviceFresh,
-        selectedEnvironment,
+      await reportDocumentToZatca({
+        kind: 'invoice',
+        id: invoice.id,
+        businessProfileId,
         withTransientRetry: true,
-      })
-      await prisma.invoice.update({
-        where: { id: invoice.id },
-        data: {
-          zatcaReportAttempts: { increment: 1 },
-          zatcaLastAttemptAt: attemptAt,
-          zatcaLastError: null,
-        },
       })
       reported += 1
       void emitZatcaReportSuccess({
@@ -155,21 +143,10 @@ export async function processZatcaQueueForBusiness(
         documentNumber: invoice.invoiceNumber,
       })
     } catch (err) {
-      const summary = zatcaAttemptErrorSummary(err)
-      await prisma.invoice.update({
-        where: { id: invoice.id },
-        data: {
-          zatcaStatus: 'failed',
-          zatcaReportAttempts: { increment: 1 },
-          zatcaLastAttemptAt: attemptAt,
-          zatcaLastError: summary,
-        },
-      })
       failed += 1
-      console.error(
-        `[zatca-background] report failed ${invoice.invoiceNumber}:`,
-        summary,
-      )
+      if (err && typeof err === 'object' && 'code' in err && err.code === 'NOT_FOUND') {
+        continue
+      }
       if (isDeadlineRetry) {
         void emitZatcaReportStillFailed({
           businessProfileId,
@@ -202,10 +179,13 @@ export async function processZatcaQueueGlobal(opts = {}) {
     opts.perBusinessLimit ?? ZATCA_BACKGROUND_BATCH_PER_BUSINESS
   const deadlineBefore = new Date(Date.now() - ZATCA_DEADLINE_RETRY_MS)
 
+  const pendingBefore = new Date(Date.now() - ZATCA_PENDING_MIN_AGE_MS)
   const pendingBiz = await prisma.invoice.findMany({
     where: {
       status: 'completed',
       zatcaStatus: 'pending',
+      createdAt: { lte: pendingBefore },
+      ...SIGNED_ONLY,
       ...WHERE_NOT_DELETED,
     },
     select: { businessProfileId: true },
@@ -220,6 +200,7 @@ export async function processZatcaQueueGlobal(opts = {}) {
       zatcaStatus: 'failed',
       zatcaDeadlineRetriedAt: null,
       createdAt: { lte: deadlineBefore },
+      ...SIGNED_ONLY,
       ...WHERE_NOT_DELETED,
     },
     select: { businessProfileId: true },

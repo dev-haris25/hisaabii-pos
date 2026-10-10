@@ -19,7 +19,6 @@
     "db:seed-demo-dev": "bun scripts/seed-demo-dev.mjs",
     "db:seed-demo-staff": "bun scripts/seed-demo-staff.mjs",
     "db:seed-mvp2-demo": "bun scripts/seed-mvp2-demo.mjs",
-    "db:one-off-brittania-exvat": "bun scripts/one-off-brittania-owner-email-and-exvat-menu.mjs",
     "lint": "bunx eslint .",
     "desktop": "bun --cwd desktop start",
     "desktop:dist": "bun --cwd desktop dist"

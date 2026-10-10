@@ -6,7 +6,6 @@ import {
   ChefHat,
   CircleDollarSign,
   FileText,
-  Loader2,
   Package,
   Pencil,
   Receipt,
@@ -16,6 +15,7 @@ import {
 import { useLocale, useTranslations } from 'next-intl'
 import { useCallback, useMemo, useState } from 'react'
 
+import { AppLoader } from '@/components/app-loader'
 import { useAppAbility } from '@/components/rbac/ability-provider'
 import { Link, usePathname, useRouter } from '@/i18n/navigation'
 import { authGet } from '@/lib/api/auth-client'
@@ -218,7 +218,7 @@ export function MenuItemDetailView({ itemId }) {
   if (itemQuery.isPending) {
     return (
       <div className="text-hisabi-on-surface-variant mx-auto flex min-h-[50vh] max-w-hisabi-container items-center justify-center px-hisabi-md py-hisabi-xxl">
-        <Loader2 className="size-8 animate-spin text-hisabi-primary" aria-hidden />
+        <AppLoader size="lg" />
         <span className="sr-only">{t('viewLoading')}</span>
       </div>
     )

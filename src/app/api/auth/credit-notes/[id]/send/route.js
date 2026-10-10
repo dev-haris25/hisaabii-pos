@@ -8,8 +8,7 @@ import {
 import { canReportNoteToZatca } from '@/lib/notes/map-note-json'
 import { prisma } from '@/lib/prisma'
 import { emitZatcaReportFailed } from '@/lib/notifications/emit-zatca-report-failed'
-import { humanizeZatcaError } from '@/lib/zatca/humanize-zatca-error'
-import { runNoteZatcaSend } from '@/lib/zatca/run-note-zatca-send'
+import { reportDocumentToZatca } from '@/lib/zatca/zatca-document-chain'
 
 /**
  * Manual "Report to ZATCA" for pending/failed credit notes.
@@ -45,12 +44,9 @@ export async function POST(_request, context) {
       )
     }
 
-    const profile = await prisma.businessProfile.findUnique({
-      where: { id: auth.profileId },
-      select: { zatcaEnvironment: true },
-    })
     const device = await prisma.zatcaDevice.findUnique({
       where: { businessProfileId: auth.profileId },
+      select: { productionCsid: true },
     })
     if (!device?.productionCsid) {
       return jsonError(
@@ -61,39 +57,13 @@ export async function POST(_request, context) {
     }
 
     try {
-      await runNoteZatcaSend({
-        note,
-        device,
-        documentNature: 'credit',
-        selectedEnvironment: profile?.zatcaEnvironment,
-      })
-      await prisma.creditNote.update({
-        where: { id: note.id },
-        data: {
-          zatcaReportAttempts: { increment: 1 },
-          zatcaLastAttemptAt: new Date(),
-          zatcaLastError: null,
-        },
+      await reportDocumentToZatca({
+        kind: 'credit',
+        id: note.id,
+        businessProfileId: auth.profileId,
       })
       return jsonOk({ reported: true })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      const humanized = humanizeZatcaError(msg)
-      const first = humanized.issues?.[0]
-      const summary = first?.message
-        ? [first.title, first.message, first.actionHint]
-            .filter(Boolean)
-            .join(' — ')
-        : msg
-      await prisma.creditNote.update({
-        where: { id: note.id },
-        data: {
-          zatcaStatus: 'failed',
-          zatcaReportAttempts: { increment: 1 },
-          zatcaLastAttemptAt: new Date(),
-          zatcaLastError: summary.slice(0, 1000),
-        },
-      })
+    } catch {
       void emitZatcaReportFailed({
         businessProfileId: auth.profileId,
         actorUserId: auth.session?.id,
@@ -101,7 +71,6 @@ export async function POST(_request, context) {
         documentId: note.id,
         documentNumber: note.creditNoteNumber,
       })
-      console.error('[credit-notes/send] ZATCA_ERROR:', msg)
       return jsonError(502, 'ZATCA_ERROR', 'Could not report the note to ZATCA')
     }
   } catch (err) {

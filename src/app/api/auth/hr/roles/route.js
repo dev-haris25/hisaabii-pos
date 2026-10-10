@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { ADMIN_ROLE_NAME } from '@/lib/rbac/permission-registry'
 import {
   PREDEFINED_ROLE_NAMES,
-  ensurePredefinedRolesExist,
+  ensurePredefinedRolesSynced,
   rolesRequireNoLogin,
 } from '@/lib/rbac/seed-predefined-roles'
 
@@ -14,7 +14,7 @@ export async function GET(request) {
   if (auth.error) return auth.error
   const { profile } = auth
 
-  await ensurePredefinedRolesExist(profile.id)
+  await ensurePredefinedRolesSynced(profile.id)
 
   const roles = await prisma.role.findMany({
     where: {

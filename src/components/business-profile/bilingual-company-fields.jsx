@@ -1,8 +1,8 @@
 'use client'
 
-import { Loader2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { BilingualCompanyAddressFields } from '@/components/business-profile/bilingual-company-address-fields'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { useGeminiArSuggestion } from '@/hooks/use-gemini-ar-suggestion'
@@ -151,10 +151,7 @@ export function BilingualCompanyFields({
             >
               {t('companyNameEnglish')}
               {loadingNameEn ? (
-                <Loader2
-                  className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                  aria-label={t('translating')}
-                />
+                <HisabiSpinner size="inline" className="text-hisabi-teal" label={t('translating')} />
               ) : null}
             </label>
             <input
@@ -182,10 +179,7 @@ export function BilingualCompanyFields({
               {t('companyNameArabic')}
               <RequiredMark />
               {loadingNameAr ? (
-                <Loader2
-                  className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                  aria-label={t('translating')}
-                />
+                <HisabiSpinner size="inline" className="text-hisabi-teal" label={t('translating')} />
               ) : null}
             </label>
             <input

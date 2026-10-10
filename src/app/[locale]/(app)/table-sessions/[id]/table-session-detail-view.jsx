@@ -147,7 +147,11 @@ export function TableSessionDetailView({
           parseMoney(amountTendered.trim()),
         )
       }
-      if (!redeemActive) {
+      const offerLinesActive = (
+        Array.isArray(query.data?.lines) ? query.data.lines : []
+      ).some((line) => Boolean(line?.offerId))
+      // Offers / deals are exclusive: never send coupon or manual discount.
+      if (!redeemActive && !offerLinesActive) {
         if (appliedCoupon?.code) {
           body.couponCode = appliedCoupon.code
         } else if (discount.trim()) {
@@ -216,6 +220,13 @@ export function TableSessionDetailView({
         setCouponError(code ? tErr(code) : tErr('generic'))
         return
       }
+      if (code === 'OFFERS_EXCLUSIVE_DISCOUNT') {
+        setAppliedCoupon(null)
+        setDiscount('')
+        setDiscountError(tErr('OFFERS_EXCLUSIVE_DISCOUNT'))
+        void query.refetch()
+        return
+      }
       if (code === 'SESSION_ROUNDS_NOT_READY') {
         setTenderError('')
         toast.error(tErr('SESSION_ROUNDS_NOT_READY'))
@@ -226,6 +237,12 @@ export function TableSessionDetailView({
   })
 
   const lines = Array.isArray(query.data?.lines) ? query.data.lines : []
+  const hasOfferLines = lines.some((line) => Boolean(line?.offerId))
+  const offerSavingsInclVat = useMemo(() => {
+    const raw = query.data?.billingEstimate?.offerSavingsInclVat
+    if (raw == null || parseMoney(raw) <= 0) return null
+    return String(raw)
+  }, [query.data?.billingEstimate?.offerSavingsInclVat])
   const loyaltyRedeemActive = useMemo(() => {
     const pts = query.data?.session?.requestedRedeemPoints
     return pts != null && String(pts).trim() !== ''
@@ -269,6 +286,8 @@ export function TableSessionDetailView({
 
   const settleDueTotal = useMemo(() => {
     if (loyaltyRedeemActive) return estimatedTotal
+    // Billing estimate is already net of offers; no other discount applies.
+    if (hasOfferLines) return estimatedGrossTotal
     const baseLines = lines.map((line) => ({
       quantity: Number(line.quantity) || 0,
       unitPrice: String(line.unitPrice ?? '0'),
@@ -296,6 +315,7 @@ export function TableSessionDetailView({
     return estimatedGrossTotal
   }, [
     loyaltyRedeemActive,
+    hasOfferLines,
     estimatedTotal,
     estimatedGrossTotal,
     lines,
@@ -366,6 +386,103 @@ export function TableSessionDetailView({
   }
 
   /**
+   * @param {Record<string, unknown>} line
+   */
+  function lineModifierText(line) {
+    const snap =
+      line.modifiersSnapshot && typeof line.modifiersSnapshot === 'object'
+        ? /** @type {Record<string, unknown>} */ (line.modifiersSnapshot)
+        : null
+    const variantOptions = Array.isArray(snap?.variantOptions)
+      ? snap.variantOptions
+      : []
+    const customs = Array.isArray(snap?.customizations)
+      ? snap.customizations
+      : []
+    return [
+      ...variantOptions.map((v) =>
+        locale.startsWith('ar')
+          ? String(v.optionNameAr ?? '')
+          : String(v.optionNameEn || v.optionNameAr || ''),
+      ),
+      ...customs.map((c) =>
+        locale.startsWith('ar')
+          ? String(c.nameAr ?? '')
+          : String(c.nameEn || c.nameAr || ''),
+      ),
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  }
+
+  /**
+   * VAT-inclusive line total before / after its locked offer discount.
+   * @param {Record<string, unknown>} line
+   */
+  function lineInclAmounts(line) {
+    const base = {
+      quantity: Number(line.quantity) || 0,
+      unitPrice: String(line.unitPrice ?? '0'),
+      vatPreset: String(line.vatPreset ?? 'standard'),
+    }
+    return {
+      gross: computeLineAmounts({ ...base, discount: '0' }).lineTotal,
+      net: computeLineAmounts({
+        ...base,
+        discount: line.offerId ? String(line.offerDiscount ?? '0') : '0',
+      }).lineTotal,
+    }
+  }
+
+  /**
+   * @param {number} gross
+   * @param {number} net
+   */
+  function renderLinePrice(gross, net) {
+    const discounted = net + 0.004 < gross
+    return (
+      <span className="type-body-sm inline-flex flex-wrap items-baseline justify-end gap-x-hisabi-xs">
+        {discounted ? (
+          <span className="text-hisabi-on-surface-variant line-through">
+            {formatSarAmount(gross, locale)}
+          </span>
+        ) : null}
+        <span
+          className={cn(
+            'font-semibold',
+            discounted ? 'text-hisabi-primary' : 'text-hisabi-on-surface',
+          )}
+        >
+          {formatSarAmount(net, locale)}
+        </span>
+      </span>
+    )
+  }
+
+  /** Lines grouped for display: deal components under their deal. */
+  const lineEntries = (() => {
+    /** @type {Array<any>} */
+    const entries = []
+    /** @type {Map<string, any>} */
+    const deals = new Map()
+    for (const line of lines) {
+      const key = line.offerGroupKey ? String(line.offerGroupKey) : ''
+      if (!key) {
+        entries.push({ type: 'line', line })
+        continue
+      }
+      let deal = deals.get(key)
+      if (!deal) {
+        deal = { type: 'deal', key, offerId: String(line.offerId ?? ''), lines: [] }
+        deals.set(key, deal)
+        entries.push(deal)
+      }
+      deal.lines.push(line)
+    }
+    return entries
+  })()
+
+  /**
    * @param {string} status
    */
   function roundStatusLabel(status) {
@@ -411,6 +528,10 @@ export function TableSessionDetailView({
     const code = couponCodeInput.trim()
     if (!code) {
       setCouponError(tPos('couponCodeRequired'))
+      return
+    }
+    if (hasOfferLines) {
+      setCouponError(t('offers.discountsBlocked'))
       return
     }
     if (loyaltyRedeemActive || discount.trim()) {
@@ -475,7 +596,7 @@ export function TableSessionDetailView({
   function confirmSettle() {
     setTenderError('')
     setDiscountError('')
-    if (!loyaltyRedeemActive && discount.trim()) {
+    if (!loyaltyRedeemActive && !hasOfferLines && discount.trim()) {
       if (!isValidDiscountPercent(discount.trim())) {
         setDiscountError(tPos('validationDiscount'))
         return
@@ -616,18 +737,68 @@ export function TableSessionDetailView({
           </p>
         ) : (
           <ul className="divide-y divide-hisabi-outline-variant/20 overflow-hidden rounded-hisabi-xl border border-hisabi-outline-variant/30">
-            {lines.map((line) => {
-              const snap =
-                line.modifiersSnapshot &&
-                typeof line.modifiersSnapshot === 'object'
-                  ? line.modifiersSnapshot
-                  : null
-              const variantOptions = Array.isArray(snap?.variantOptions)
-                ? snap.variantOptions
-                : []
-              const customs = Array.isArray(snap?.customizations)
-                ? snap.customizations
-                : []
+            {lineEntries.map((entry) => {
+              if (entry.type === 'deal') {
+                const first = entry.lines[0]
+                const offer =
+                  first?.offerNameAr || first?.offerNameEn
+                    ? { nameAr: first.offerNameAr, nameEn: first.offerNameEn }
+                    : null
+                let gross = 0
+                let net = 0
+                for (const l of entry.lines) {
+                  const a = lineInclAmounts(l)
+                  gross += a.gross
+                  net += a.net
+                }
+                return (
+                  <li
+                    key={entry.key}
+                    className="bg-hisabi-surface-container-lowest px-hisabi-md py-hisabi-sm"
+                  >
+                    <div className="flex items-start justify-between gap-hisabi-sm">
+                      <p className="type-label-md text-hisabi-on-surface inline-flex min-w-0 flex-wrap items-center gap-hisabi-xs font-semibold">
+                        <span className="type-label-sm bg-hisabi-primary/10 text-hisabi-primary inline-flex rounded-full px-hisabi-sm py-0.5 font-semibold">
+                          {t('offers.dealBadge')}
+                        </span>
+                        <span className="min-w-0">
+                          {offer
+                            ? lineDisplayName(offer)
+                            : t('offers.dealGeneric')}
+                        </span>
+                      </p>
+                      {renderLinePrice(gross, net)}
+                    </div>
+                    <ul className="mt-hisabi-xs space-y-0.5 border-s-2 border-hisabi-outline-variant/40 ps-hisabi-sm">
+                      {entry.lines.map((l) => {
+                        const mods = lineModifierText(l)
+                        return (
+                          <li
+                            key={String(l.id)}
+                            className="flex items-start justify-between gap-hisabi-sm"
+                          >
+                            <span className="type-body-sm text-hisabi-on-surface min-w-0">
+                              {lineDisplayName(l)}
+                              {mods ? (
+                                <span className="text-hisabi-on-surface-variant">
+                                  {' · '}
+                                  {mods}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="type-label-sm text-hisabi-on-surface shrink-0 font-semibold">
+                              ×{Number(l.quantity) || 0}
+                            </span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </li>
+                )
+              }
+              const line = entry.line
+              const mods = lineModifierText(line)
+              const amounts = lineInclAmounts(line)
               return (
                 <li
                   key={String(line.id)}
@@ -638,24 +809,9 @@ export function TableSessionDetailView({
                       <p className="type-label-md text-hisabi-on-surface font-semibold">
                         {lineDisplayName(line)}
                       </p>
-                      {variantOptions.length > 0 || customs.length > 0 ? (
+                      {mods ? (
                         <p className="type-body-sm text-hisabi-on-surface-variant">
-                          {[
-                            ...variantOptions.map((v) =>
-                              locale.startsWith('ar')
-                                ? String(v.optionNameAr ?? '')
-                                : String(
-                                    v.optionNameEn || v.optionNameAr || '',
-                                  ),
-                            ),
-                            ...customs.map((c) =>
-                              locale.startsWith('ar')
-                                ? String(c.nameAr ?? '')
-                                : String(c.nameEn || c.nameAr || ''),
-                            ),
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
+                          {mods}
                         </p>
                       ) : null}
                       {line.lineNote ? (
@@ -664,9 +820,14 @@ export function TableSessionDetailView({
                         </p>
                       ) : null}
                     </div>
-                    <span className="type-label-md text-hisabi-on-surface shrink-0 font-semibold">
-                      ×{Number(line.quantity) || 0}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-0.5">
+                      <span className="type-label-md text-hisabi-on-surface font-semibold">
+                        ×{Number(line.quantity) || 0}
+                      </span>
+                      {line.offerId
+                        ? renderLinePrice(amounts.gross, amounts.net)
+                        : null}
+                    </div>
                   </div>
                 </li>
               )
@@ -681,6 +842,12 @@ export function TableSessionDetailView({
           {estimatedTotal}
         </span>
       </p>
+      {offerSavingsInclVat ? (
+        <p className="type-body-sm text-hisabi-primary -mt-hisabi-sm flex items-center justify-between font-medium">
+          <span>{t('offers.offerSavings')}</span>
+          <span>−{formatSarAmount(offerSavingsInclVat, locale)}</span>
+        </p>
+      ) : null}
       {loyaltyDiscountMoney && redeemPoints ? (
         <p className="type-body-sm text-hisabi-on-surface-variant -mt-hisabi-sm">
           {t('settleLoyaltyDiscountHint', {
@@ -768,6 +935,14 @@ export function TableSessionDetailView({
               </p>
             ) : null}
 
+            {!loyaltyRedeemActive && hasOfferLines ? (
+              <p
+                className="type-body-sm text-hisabi-on-surface-variant rounded-xl border border-hisabi-outline-variant/30 bg-hisabi-surface-container px-hisabi-md py-hisabi-sm"
+                role="note"
+              >
+                {t('offers.discountsBlocked')}
+              </p>
+            ) : null}
             {!loyaltyRedeemActive ? (
               <>
                 {hasAvailableCoupons ? (
@@ -802,6 +977,7 @@ export function TableSessionDetailView({
                         autoCapitalize="characters"
                         spellCheck={false}
                         disabled={
+                          hasOfferLines ||
                           Boolean(discount.trim()) ||
                           couponValidating ||
                           settleMutation.isPending
@@ -823,6 +999,7 @@ export function TableSessionDetailView({
                       <button
                         type="button"
                         disabled={
+                          hasOfferLines ||
                           couponValidating ||
                           Boolean(discount.trim()) ||
                           appliedCoupon != null ||
@@ -878,21 +1055,23 @@ export function TableSessionDetailView({
                     active={numpadField === 'discount'}
                     dir="ltr"
                     disabled={
-                      appliedCoupon != null || settleMutation.isPending
+                      hasOfferLines ||
+                      appliedCoupon != null ||
+                      settleMutation.isPending
                     }
                     value={discount}
                     onChange={(e) => {
                       if (keypadEnabled) return
-                      if (appliedCoupon) return
+                      if (appliedCoupon || hasOfferLines) return
                       setDiscount(e.target.value)
                       if (discountError) setDiscountError('')
                     }}
                     onClick={() => {
-                      if (appliedCoupon) return
+                      if (appliedCoupon || hasOfferLines) return
                       openNumpad('discount')
                     }}
                     onFocus={() => {
-                      if (appliedCoupon) return
+                      if (appliedCoupon || hasOfferLines) return
                       openNumpad('discount')
                     }}
                     placeholder={tPos('discountPlaceholder')}
@@ -914,7 +1093,7 @@ export function TableSessionDetailView({
                       {tPos('discountDisabledHint')}
                     </p>
                   ) : null}
-                  {discountCapLimit != null && !appliedCoupon ? (
+                  {discountCapLimit != null && !appliedCoupon && !hasOfferLines ? (
                     <p className="type-body-sm text-hisabi-on-surface-variant">
                       {tPos('discountCapHint', { percent: discountCapLimit })}
                     </p>

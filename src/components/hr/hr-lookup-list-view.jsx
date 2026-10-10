@@ -3,7 +3,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown,
-  Loader2,
   Pencil,
   Plus,
   Trash2,
@@ -14,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 
+import { AppLoader } from '@/components/app-loader'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { NoCompanyProfileBanner } from '@/components/clients/no-company-profile-banner'
 import { ListBulkActionsBar } from '@/components/list-views/list-bulk-actions-bar'
@@ -629,7 +629,7 @@ function HrLookupListWithCompanyProfile({ kind }) {
               {busy && rows.length === 0 ? (
                 <tr>
                   <td colSpan={colCount} className="px-hisabi-lg py-16 text-center">
-                    <Loader2 className="mx-auto size-8 animate-spin text-hisabi-primary" aria-hidden />
+                    <AppLoader size="lg" />
                   </td>
                 </tr>
               ) : pageRows.length === 0 ? (

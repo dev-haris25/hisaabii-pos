@@ -41,6 +41,7 @@ export const PERMISSION_REGISTRY = {
     subjects: {
       Pos: { labelKey: 'navPos' },
       Coupon: { labelKey: 'subCoupons' },
+      Offer: { labelKey: 'subOffers' },
       Loyalty: { labelKey: 'subLoyalty' },
       ETable: { labelKey: 'subETables' },
       TableSession: { labelKey: 'subTableSessions' },

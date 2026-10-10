@@ -575,8 +575,8 @@ export function DashboardClient({ hasBusinessProfile = true }) {
                         className="flex items-center gap-hisabi-sm"
                       >
                         <span
-                          className="size-2.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: CHART.mix[i % CHART.mix.length] }}
+                          className="hisabi-chart-swatch size-2.5 shrink-0 rounded-full"
+                          data-mix={i % CHART.mix.length}
                           aria-hidden
                         />
                         <span className="type-body-sm text-hisabi-on-surface min-w-0 flex-1 truncate font-medium">

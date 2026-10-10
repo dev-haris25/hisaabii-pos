@@ -24,8 +24,7 @@ import { getPostAuthLandingPath } from '@/lib/auth/post-auth-landing-path'
 import { parseSafeNextPath } from '@/lib/auth/safe-next-path'
 import { getZatcaSupportWhatsappLink } from '@/lib/support/zatca-support-whatsapp-link'
 import {
-  formatHumanizedZatcaErrorText,
-  isZatcaErrorMessage,
+  formatZatcaRuleIdsText,
 } from '@/lib/zatca/humanize-zatca-error'
 import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { cn } from '@/lib/utils'
@@ -167,14 +166,10 @@ export function ZatcaOnboardingView({
     },
     onError: (err) => {
       const code = err instanceof AuthApiError ? err.code : undefined
-      const message =
-        err instanceof AuthApiError && typeof err.message === 'string'
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : ''
-      if (isZatcaErrorMessage(message, code) && message.trim()) {
-        setSubmitError(formatHumanizedZatcaErrorText(message, tZatca))
+      const ruleIds =
+        err instanceof AuthApiError ? err.details?.zatcaRuleIds : undefined
+      if (code === 'ZATCA_ERROR' || Array.isArray(ruleIds)) {
+        setSubmitError(formatZatcaRuleIdsText(ruleIds, tZatca))
         return
       }
       setSubmitError(code ? tErr(code) : tErr('generic'))

@@ -1,18 +1,22 @@
+import { isZatcaSignedDocument } from '@/lib/notes/can-edit-or-cancel-invoice'
+
 /**
- * Whether a failed credit/debit note may be repaired in-place (mutate, then re-report).
+ * Whether a failed credit/debit note may be repaired in-place (mutate, then
+ * re-report). Only before it was ever signed — see `canRepairFailedInvoice`.
  *
  * @param {{
  *   zatcaStatus?: string | null
  *   deletedAt?: Date | string | null
+ *   zatcaSigned?: boolean
+ *   cryptographicStamp?: string | null
  * } | null | undefined} note
  */
 export function canRepairFailedNote(note) {
-  if (!note || note.deletedAt) return false
-  return note.zatcaStatus === 'failed'
+  return canSoftDeleteNote(note) && !isZatcaSignedDocument(note)
 }
 
 /**
- * Soft-delete gate for notes — same as repair (failed only).
+ * Soft-delete gate for notes — failed only.
  *
  * @param {{
  *   zatcaStatus?: string | null
@@ -20,5 +24,6 @@ export function canRepairFailedNote(note) {
  * } | null | undefined} note
  */
 export function canSoftDeleteNote(note) {
-  return canRepairFailedNote(note)
+  if (!note || note.deletedAt) return false
+  return note.zatcaStatus === 'failed'
 }

@@ -20,7 +20,7 @@ import { computeEmployeeBalance } from '@/lib/hr/compute-employee-balance'
 import { ensureSystemAdvancePayslipCategory } from '@/lib/hr/payslip-categories/system-advance-category'
 import { notifyPosAudience } from '@/lib/notifications/notify-owner-and-actor'
 import {
-  ensurePredefinedRolesExist,
+  ensurePredefinedRolesSynced,
   rolesRequireNoLogin,
 } from '@/lib/rbac/seed-predefined-roles'
 import { employeeExcludeOwnerWhere } from '@/lib/rbac/owner-admin-gates'
@@ -173,7 +173,7 @@ export async function PATCH(request, ctx) {
     return jsonError(400, 'VALIDATION_ERROR', `Invalid ${fk.field}`)
   }
 
-  await ensurePredefinedRolesExist(profile.id)
+  await ensurePredefinedRolesSynced(profile.id)
 
   /** @type {string[]} */
   const roleIds = Array.isArray(parsed.data.roleIds)

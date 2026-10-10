@@ -22,6 +22,7 @@ const invoiceListSelect = {
   zatcaStatus: true,
   zatcaLastError: true,
   qrCode: true,
+  cryptographicStamp: true,
   loyaltyPointsRedeemed: true,
   loyaltyDiscountAmount: true,
   createdByStaff: { select: { id: true, name: true } },

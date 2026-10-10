@@ -4,7 +4,7 @@ import {
   ADMIN_ROLE_NAME,
   CASHIER_ROLE_NAME,
 } from '@/lib/rbac/permission-registry'
-import { ensurePredefinedRolesExist } from '@/lib/rbac/seed-predefined-roles'
+import { ensurePredefinedRolesSynced } from '@/lib/rbac/seed-predefined-roles'
 import { cashierDocumentWindowStart } from '@/lib/rbac/cashier-invoice-window'
 import { prisma } from '@/lib/prisma'
 
@@ -36,7 +36,7 @@ export function buildOwnerAbility() {
  * @param {string} businessProfileId
  */
 export async function getAbilityForMembership(userId, businessProfileId) {
-  await ensurePredefinedRolesExist(businessProfileId)
+  await ensurePredefinedRolesSynced(businessProfileId)
 
   const profile = await prisma.businessProfile.findUnique({
     where: { id: businessProfileId },

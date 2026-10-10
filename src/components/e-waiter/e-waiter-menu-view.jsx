@@ -4,27 +4,48 @@ import {
   Bell,
   ChevronRight,
   History,
-  Loader2,
   Minus,
   Plus,
   Receipt,
   ShoppingBag,
+  Tag,
+  Trash2,
+  X,
 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 const SESSION_POLL_MS = 4000
 const ROUND_STATUS_POLL_MS = 4000
 const LOYALTY_STORAGE_PREFIX = 'e-waiter-loyalty:'
+/** @type {Array<Record<string, unknown>>} */
+const EMPTY_OFFERS = []
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { EWaiterLoyaltyLoginSheet } from '@/components/e-waiter/e-waiter-loyalty-login-sheet'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { EWaiterPastOrdersView } from '@/components/e-waiter/e-waiter-past-orders-view'
 import { EWaiterRedeemSheet } from '@/components/e-waiter/e-waiter-redeem-sheet'
 import { EWaiterRoundView } from '@/components/e-waiter/e-waiter-round-view'
 import { EWaiterSheetScaffold } from '@/components/e-waiter/e-waiter-sheet-scaffold'
+import { EWaiterOfferBannerSlider } from '@/components/e-waiter/e-waiter-offer-banner-slider'
+import { EWaiterDealCard } from '@/components/e-waiter/e-waiter-deal-card'
+import { EWaiterDealSheet } from '@/components/e-waiter/e-waiter-deal-sheet'
+import { EWaiterOfferPrice } from '@/components/e-waiter/e-waiter-offer-price'
+import {
+  OFFER_REFRESH_CODES,
+  buildDealDraft,
+  dealBoxCap,
+  dealBoxDisplayPrice,
+  dealNeedsChoice,
+  defaultOfferItemSelection,
+  offerDisplayName,
+  offerHasUsesLeft,
+  optionNamesFor,
+  priceGuestCart,
+} from '@/components/e-waiter/e-waiter-offer-utils'
 import {
   cartLineKey,
   computeUnitPriceFromItem,
@@ -40,6 +61,7 @@ import {
   selectedVariantOptionsFromItem,
 } from '@/lib/menu/resolve-display-calories'
 import { assertWithinRestaurantGeofence } from '@/lib/e-waiter/assert-within-geofence'
+import { bestDisplayDiscount, offerMenuItemIds } from '@/lib/offers/offer-pricing'
 import { formatSarAmount } from '@/lib/settings/format-helpers'
 import {
   vatInclusiveLineTotal,
@@ -92,6 +114,7 @@ function roundStatusLabel(status, t) {
  *   initialSession?: Record<string, unknown> | null
  *   initialWaiterCallActive?: boolean
  *   loyaltyEnabled?: boolean
+ *   offers?: Array<Record<string, unknown>>
  *   geofence?: {
  *     required: false
  *   } | {
@@ -115,9 +138,11 @@ export function EWaiterMenuView({
   initialSession = null,
   initialWaiterCallActive = false,
   loyaltyEnabled = false,
+  offers: offersProp = EMPTY_OFFERS,
   geofence = { required: false },
 }) {
   const t = useTranslations('EWaiter')
+  const tErr = useTranslations('AuthErrors')
   const intlLocale = useLocale()
   const locale = localeProp === 'ar' || intlLocale === 'ar' ? 'ar' : 'en'
   const router = useRouter()
@@ -163,6 +188,65 @@ export function EWaiterMenuView({
   const [loyaltyRedeem, setLoyaltyRedeem] = useState(
     /** @type {Record<string, unknown> | null} */ (null),
   )
+
+  // ---- Offers & Deals ------------------------------------------------------
+  const offers = offersProp
+  /** Combo deals in the cart (one row per deal + chosen variants). */
+  const [dealCart, setDealCart] = useState(
+    /** @type {Array<{ key: string, offerId: string, quantity: number, components: Array<Record<string, any>> }>} */ ([]),
+  )
+  const [dealSheetOffer, setDealSheetOffer] = useState(
+    /** @type {Record<string, unknown> | null} */ (null),
+  )
+  const [offerNotice, setOfferNotice] = useState('')
+  const listTopRef = useRef(/** @type {HTMLDivElement | null} */ (null))
+
+  // Fresh offers (router.refresh) → drop deals whose offer vanished.
+  const [seenOffers, setSeenOffers] = useState(offers)
+  if (seenOffers !== offers) {
+    setSeenOffers(offers)
+    const liveComboIds = new Set(
+      offers.filter((o) => o.kind === 'COMBO').map((o) => String(o.id)),
+    )
+    if (dealCart.some((d) => !liveComboIds.has(d.offerId))) {
+      setDealCart((prev) => prev.filter((d) => liveComboIds.has(d.offerId)))
+      setOfferNotice(t('offers.dealsRemoved'))
+    }
+  }
+
+  const itemsById = useMemo(
+    () => new Map(items.map((it) => [String(it.id), it])),
+    [items],
+  )
+  const offersById = useMemo(
+    () => new Map(offers.map((o) => [String(o.id), o])),
+    [offers],
+  )
+
+  const bannerOffers = useMemo(
+    () => offers.filter((o) => Boolean(o.bannerUrl) && offerHasUsesLeft(o)),
+    [offers],
+  )
+
+  const featuredDeals = useMemo(() => {
+    /** @type {Array<{ offer: Record<string, unknown>, price: { grossIncl: string, netIncl: string } }>} */
+    const rows = []
+    for (const offer of offers) {
+      if (offer.kind !== 'COMBO' || !offerHasUsesLeft(offer)) continue
+      const price = dealBoxDisplayPrice(offer, itemsById, offers)
+      if (price) rows.push({ offer, price })
+    }
+    return rows
+  }, [offers, itemsById])
+
+  /** "Deals" capsule (`?category=deals`) — only while a deal is live. */
+  const dealsSelected = categoryFromUrl === 'deals' && featuredDeals.length > 0
+
+  const offerFilterParam = (searchParams.get('offer') ?? '').trim()
+  const offerFilter =
+    offerFilterParam && offersById.get(offerFilterParam)?.kind === 'DISCOUNT'
+      ? offersById.get(offerFilterParam)
+      : null
 
   /** @type {'skipped' | 'checking' | 'ok' | 'denied' | 'unavailable' | 'outside'} */
   const [locationGate, setLocationGate] = useState(
@@ -367,35 +451,71 @@ export function EWaiterMenuView({
    */
   function setActiveCategoryId(nextId) {
     const params = new URLSearchParams(searchParams.toString())
+    params.delete('offer')
     if (!nextId || nextId === 'all') params.delete('category')
     else params.set('category', nextId)
     const q = params.toString()
     router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false })
   }
 
+  /**
+   * @param {string | null} offerId DISCOUNT offer to filter by (null = clear)
+   */
+  function setOfferFilterId(offerId) {
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('category')
+    if (offerId) params.set('offer', offerId)
+    else params.delete('offer')
+    const q = params.toString()
+    router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false })
+  }
+
   const filteredItems = useMemo(() => {
+    if (offerFilter) {
+      const ids = offerMenuItemIds(offerFilter)
+      if (!ids) return items
+      const wanted = new Set(ids)
+      return items.filter((it) => wanted.has(String(it.id)))
+    }
     if (activeCategoryId === 'all') return items
     return items.filter((it) => it.categoryId === activeCategoryId)
-  }, [items, activeCategoryId])
+  }, [items, activeCategoryId, offerFilter])
 
   const cartCount = useMemo(
-    () => cart.reduce((n, line) => n + Number(line.quantity || 0), 0),
-    [cart],
+    () =>
+      cart.reduce((n, line) => n + Number(line.quantity || 0), 0) +
+      dealCart.reduce((n, deal) => n + Number(deal.quantity || 0), 0),
+    [cart, dealCart],
   )
 
-  const cartTotalInclusive = useMemo(() => {
-    let sum = 0
-    for (const line of cart) {
-      sum += Number(
-        vatInclusiveLineTotal({
+  const cartPricing = useMemo(
+    () =>
+      priceGuestCart({
+        lines: cart.map((line) => ({
+          menuItemId: String(line.menuItemId),
           quantity: Number(line.quantity) || 0,
           unitPrice: String(line.unitPrice ?? '0'),
+          optionIds: /** @type {string[]} */ (line.optionIds ?? []),
           vatPreset: String(line.vatPreset ?? 'standard'),
-        }),
-      )
-    }
-    return sum.toFixed(2)
-  }, [cart])
+        })),
+        deals: dealCart,
+        offers,
+      }),
+    [cart, dealCart, offers],
+  )
+
+  const tableHasOfferLines = menuRounds.some((round) =>
+    (/** @type {Array<Record<string, unknown>>} */ (round.lines ?? [])).some(
+      (line) => Boolean(line.offerId),
+    ),
+  )
+  const loyaltyLinked = Boolean(
+    loyaltyEnabled && (session?.loyaltyAccountId || loyaltyAccountId),
+  )
+  const redeemBlockedNote =
+    loyaltyLinked && tableHasOfferLines && !billRequested
+      ? t('offers.redeemBlocked')
+      : ''
 
   /**
    * @param {Record<string, unknown>} item
@@ -440,13 +560,7 @@ export function EWaiterMenuView({
    * @param {Record<string, unknown>} item
    */
   function handleQuickAdd(item) {
-    if (orderingLocked) {
-      if (billRequested) setActionMessage(t('billRequestedHint'))
-      else if (locationBlocksOrdering) {
-        setActionMessage(locationGateMessage())
-      }
-      return
-    }
+    if (!guardOrdering()) return
     const needsConfig =
       menuItemHasVariantGroups(item) || menuItemHasCustomizations(item)
     if (needsConfig) {
@@ -454,6 +568,151 @@ export function EWaiterMenuView({
       return
     }
     addToCart(item, [], [], 1)
+  }
+
+  /**
+   * Same lock as the normal add-to-cart path (bill requested / geofence).
+   * @returns {boolean} true when ordering is allowed
+   */
+  function guardOrdering() {
+    if (!orderingLocked) return true
+    if (billRequested) setActionMessage(t('billRequestedHint'))
+    else if (locationBlocksOrdering) setActionMessage(locationGateMessage())
+    return false
+  }
+
+  /**
+   * Boxes of this deal already in the cart.
+   * @param {string} offerId
+   */
+  function dealBoxesInCart(offerId) {
+    return dealCart
+      .filter((d) => d.offerId === offerId)
+      .reduce((n, d) => n + Number(d.quantity || 0), 0)
+  }
+
+  /**
+   * Remaining boxes the guest may still add (null = no cap).
+   * @param {Record<string, unknown>} offer
+   */
+  function dealRoomLeft(offer) {
+    const cap = dealBoxCap(offer)
+    if (cap == null) return null
+    return Math.max(0, cap - dealBoxesInCart(String(offer.id)))
+  }
+
+  /**
+   * @param {NonNullable<ReturnType<typeof buildDealDraft>>} draft
+   * @param {number} quantity
+   * @returns {boolean} added
+   */
+  function addDealToCart(draft, quantity) {
+    if (orderingLocked) return false
+    const offer = offersById.get(draft.offerId)
+    if (!offer) {
+      setActionMessage(tErr('OFFER_NOT_AVAILABLE'))
+      return false
+    }
+    const room = dealRoomLeft(offer)
+    const qty = Math.max(1, Math.round(quantity) || 1)
+    if (room != null && qty > room) {
+      setOfferNotice(
+        t('offers.dealMaxReached', { max: dealBoxCap(offer) ?? 0 }),
+      )
+      setCartOpen(true)
+      return false
+    }
+    setDealCart((prev) => {
+      const idx = prev.findIndex((d) => d.key === draft.key)
+      if (idx >= 0) {
+        const next = [...prev]
+        next[idx] = { ...next[idx], quantity: next[idx].quantity + qty }
+        return next
+      }
+      return [...prev, { ...draft, quantity: qty }]
+    })
+    return true
+  }
+
+  /**
+   * Banner / featured deal tap.
+   * DISCOUNT → filter the menu; BUY_X_GET_Y → add BUY + GET items;
+   * COMBO → add the deal (variant picker first when needed). Cart opens.
+   *
+   * @param {Record<string, unknown>} offer
+   */
+  function activateOffer(offer) {
+    setOfferNotice('')
+    if (offer.kind === 'DISCOUNT') {
+      setOfferFilterId(String(offer.id))
+      listTopRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      return
+    }
+    if (!guardOrdering()) return
+    if (offer.kind === 'BUY_X_GET_Y') {
+      let added = 0
+      for (const it of /** @type {Array<Record<string, unknown>>} */ (
+        offer.items ?? []
+      )) {
+        if (it.role !== 'BUY' && it.role !== 'GET') continue
+        const menuItem = itemsById.get(String(it.menuItemId))
+        if (!menuItem) continue
+        const optionIds = optionIdsFromSelection(
+          defaultOfferItemSelection(it, menuItem),
+        )
+        addToCart(menuItem, optionIds, [], Math.max(1, Number(it.quantity) || 1))
+        added += 1
+      }
+      if (added === 0) {
+        setActionMessage(t('offers.offerItemsUnavailable'))
+        return
+      }
+      setCartOpen(true)
+      return
+    }
+    if (offer.kind === 'COMBO') {
+      const room = dealRoomLeft(offer)
+      if (room != null && room < 1) {
+        setOfferNotice(
+          t('offers.dealMaxReached', { max: dealBoxCap(offer) ?? 0 }),
+        )
+        setCartOpen(true)
+        return
+      }
+      if (dealNeedsChoice(offer, itemsById)) {
+        setDealSheetOffer(offer)
+        return
+      }
+      const draft = buildDealDraft(offer, itemsById)
+      if (!draft) {
+        setActionMessage(tErr('OFFER_NOT_AVAILABLE'))
+        return
+      }
+      if (addDealToCart(draft, 1)) setCartOpen(true)
+    }
+  }
+
+  /**
+   * @param {string} key
+   * @param {number} delta
+   */
+  function bumpDealQty(key, delta) {
+    setDealCart((prev) =>
+      prev
+        .map((deal) => {
+          if (deal.key !== key) return deal
+          const offer = offersById.get(deal.offerId)
+          const room = offer ? dealRoomLeft(offer) : null
+          if (delta > 0 && room != null && room < delta) return deal
+          return { ...deal, quantity: Math.max(0, deal.quantity + delta) }
+        })
+        .filter((deal) => deal.quantity > 0),
+    )
+  }
+
+  /** @param {string} key */
+  function removeDeal(key) {
+    setDealCart((prev) => prev.filter((deal) => deal.key !== key))
   }
 
   function locationGateMessage() {
@@ -483,8 +742,19 @@ export function EWaiterMenuView({
   }
 
   async function placeOrder() {
-    if (orderPending || cart.length === 0 || orderingLocked) return
+    if (
+      orderPending ||
+      (cart.length === 0 && dealCart.length === 0) ||
+      orderingLocked
+    ) {
+      return
+    }
+    if (!cartPricing.ok) {
+      setOrderError(tErr(String(cartPricing.error?.code ?? 'OFFER_NOT_AVAILABLE')))
+      return
+    }
     setOrderError('')
+    setOfferNotice('')
     setOrderPending(true)
     try {
       let coords = guestCoords
@@ -511,6 +781,17 @@ export function EWaiterMenuView({
               customizationIds: line.customizationIds ?? [],
               lineNote: null,
             })),
+            deals: dealCart.map((deal) => ({
+              offerId: deal.offerId,
+              quantity: deal.quantity,
+              components: deal.components.map((c) => ({
+                offerItemId: c.offerItemId,
+                variantOptionIds: c.variantOptionIds ?? [],
+              })),
+            })),
+            ...(cartPricing.applied
+              ? { expectedOfferDiscount: cartPricing.totalDiscount }
+              : {}),
             loyaltyAccountId: loyaltyAccountId ?? null,
           }),
         },
@@ -537,6 +818,12 @@ export function EWaiterMenuView({
           )
         } else if (code === 'INVALID_MENU_ITEM') {
           setOrderError(t('orderInvalidItems'))
+        } else if (OFFER_REFRESH_CODES.has(code)) {
+          // Offers changed: show why, pull fresh offers, keep the cart.
+          setOrderError(tErr(code))
+          router.refresh()
+        } else if (code.startsWith('OFFER')) {
+          setOrderError(tErr(code))
         } else {
           setOrderError(t('orderFailed'))
         }
@@ -555,6 +842,7 @@ export function EWaiterMenuView({
         billRequested: false,
       }))
       setCart([])
+      setDealCart([])
       setCartOpen(false)
       // Bust stale rounds cache so round 2+ shows immediately (not after poll).
       await queryClient.invalidateQueries({ queryKey: roundsQueryKey })
@@ -591,10 +879,13 @@ export function EWaiterMenuView({
       if (!res.ok || data.ok === false) {
         const code = typeof data.code === 'string' ? data.code : ''
         setActionMessage(
-          code === 'INVALID_REDEEM_AMOUNT' || code === 'LOYALTY_NOT_ELIGIBLE'
-            ? t('redeemFailed')
-            : t('askBillFailed'),
+          code === 'OFFERS_EXCLUSIVE_DISCOUNT'
+            ? t('offers.redeemBlocked')
+            : code === 'INVALID_REDEEM_AMOUNT' || code === 'LOYALTY_NOT_ELIGIBLE'
+              ? t('redeemFailed')
+              : t('askBillFailed'),
         )
+        if (code === 'OFFERS_EXCLUSIVE_DISCOUNT') setRedeemOpen(false)
         return
       }
       if (data.session) setSession(data.session)
@@ -604,6 +895,7 @@ export function EWaiterMenuView({
         )
       }
       setCart([])
+      setDealCart([])
       setCartOpen(false)
       setRedeemOpen(false)
       setActionMessage(t('askBillConfirmed'))
@@ -618,11 +910,20 @@ export function EWaiterMenuView({
   async function requestAskForBill() {
     if (actionPending || askBillBusy || !canAskForBill) return
 
-    const loyaltyLinked = Boolean(
-      loyaltyEnabled && (session?.loyaltyAccountId || loyaltyAccountId),
+    // Offers / deals on the table → loyalty redeem is not offered (server
+    // also rejects it with OFFERS_EXCLUSIVE_DISCOUNT).
+    const cachedRounds = /** @type {Array<Record<string, unknown>> | undefined} */ (
+      queryClient.getQueryData(roundsQueryKey)
     )
+    const offersOnTable =
+      tableHasOfferLines ||
+      (cachedRounds ?? []).some((round) =>
+        (/** @type {Array<Record<string, unknown>>} */ (round.lines ?? [])).some(
+          (line) => Boolean(line.offerId),
+        ),
+      )
 
-    if (loyaltyLinked) {
+    if (loyaltyLinked && !offersOnTable) {
       setAskBillBusy(true)
       try {
         const res = await fetch(
@@ -801,6 +1102,8 @@ export function EWaiterMenuView({
           askBillPending={askBillBusy}
           onCallWaiter={() => void callWaiter()}
           parentActionMessage={actionMessage}
+          offers={offers}
+          redeemBlockedNote={redeemBlockedNote}
         />
         {redeemOpen ? (
           <EWaiterRedeemSheet
@@ -857,6 +1160,14 @@ export function EWaiterMenuView({
       </header>
 
       <main className="e-waiter-main e-waiter-content px-hisabi-margin-mobile pt-hisabi-md">
+        {bannerOffers.length > 0 ? (
+          <EWaiterOfferBannerSlider
+            offers={bannerOffers}
+            locale={locale}
+            onActivate={activateOffer}
+          />
+        ) : null}
+
         <div className="mb-hisabi-md space-y-hisabi-sm">
           {lastOrder ? (
             <button
@@ -941,10 +1252,7 @@ export function EWaiterMenuView({
                 )}
               >
                 {askBillBusy ? (
-                  <Loader2
-                    className="size-4 shrink-0 animate-spin"
-                    aria-hidden
-                  />
+                  <HisabiSpinner size="inline" />
                 ) : (
                   <Receipt className="size-4 shrink-0" aria-hidden />
                 )}
@@ -976,10 +1284,7 @@ export function EWaiterMenuView({
             >
               <div className="flex items-center justify-center gap-hisabi-sm min-[768px]:justify-start">
                 {locationGate === 'checking' ? (
-                  <Loader2
-                    className="e-waiter-primary-text size-5 shrink-0 animate-spin"
-                    aria-hidden
-                  />
+                  <HisabiSpinner size="sm" className="e-waiter-primary-text" />
                 ) : null}
                 <p className="type-body-sm text-center font-medium min-[768px]:text-start">
                   {locationGateMessage()}
@@ -1007,7 +1312,22 @@ export function EWaiterMenuView({
               {actionMessage}
             </p>
           ) : null}
+          {offerNotice ? (
+            <p
+              className="type-body-sm text-center font-medium min-[768px]:text-start"
+              role="status"
+            >
+              {offerNotice}
+            </p>
+          ) : null}
+          {redeemBlockedNote && roundCount > 0 ? (
+            <p className="type-body-sm e-waiter-text-muted text-center min-[768px]:text-start">
+              {redeemBlockedNote}
+            </p>
+          ) : null}
         </div>
+
+        <div ref={listTopRef} className="scroll-mt-hisabi-xxl" aria-hidden />
 
         <div
           className="mb-hisabi-md flex gap-hisabi-sm overflow-x-auto pb-hisabi-xs"
@@ -1015,10 +1335,17 @@ export function EWaiterMenuView({
           aria-label={t('categoriesAria')}
         >
           <CategoryChip
-            active={activeCategoryId === 'all'}
+            active={activeCategoryId === 'all' && !dealsSelected}
             label={t('categoryAll')}
             onClick={() => setActiveCategoryId('all')}
           />
+          {featuredDeals.length > 0 ? (
+            <CategoryChip
+              active={dealsSelected}
+              label={t('offers.dealsFilter')}
+              onClick={() => setActiveCategoryId('deals')}
+            />
+          ) : null}
           {categories.map((cat) => (
             <CategoryChip
               key={String(cat.id)}
@@ -1029,18 +1356,96 @@ export function EWaiterMenuView({
           ))}
         </div>
 
-        {filteredItems.length === 0 ? (
+        {offerFilter ? (
+          <div className="mb-hisabi-md flex">
+            <button
+              type="button"
+              onClick={() => setOfferFilterId(null)}
+              className="type-label-sm e-waiter-chip-active inline-flex min-h-[var(--e-waiter-tap)] max-w-full items-center gap-hisabi-xs rounded-full px-hisabi-md font-semibold"
+              title={t('offers.clearOfferFilter')}
+            >
+              <Tag className="size-4 shrink-0" aria-hidden />
+              <span className="truncate">
+                {t('offers.showingOffer', {
+                  name: offerDisplayName(offerFilter, locale),
+                })}
+              </span>
+              <X className="size-4 shrink-0" aria-hidden />
+            </button>
+          </div>
+        ) : null}
+
+        {dealsSelected ? (
+          <ul className="e-waiter-menu-grid">
+            {featuredDeals.map(({ offer, price }) => (
+              <EWaiterDealCard
+                key={String(offer.id)}
+                offer={offer}
+                locale={locale}
+                price={price}
+                disabled={orderingLocked}
+                onActivate={activateOffer}
+              />
+            ))}
+          </ul>
+        ) : null}
+
+        {!dealsSelected &&
+        !offerFilter &&
+        activeCategoryId === 'all' &&
+        featuredDeals.length > 0 ? (
+          <section
+            className="mb-hisabi-lg space-y-hisabi-sm"
+            aria-labelledby="e-waiter-featured-deals"
+          >
+            <h2
+              id="e-waiter-featured-deals"
+              className="type-title-md font-semibold"
+            >
+              {t('offers.featuredDeals')}
+            </h2>
+            <ul className="e-waiter-menu-grid">
+              {featuredDeals.map(({ offer, price }) => (
+                <EWaiterDealCard
+                  key={String(offer.id)}
+                  offer={offer}
+                  locale={locale}
+                  price={price}
+                  disabled={orderingLocked}
+                  onActivate={activateOffer}
+                />
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {dealsSelected ? null : filteredItems.length === 0 ? (
           <p className="type-body-md e-waiter-text-muted py-hisabi-xxl text-center">
-            {t('emptyMenu')}
+            {offerFilter ? t('offers.offerItemsUnavailable') : t('emptyMenu')}
           </p>
         ) : (
           <ul className="e-waiter-menu-grid">
             {filteredItems.map((item) => {
+              const defaultOptionIds = optionIdsFromSelection(
+                defaultVariantSelection(item),
+              )
               const priceInc = vatInclusiveUnitPriceFromItem(
                 item,
-                optionIdsFromSelection(defaultVariantSelection(item)),
+                defaultOptionIds,
                 [],
               )
+              const offerUnit = bestDisplayDiscount(offers, {
+                menuItemId: String(item.id),
+                unitPrice: computeUnitPriceFromItem(item, defaultOptionIds, []),
+                variantOptionIds: defaultOptionIds,
+              })
+              const offerPriceInc = offerUnit
+                ? vatInclusiveLineTotal({
+                    quantity: 1,
+                    unitPrice: offerUnit.unitPrice,
+                    vatPreset: String(item.vatPreset ?? 'standard'),
+                  })
+                : null
               return (
                 <li
                   key={String(item.id)}
@@ -1079,9 +1484,11 @@ export function EWaiterMenuView({
                       ) : null}
                     </button>
                     <div className="mt-auto flex items-center justify-between gap-hisabi-sm pt-hisabi-xs">
-                      <p className="type-label-md e-waiter-primary-text font-bold">
-                        {formatSarAmount(priceInc, locale)}
-                      </p>
+                      <EWaiterOfferPrice
+                        original={priceInc}
+                        discounted={offerPriceInc}
+                        locale={locale}
+                      />
                       <button
                         type="button"
                         disabled={orderingLocked}
@@ -1105,6 +1512,7 @@ export function EWaiterMenuView({
       {configItem && !orderingLocked ? (
         <ItemConfigSheet
           item={configItem}
+          offers={offers}
           locale={locale}
           onClose={() => setConfigItem(null)}
           onAdd={(optionIds, customizationIds, quantity) => {
@@ -1117,10 +1525,14 @@ export function EWaiterMenuView({
       {cartOpen && !orderingLocked ? (
         <CartSheet
           cart={cart}
+          dealCart={dealCart}
+          offersById={offersById}
+          itemsById={itemsById}
+          pricing={cartPricing}
           locale={locale}
-          totalInclusive={cartTotalInclusive}
           orderPending={orderPending}
           orderError={orderError}
+          notice={offerNotice}
           onClose={() => {
             if (!orderPending) {
               setCartOpen(false)
@@ -1128,7 +1540,27 @@ export function EWaiterMenuView({
             }
           }}
           onBump={bumpQty}
+          onBumpDeal={bumpDealQty}
+          onRemoveDeal={removeDeal}
+          dealRoomLeft={dealRoomLeft}
           onPlaceOrder={() => void placeOrder()}
+        />
+      ) : null}
+
+      {dealSheetOffer && !orderingLocked ? (
+        <EWaiterDealSheet
+          offer={dealSheetOffer}
+          itemsById={itemsById}
+          offers={offers}
+          locale={locale}
+          maxBoxes={dealRoomLeft(dealSheetOffer)}
+          onClose={() => setDealSheetOffer(null)}
+          onAdd={(draft, quantity) => {
+            if (addDealToCart(draft, quantity)) {
+              setDealSheetOffer(null)
+              setCartOpen(true)
+            }
+          }}
         />
       ) : null}
 
@@ -1203,12 +1635,13 @@ function LoyaltyPointsBadge({ balance: _balance, label }) {
 /**
  * @param {{
  *   item: Record<string, unknown>
+ *   offers: Array<Record<string, unknown>>
  *   locale: 'ar' | 'en'
  *   onClose: () => void
  *   onAdd: (optionIds: string[], customizationIds: string[], quantity: number) => void
  * }} props
  */
-function ItemConfigSheet({ item, locale, onClose, onAdd }) {
+function ItemConfigSheet({ item, offers, locale, onClose, onAdd }) {
   const t = useTranslations('EWaiter')
   const [selection, setSelection] = useState(() =>
     defaultVariantSelection(item),
@@ -1217,11 +1650,24 @@ function ItemConfigSheet({ item, locale, onClose, onAdd }) {
   const [qty, setQty] = useState(1)
 
   const optionIds = optionIdsFromSelection(selection)
+  const unitPrice = computeUnitPriceFromItem(item, optionIds, customIds)
   const lineInc = vatInclusiveLineTotal({
     quantity: qty,
-    unitPrice: computeUnitPriceFromItem(item, optionIds, customIds),
+    unitPrice,
     vatPreset: String(item.vatPreset ?? 'standard'),
   })
+  const offerUnit = bestDisplayDiscount(offers, {
+    menuItemId: String(item.id),
+    unitPrice,
+    variantOptionIds: optionIds,
+  })
+  const offerLineInc = offerUnit
+    ? vatInclusiveLineTotal({
+        quantity: qty,
+        unitPrice: offerUnit.unitPrice,
+        vatPreset: String(item.vatPreset ?? 'standard'),
+      })
+    : null
   const displayCalories = resolveLineDisplayCalories(
     item.calories,
     selectedVariantOptionsFromItem(item, optionIds),
@@ -1385,10 +1831,18 @@ function ItemConfigSheet({ item, locale, onClose, onAdd }) {
           type="button"
           disabled={!allGroupsPicked}
           onClick={() => onAdd(optionIds, customIds, qty)}
-          className="e-waiter-btn-primary type-label-md flex min-h-[var(--e-waiter-tap)] w-full items-center justify-between rounded-2xl px-hisabi-lg font-bold disabled:opacity-40"
+          className="e-waiter-btn-primary type-label-md flex min-h-[var(--e-waiter-tap)] w-full items-center justify-between gap-hisabi-md rounded-2xl px-hisabi-lg font-bold disabled:opacity-40"
         >
           <span>{t('addToCart')}</span>
-          <span>{formatSarAmount(lineInc, locale)}</span>
+          <EWaiterOfferPrice
+            as="span"
+            original={lineInc}
+            discounted={offerLineInc}
+            locale={locale}
+            priceClassName="type-label-md font-bold"
+            strikeClassName="type-body-sm line-through opacity-75"
+            className="justify-end"
+          />
         </button>
       </div>
     </EWaiterSheetScaffold>
@@ -1398,91 +1852,229 @@ function ItemConfigSheet({ item, locale, onClose, onAdd }) {
 /**
  * @param {{
  *   cart: Array<Record<string, unknown>>
+ *   dealCart: Array<{ key: string, offerId: string, quantity: number, components: Array<Record<string, any>> }>
+ *   offersById: Map<string, Record<string, unknown>>
+ *   itemsById: Map<string, Record<string, unknown>>
+ *   pricing: ReturnType<typeof priceGuestCart>
  *   locale: 'ar' | 'en'
- *   totalInclusive: string
  *   orderPending: boolean
  *   orderError: string
+ *   notice: string
  *   onClose: () => void
  *   onBump: (key: string, delta: number) => void
+ *   onBumpDeal: (key: string, delta: number) => void
+ *   onRemoveDeal: (key: string) => void
+ *   dealRoomLeft: (offer: Record<string, unknown>) => number | null
  *   onPlaceOrder: () => void
  * }} props
  */
 function CartSheet({
   cart,
+  dealCart,
+  offersById,
+  itemsById,
+  pricing,
   locale,
-  totalInclusive,
   orderPending,
   orderError,
+  notice,
   onClose,
   onBump,
+  onBumpDeal,
+  onRemoveDeal,
+  dealRoomLeft,
   onPlaceOrder,
 }) {
   const t = useTranslations('EWaiter')
+  const tErr = useTranslations('AuthErrors')
+  const isEmpty = cart.length === 0 && dealCart.length === 0
+  const hasSavings = pricing.ok && Number(pricing.savingsIncl) > 0
+  const engineError =
+    !pricing.ok && pricing.error ? tErr(String(pricing.error.code)) : ''
 
   return (
     <EWaiterSheetScaffold onClose={onClose} title={t('cartTitle')}>
       <div className="space-y-hisabi-md overflow-y-auto px-hisabi-margin-mobile">
-        {cart.length === 0 ? (
+        {isEmpty ? (
           <p className="type-body-md e-waiter-text-muted py-hisabi-lg text-center">
             {t('cartEmpty')}
           </p>
         ) : (
-          cart.map((line) => {
-            const lineInc = vatInclusiveLineTotal({
-              quantity: Number(line.quantity) || 0,
-              unitPrice: String(line.unitPrice ?? '0'),
-              vatPreset: String(line.vatPreset ?? 'standard'),
-            })
-            return (
-              <div
-                key={String(line.key)}
-                className="flex items-center gap-hisabi-md border-b e-waiter-border pb-hisabi-md"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="type-label-md font-semibold">
-                    {itemName(line, locale)}
-                  </p>
-                  <p className="type-body-sm e-waiter-text-muted">
-                    {formatSarAmount(lineInc, locale)}
-                  </p>
+          <>
+            {dealCart.map((deal, j) => {
+              const offer = offersById.get(deal.offerId)
+              const room = offer ? dealRoomLeft(offer) : 0
+              const row = pricing.dealRows[j]
+              return (
+                <div
+                  key={deal.key}
+                  className="flex items-start gap-hisabi-md border-b e-waiter-border pb-hisabi-md"
+                >
+                  <div className="min-w-0 flex-1 space-y-hisabi-xs">
+                    <p className="type-label-md flex flex-wrap items-center gap-hisabi-xs font-semibold">
+                      <span className="type-label-sm e-waiter-btn-accent inline-flex rounded-full px-hisabi-sm font-semibold">
+                        {t('offers.dealBadge')}
+                      </span>
+                      <span className="min-w-0">
+                        {offer
+                          ? offerDisplayName(offer, locale)
+                          : t('offers.dealGeneric')}
+                      </span>
+                    </p>
+                    <ul className="type-body-sm e-waiter-text-muted space-y-0.5">
+                      {deal.components.map((c) => {
+                        const menuItem = itemsById.get(String(c.menuItemId))
+                        const opts = menuItem
+                          ? optionNamesFor(menuItem, c.variantOptionIds ?? [], locale)
+                          : []
+                        const label = itemName(c, locale)
+                        const qty = Number(c.quantity) || 1
+                        return (
+                          <li key={String(c.offerItemId)}>
+                            {qty > 1
+                              ? t('offers.componentQty', { qty, name: label })
+                              : label}
+                            {opts.length > 0 ? ` · ${opts.join(' · ')}` : ''}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    {row ? (
+                      <EWaiterOfferPrice
+                        original={row.grossIncl}
+                        discounted={pricing.ok ? row.netIncl : null}
+                        locale={locale}
+                        priceClassName="type-body-sm e-waiter-primary-text font-semibold"
+                      />
+                    ) : null}
+                  </div>
+                  <div className="flex flex-col items-end gap-hisabi-xs">
+                    <div className="flex items-center gap-hisabi-xs">
+                      <button
+                        type="button"
+                        disabled={orderPending}
+                        className="e-waiter-tap e-waiter-chip inline-flex items-center justify-center rounded-full disabled:opacity-50"
+                        aria-label={t('decreaseQty')}
+                        onClick={() => onBumpDeal(deal.key, -1)}
+                      >
+                        <Minus className="size-4" aria-hidden />
+                      </button>
+                      <span className="type-label-md min-w-6 text-center font-bold">
+                        {String(deal.quantity)}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={orderPending || (room != null && room < 1)}
+                        className="e-waiter-tap e-waiter-btn-primary inline-flex items-center justify-center rounded-full disabled:opacity-40"
+                        aria-label={t('increaseQty')}
+                        onClick={() => onBumpDeal(deal.key, 1)}
+                      >
+                        <Plus className="size-4" aria-hidden />
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={orderPending}
+                      onClick={() => onRemoveDeal(deal.key)}
+                      className="type-label-sm inline-flex min-h-[var(--e-waiter-tap)] items-center gap-1 rounded-full px-hisabi-sm font-semibold text-hisabi-error disabled:opacity-50"
+                    >
+                      <Trash2 className="size-3.5" aria-hidden />
+                      {t('offers.removeDeal')}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-hisabi-xs">
-                  <button
-                    type="button"
-                    disabled={orderPending}
-                    className="e-waiter-tap e-waiter-chip inline-flex items-center justify-center rounded-full disabled:opacity-50"
-                    aria-label={t('decreaseQty')}
-                    onClick={() => onBump(String(line.key), -1)}
-                  >
-                    <Minus className="size-4" aria-hidden />
-                  </button>
-                  <span className="type-label-md min-w-6 text-center font-bold">
-                    {String(line.quantity)}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={orderPending}
-                    className="e-waiter-tap e-waiter-btn-primary inline-flex items-center justify-center rounded-full disabled:opacity-50"
-                    aria-label={t('increaseQty')}
-                    onClick={() => onBump(String(line.key), 1)}
-                  >
-                    <Plus className="size-4" aria-hidden />
-                  </button>
+              )
+            })}
+            {cart.map((line, i) => {
+              const row = pricing.lineRows[i]
+              const lineInc = vatInclusiveLineTotal({
+                quantity: Number(line.quantity) || 0,
+                unitPrice: String(line.unitPrice ?? '0'),
+                vatPreset: String(line.vatPreset ?? 'standard'),
+              })
+              return (
+                <div
+                  key={String(line.key)}
+                  className="flex items-center gap-hisabi-md border-b e-waiter-border pb-hisabi-md"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="type-label-md font-semibold">
+                      {itemName(line, locale)}
+                    </p>
+                    <EWaiterOfferPrice
+                      original={lineInc}
+                      discounted={row?.offerId ? row.netIncl : null}
+                      locale={locale}
+                      priceClassName="type-body-sm e-waiter-text-muted"
+                    />
+                  </div>
+                  <div className="flex items-center gap-hisabi-xs">
+                    <button
+                      type="button"
+                      disabled={orderPending}
+                      className="e-waiter-tap e-waiter-chip inline-flex items-center justify-center rounded-full disabled:opacity-50"
+                      aria-label={t('decreaseQty')}
+                      onClick={() => onBump(String(line.key), -1)}
+                    >
+                      <Minus className="size-4" aria-hidden />
+                    </button>
+                    <span className="type-label-md min-w-6 text-center font-bold">
+                      {String(line.quantity)}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={orderPending}
+                      className="e-waiter-tap e-waiter-btn-primary inline-flex items-center justify-center rounded-full disabled:opacity-50"
+                      aria-label={t('increaseQty')}
+                      onClick={() => onBump(String(line.key), 1)}
+                    >
+                      <Plus className="size-4" aria-hidden />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )
-          })
+              )
+            })}
+          </>
         )}
       </div>
 
       <div className="mt-hisabi-md space-y-hisabi-sm border-t e-waiter-border px-hisabi-margin-mobile pt-hisabi-md">
+        {hasSavings ? (
+          <>
+            <div className="flex items-center justify-between">
+              <span className="type-body-sm e-waiter-text-muted">
+                {t('offers.subtotal')}
+              </span>
+              <span className="type-body-sm e-waiter-text-muted">
+                {formatSarAmount(pricing.grossIncl, locale)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="type-label-sm e-waiter-primary-text font-semibold">
+                {t('offers.offerSavings')}
+              </span>
+              <span className="type-label-sm e-waiter-primary-text font-semibold">
+                −{formatSarAmount(pricing.savingsIncl, locale)}
+              </span>
+            </div>
+          </>
+        ) : null}
         <div className="flex items-center justify-between">
           <span className="type-label-md font-semibold">{t('cartTotal')}</span>
           <span className="type-headline-sm e-waiter-primary-text font-bold">
-            {formatSarAmount(totalInclusive, locale)}
+            {formatSarAmount(pricing.ok ? pricing.netIncl : pricing.grossIncl, locale)}
           </span>
         </div>
-        {orderError ? (
+        {notice ? (
+          <p className="type-body-sm text-center font-medium" role="status">
+            {notice}
+          </p>
+        ) : null}
+        {engineError ? (
+          <p className="type-body-sm text-center text-hisabi-error" role="alert">
+            {engineError}
+          </p>
+        ) : orderError ? (
           <p className="type-body-sm text-center text-hisabi-error" role="alert">
             {orderError}
           </p>
@@ -1493,7 +2085,7 @@ function CartSheet({
         )}
         <button
           type="button"
-          disabled={orderPending || cart.length === 0}
+          disabled={orderPending || isEmpty || !pricing.ok}
           onClick={onPlaceOrder}
           className="e-waiter-btn-primary type-label-md flex min-h-[var(--e-waiter-tap)] w-full items-center justify-center rounded-2xl font-bold disabled:opacity-50"
         >

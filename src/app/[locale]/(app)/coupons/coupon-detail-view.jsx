@@ -6,7 +6,6 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Download,
-  Loader2,
   Pencil,
   Ticket,
   TicketPercent,
@@ -16,6 +15,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { useAppAbility } from '@/components/rbac/ability-provider'
 import { SettingsSection } from '@/components/settings/settings-page-shell'
 import { PageBackButton } from '@/components/shared/page-back-button'
@@ -645,10 +645,7 @@ export function CouponDetailView({
                   className="type-label-md inline-flex min-h-[44px] cursor-pointer items-center justify-center gap-hisabi-sm rounded-xl border border-hisabi-outline-variant/60 bg-white px-hisabi-md py-2 font-bold text-hisabi-on-surface transition-colors hover:bg-hisabi-surface-container disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {exporting === 'available' ? (
-                    <Loader2
-                      className="size-4 shrink-0 animate-spin"
-                      aria-hidden
-                    />
+                    <HisabiSpinner size="inline" />
                   ) : (
                     <Download className="size-4 shrink-0" aria-hidden />
                   )}
@@ -661,10 +658,7 @@ export function CouponDetailView({
                   className="type-label-md inline-flex min-h-[44px] cursor-pointer items-center justify-center gap-hisabi-sm rounded-xl border border-hisabi-outline-variant/60 bg-white px-hisabi-md py-2 font-bold text-hisabi-on-surface transition-colors hover:bg-hisabi-surface-container disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {exporting === 'all' ? (
-                    <Loader2
-                      className="size-4 shrink-0 animate-spin"
-                      aria-hidden
-                    />
+                    <HisabiSpinner size="inline" />
                   ) : (
                     <Download className="size-4 shrink-0" aria-hidden />
                   )}

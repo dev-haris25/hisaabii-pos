@@ -47,9 +47,18 @@ import {
   aggregateRecipeStockNeeds,
   loadRecipesByMenuItemIds,
 } from '@/lib/stock/recipe-stock-needs'
+import {
+  offerDealsInputSchema,
+  offerDiscountMatches,
+  offerError,
+  resolveCartOffers,
+} from '@/lib/offers/resolve-cart-offers'
+import {
+  attachRoundOfferUsagesToInvoice,
+  recordOfferUsages,
+} from '@/lib/offers/offer-usage'
 import { prisma } from '@/lib/prisma'
-import { humanizeZatcaError } from '@/lib/zatca/humanize-zatca-error'
-import { runInvoiceZatcaSend } from '@/lib/zatca/run-invoice-zatca-send'
+import { reportDocumentToZatca } from '@/lib/zatca/zatca-document-chain'
 import { emitZatcaReportFailed } from '@/lib/notifications/emit-zatca-report-failed'
 import { z } from 'zod'
 
@@ -69,7 +78,11 @@ const checkoutLineSchema = z.object({
 })
 
 export const posCheckoutBodySchema = z.object({
-  lines: z.array(checkoutLineSchema).min(1).max(100),
+  lines: z.array(checkoutLineSchema).max(100),
+  /** Combo deals added as deals (Offers & Deals). Expanded to component lines server-side. */
+  deals: offerDealsInputSchema.optional().default([]),
+  /** Total offer discount the cashier saw — mismatch → OFFER_PRICES_CHANGED. */
+  expectedOfferDiscount: moneyOptionalSchema,
   paymentMethod: z.enum(['cash', 'card']),
   amountTendered: moneyOptionalSchema,
   /** Order-level discount percent (0–100); converted to SAR then allocated by gross share. */
@@ -268,6 +281,7 @@ async function assertSettlementKitchenOrders(
  *   body: z.infer<typeof posCheckoutBodySchema>
  *   settlement?: {
  *     existingKitchenOrderIds: string[]
+ *     offerLocks?: Array<{ offerId: string | null, offerGroupKey: string | null, discount: string | null } | null>
  *   } | null
  * }} opts
  */
@@ -311,6 +325,11 @@ export async function checkoutPosSale({
     await assertSettlementKitchenOrders(profileId, settlementKitchenOrderIds)
   }
 
+  const requestedDeals = isSettlementMode ? [] : (body.deals ?? [])
+  if (body.lines.length === 0 && requestedDeals.length === 0) {
+    throwCheckoutError('VALIDATION_ERROR', 'Cart is empty')
+  }
+
   const itemIds = [...new Set(body.lines.map((l) => l.menuItemId))]
   const menuItems = await prisma.menuItem.findMany({
     where: {
@@ -339,6 +358,8 @@ export async function checkoutPosSale({
     )
     return {
       menuItemId: l.menuItemId,
+      nameAr: item.nameAr,
+      nameEn: item.nameEn,
       quantity: l.quantity,
       unitPrice: resolved.unitPrice,
       vatPreset: item.vatPreset,
@@ -348,14 +369,79 @@ export async function checkoutPosSale({
     }
   })
 
+  // ---- Offers & Deals ------------------------------------------------------
+  // POS: price against live offers (deals expand into component lines).
+  // Settlement: E-Waiter prices were locked when each round was placed.
+  /** @type {Awaited<ReturnType<typeof resolveCartOffers>> | null} */
+  let offerPreview = null
+  if (!isSettlementMode) {
+    offerPreview = await resolveCartOffers({
+      businessProfileId: profileId,
+      lines: pricedLines,
+      deals: requestedDeals,
+    })
+  }
+  const offerLocks = isSettlementMode ? (settlement?.offerLocks ?? []) : []
+
+  /**
+   * Every invoice line in order: normal cart lines, then deal components.
+   * `offerDiscount` is the offer/deal discount (null when no offer applies).
+   */
+  const saleLines = [
+    ...pricedLines.map((l, idx) => {
+      if (offerPreview) {
+        const r = offerPreview.pricing.lines[idx]
+        return {
+          ...l,
+          offerId: r.offerId,
+          offerGroupKey: null,
+          offerDiscount: r.offerId ? r.discount : null,
+        }
+      }
+      const lock = offerLocks[idx]
+      return {
+        ...l,
+        offerId: lock?.offerId ?? null,
+        offerGroupKey: lock?.offerGroupKey ?? null,
+        offerDiscount: lock?.offerId ? (lock.discount ?? '0.00') : null,
+      }
+    }),
+    ...(offerPreview?.dealLines ?? []).map((d) => ({
+      menuItemId: d.menuItemId,
+      nameAr: d.nameAr,
+      nameEn: d.nameEn,
+      quantity: d.quantity,
+      unitPrice: d.unitPrice,
+      vatPreset: d.vatPreset,
+      variantOptionIds: d.variantOptionIds,
+      modifiersSnapshot: d.modifiersSnapshot,
+      lineNote: null,
+      offerId: d.offerId,
+      offerGroupKey: d.offerGroupKey,
+      offerDiscount: d.discount,
+    })),
+  ]
+  const offersApplied = saleLines.some((l) => l.offerId)
+  const offerDiscountTotal = decimalStringFromNumber(
+    saleLines.reduce((sum, l) => sum + parseMoney(l.offerDiscount), 0),
+  )
+  // Any difference from what the cashier saw (incl. an offer that just ended
+  // → 0 discount) is reported, never charged silently.
+  if (
+    offerPreview &&
+    !offerDiscountMatches(body.expectedOfferDiscount, offerDiscountTotal)
+  ) {
+    throw offerError('OFFER_PRICES_CHANGED')
+  }
+
   const bizSettings = await getOrCreateBusinessSettings(profileId)
   const recipesByMenuItemId = await loadRecipesByMenuItemIds(
     prisma,
     profileId,
-    itemIds,
+    [...new Set(saleLines.map((l) => l.menuItemId))],
   )
   const { needs } = aggregateRecipeStockNeeds(
-    body.lines.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity })),
+    saleLines.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity })),
     recipesByMenuItemId,
   )
 
@@ -403,6 +489,16 @@ export async function checkoutPosSale({
       : null
   const loyaltyRedeemProvided = Boolean(loyaltyAccountRaw || loyaltyPointsRaw)
 
+  // Offers & Deals exclude every other discount on the whole order.
+  if (
+    offersApplied &&
+    (couponCodeRaw ||
+      (discountProvided && parseMoney(body.discount) > 0) ||
+      loyaltyRedeemProvided)
+  ) {
+    throw offerError('OFFERS_EXCLUSIVE_DISCOUNT')
+  }
+
   // 3-way mutual exclusivity — exactly one specific pairwise error per request.
   {
     const present = [
@@ -448,7 +544,7 @@ export async function checkoutPosSale({
     }
   }
 
-  const baseLines = pricedLines.map((l) => ({
+  const baseLines = saleLines.map((l) => ({
     menuItemId: l.menuItemId,
     quantity: l.quantity,
     unitPrice: l.unitPrice,
@@ -461,7 +557,17 @@ export async function checkoutPosSale({
   /** @type {ReturnType<typeof computeInvoiceTotals>} */
   let totals
 
-  if (couponCodeRaw) {
+  if (offersApplied) {
+    lineDiscounts = saleLines.map((l) =>
+      l.offerId ? decimalStringFromNumber(parseMoney(l.offerDiscount)) : '0.00',
+    )
+    totals = computeInvoiceTotals(
+      baseLines.map((l, i) => ({
+        ...l,
+        discount: lineDiscounts[i],
+      })),
+    )
+  } else if (couponCodeRaw) {
     // Preview totals for tender check only — authoritative re-validate inside the tx.
     const previewResolved = await resolveCouponCode(profileId, couponCodeRaw)
     if (!previewResolved || previewResolved.coupon.businessProfileId !== profileId) {
@@ -629,6 +735,30 @@ export async function checkoutPosSale({
       : null
 
   const invoice = await prisma.$transaction(async (tx) => {
+    // Authoritative offer re-check under row locks: limits / schedule may have
+    // changed since the preview (two tills taking the last use, offer ended).
+    /** @type {Awaited<ReturnType<typeof resolveCartOffers>> | null} */
+    let lockedOffers = null
+    if (offerPreview?.pricing.applied) {
+      lockedOffers = await resolveCartOffers({
+        businessProfileId: profileId,
+        db: tx,
+        lines: pricedLines,
+        deals: requestedDeals,
+        lockIds: offerPreview.pricing.usage.map((u) => u.offerId),
+      })
+      const fresh = [
+        ...lockedOffers.pricing.lines.map((r) => `${r.offerId ?? ''}:${r.discount}`),
+        ...lockedOffers.dealLines.map((d) => `${d.offerId}:${d.discount}`),
+      ].join('|')
+      const seen = saleLines
+        .map((l) => `${l.offerId ?? ''}:${l.offerId ? decimalStringFromNumber(parseMoney(l.offerDiscount)) : '0.00'}`)
+        .join('|')
+      if (fresh !== seen) {
+        throw offerError('OFFER_PRICES_CHANGED')
+      }
+    }
+
     const invoiceNumber = await allocateInvoiceNumber(profileId, tx)
 
     /** @type {string | null} */
@@ -895,29 +1025,40 @@ export async function checkoutPosSale({
         loyaltyPointsRedeemed,
         loyaltyDiscountAmount,
         lines: {
-          create: body.lines.map((l, idx) => {
-            const item = byId.get(l.menuItemId)
-            const priced = pricedLines[idx]
+          create: saleLines.map((line, idx) => {
             const a = finalTotals.perLine[idx]
             return {
-              menuItemId: item.id,
-              nameAr: item.nameAr,
-              nameEn: item.nameEn,
+              menuItemId: line.menuItemId,
+              nameAr: line.nameAr,
+              nameEn: line.nameEn,
               quantity: a.quantity,
-              unitPrice: priced.unitPrice,
+              unitPrice: line.unitPrice,
               discount: a.discountStr,
-              vatPreset: item.vatPreset,
+              vatPreset: line.vatPreset,
               vatAmount: a.vatAmountStr,
               lineTotal: a.lineTotalStr,
               sortOrder: idx,
               lineNote: null,
-              modifiersSnapshot: priced.modifiersSnapshot,
+              modifiersSnapshot: line.modifiersSnapshot,
+              offerId: line.offerId ?? null,
+              offerGroupKey: line.offerGroupKey ?? null,
             }
           }),
         },
       },
       include: { lines: true },
     })
+
+    if (lockedOffers) {
+      await recordOfferUsages(tx, {
+        businessProfileId: profileId,
+        usage: lockedOffers.pricing.usage,
+        invoiceId: created.id,
+      })
+    }
+    if (isSettlementMode) {
+      await attachRoundOfferUsagesToInvoice(tx, settlementKitchenOrderIds, created.id)
+    }
 
     if (couponId && couponCodeSnapshot && orderDiscountAmount) {
       await tx.couponUsage.create({
@@ -976,55 +1117,26 @@ export async function checkoutPosSale({
       await createKitchenOrderInTx(tx, {
         businessProfileId: profileId,
         invoiceId: created.id,
-        lines: body.lines.map((l, idx) => {
-          const item = byId.get(l.menuItemId)
-          const priced = pricedLines[idx]
-          return {
-            menuItemId: item.id,
-            nameAr: item.nameAr,
-            nameEn: item.nameEn,
-            quantity: priced.quantity,
-            lineNote: priced.lineNote,
-            modifiersSnapshot: priced.modifiersSnapshot,
-          }
-        }),
+        lines: saleLines.map((line) => ({
+          menuItemId: line.menuItemId,
+          nameAr: line.nameAr,
+          nameEn: line.nameEn,
+          quantity: line.quantity,
+          lineNote: line.lineNote,
+          modifiersSnapshot: line.modifiersSnapshot,
+        })),
       })
     }
     return created
   }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
 
   try {
-    await runInvoiceZatcaSend({
-      invoice,
-      device,
-      selectedEnvironment: profile.zatcaEnvironment,
-    })
-    await prisma.invoice.update({
-      where: { id: invoice.id },
-      data: {
-        zatcaReportAttempts: { increment: 1 },
-        zatcaLastAttemptAt: new Date(),
-        zatcaLastError: null,
-      },
+    await reportDocumentToZatca({
+      kind: 'invoice',
+      id: invoice.id,
+      businessProfileId: profileId,
     })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    const humanized = humanizeZatcaError(msg)
-    const first = humanized.issues?.[0]
-    const summary = first?.message
-      ? [first.title, first.message, first.actionHint]
-          .filter(Boolean)
-          .join(' — ')
-      : msg
-    await prisma.invoice.update({
-      where: { id: invoice.id },
-      data: {
-        zatcaStatus: 'failed',
-        zatcaReportAttempts: { increment: 1 },
-        zatcaLastAttemptAt: new Date(),
-        zatcaLastError: summary.slice(0, 1000),
-      },
-    })
     void emitZatcaReportFailed({
       businessProfileId: profileId,
       actorUserId: staffId,
@@ -1032,10 +1144,10 @@ export async function checkoutPosSale({
       documentId: invoice.id,
       documentNumber: invoice.invoiceNumber,
     })
-    throw Object.assign(new Error(msg), {
-      code: 'ZATCA_ERROR',
-      invoiceId: invoice.id,
-    })
+    throw Object.assign(
+      new Error(err instanceof Error ? err.message : String(err)),
+      { code: 'ZATCA_ERROR', invoiceId: invoice.id },
+    )
   }
 
   const fresh = await prisma.invoice.findUnique({

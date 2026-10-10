@@ -30,6 +30,7 @@ const sessionDetailInclude = {
   lines: {
     where: { cancelled: false },
     include: {
+      offer: { select: { nameAr: true, nameEn: true } },
       menuItem: {
         include: {
           variantGroups: { include: { options: true } },

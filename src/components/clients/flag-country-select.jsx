@@ -64,11 +64,7 @@ function FlagMarkImg({ src, emojiFallback }) {
   }
   return (
     <span
-      className="flex size-[1.375rem] shrink-0 items-center justify-center text-lg leading-none"
-      style={{
-        fontFamily:
-          'system-ui, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif',
-      }}
+      className="hisabi-emoji-font flex size-[1.375rem] shrink-0 items-center justify-center text-lg leading-none"
       aria-hidden
     >
       {emojiFallback || "·"}
@@ -215,9 +211,10 @@ export function FlagCountrySelect({
   const searchAreaApproxPx = 58;
   const listMaxHeight = Math.max(96, panelMaxHeight - searchAreaApproxPx);
 
-  const panelFixedStyle =
+  /** Measured panel geometry, handed to `.hisabi-floating-panel` via CSS custom properties. */
+  const panelGeometry =
     menuRect == null
-      ? { display: "none" }
+      ? null
       : (() => {
           const triggerW = menuRect.width;
           const panelWidth =
@@ -230,20 +227,34 @@ export function FlagCountrySelect({
             const maxLeft = window.innerWidth - pad - panelWidth;
             if (left > maxLeft) left = Math.max(pad, maxLeft);
           }
-          return {
-            position: "fixed",
-            top: menuRect.bottom + 4,
-            left,
-            width: panelWidth,
-            maxHeight: panelMaxHeight,
-          };
+          return { top: menuRect.bottom + 4, left, width: panelWidth };
         })();
+
+  const panelTop = panelGeometry?.top;
+  const panelLeft = panelGeometry?.left;
+  const panelWidthPx = panelGeometry?.width;
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (panel && panelTop != null) {
+      panel.style.setProperty("--hisabi-floating-top", `${panelTop}px`);
+      panel.style.setProperty("--hisabi-floating-left", `${panelLeft}px`);
+      panel.style.setProperty("--hisabi-floating-width", `${panelWidthPx}px`);
+      panel.style.setProperty("--hisabi-floating-max-h", `${panelMaxHeight}px`);
+    }
+    menuRef.current?.style.setProperty(
+      "--hisabi-floating-list-max-h",
+      `${listMaxHeight}px`,
+    );
+  }, [open, panelTop, panelLeft, panelWidthPx, panelMaxHeight, listMaxHeight]);
 
   const listContent = (
     <div
       ref={panelRef}
-      className="type-body-md text-hisabi-on-surface z-[200] flex flex-col overflow-hidden rounded-lg border border-hisabi-outline-variant bg-hisabi-surface-container-lowest shadow-xl"
-      style={panelFixedStyle}
+      className={cn(
+        "hisabi-floating-panel type-body-md text-hisabi-on-surface z-[200] flex flex-col overflow-hidden rounded-lg border border-hisabi-outline-variant bg-hisabi-surface-container-lowest shadow-xl",
+        panelGeometry == null && "hidden",
+      )}
     >
       <div className="border-hisabi-outline-variant shrink-0 border-b bg-hisabi-surface-container-lowest px-hisabi-sm py-2">
         <label htmlFor={searchInputId} className="sr-only">
@@ -271,8 +282,7 @@ export function FlagCountrySelect({
         ref={menuRef}
         id={listboxId}
         role="listbox"
-        className="overflow-y-auto py-1"
-        style={{ maxHeight: listMaxHeight }}
+        className="hisabi-floating-list overflow-y-auto py-1"
       >
         {loading ? (
           <li

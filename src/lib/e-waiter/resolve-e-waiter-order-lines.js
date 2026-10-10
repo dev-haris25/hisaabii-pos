@@ -32,6 +32,7 @@ export const eWaiterOrderLinesSchema = z
  *       nameEn: string | null
  *       quantity: number
  *       lineNote: string | null
+ *       unitPrice: string
  *       variantOptionIds: string[]
  *       customizationIds: string[]
  *       modifiersSnapshot: unknown
@@ -91,6 +92,7 @@ export async function resolveEWaiterOrderLines(businessProfileId, lines) {
         nameEn: item.nameEn,
         quantity: line.quantity,
         lineNote: line.lineNote?.trim() || null,
+        unitPrice: resolved.unitPrice,
         variantOptionIds: resolved.variantOptionIds,
         customizationIds: resolved.customizationIds,
         modifiersSnapshot: resolved.modifiersSnapshot,
@@ -175,6 +177,7 @@ const publicRoundInclude = {
     where: { cancelled: false },
     orderBy: { createdAt: 'asc' },
     include: {
+      offer: { select: { nameAr: true, nameEn: true } },
       menuItem: {
         select: {
           id: true,
@@ -231,6 +234,11 @@ export function mapPublicRoundJson(row, slug) {
         variantOptionIds,
         customizationIds,
         lineNote: line.lineNote,
+        offerId: line.offerId ?? null,
+        offerGroupKey: line.offerGroupKey ?? null,
+        offerDiscount: line.offerDiscount ?? null,
+        offerNameAr: line.offer?.nameAr ?? null,
+        offerNameEn: line.offer?.nameEn ?? null,
         calories: resolveLineDisplayCalories(
           line.menuItem?.calories,
           selectedOptions,

@@ -1,11 +1,12 @@
 'use client'
 
 import { useMutation } from '@tanstack/react-query'
-import { Loader2, Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react'
+import { Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { HisabiOverlayModal } from '@/components/hisabi-overlay-modal'
 import { PosThermalReceiptPreview } from '@/components/invoices/pos-thermal-receipt-preview'
@@ -616,10 +617,7 @@ export function InvoiceEditView({
                       {t('editReasonArLabel')}
                       <RequiredMark />
                       {loadingReasonAr ? (
-                        <Loader2
-                          className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                          aria-label={tBi('translating')}
-                        />
+                        <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
                       ) : null}
                     </label>
                     <textarea
@@ -668,10 +666,7 @@ export function InvoiceEditView({
                     >
                       {t('editReasonEnLabel')}
                       {loadingReasonEn ? (
-                        <Loader2
-                          className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                          aria-label={tBi('translating')}
-                        />
+                        <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
                       ) : null}
                     </label>
                     <textarea

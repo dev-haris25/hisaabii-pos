@@ -8,13 +8,33 @@ import {
   resolveEWaiterOrderLines,
 } from '@/lib/e-waiter/resolve-e-waiter-order-lines'
 import { isLoyaltyEnabledForProfile } from '@/lib/e-waiter/loyalty-enabled'
+import {
+  eWaiterOfferErrorResult,
+  priceEWaiterRoundInTx,
+  roundLinesWithOffers,
+} from '@/lib/offers/e-waiter-round-offers'
+import { recordOfferUsages } from '@/lib/offers/offer-usage'
+import {
+  offerDealsInputSchema,
+  offerDiscountMatches,
+  resolveCartOffers,
+} from '@/lib/offers/resolve-cart-offers'
 import { createKitchenOrderInTx } from '@/lib/orders/create-kitchen-order'
 import { prisma } from '@/lib/prisma'
 
 export const eWaiterSubmitBodySchema = z.object({
   lat: z.number().min(-90).max(90).optional().nullable(),
   lng: z.number().min(-180).max(180).optional().nullable(),
-  lines: eWaiterOrderLinesSchema.min(1),
+  lines: eWaiterOrderLinesSchema,
+  /** Combo deals added as deals (Offers & Deals). */
+  deals: offerDealsInputSchema.optional().default([]),
+  /** Offer discount the guest saw — mismatch → OFFER_PRICES_CHANGED. */
+  expectedOfferDiscount: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d{1,4})?$/)
+    .optional()
+    .nullable(),
   /** Held client-side after login-loyalty — only linked at submit time. */
   loyaltyAccountId: z.string().trim().min(1).max(64).optional().nullable(),
 })
@@ -88,6 +108,16 @@ export async function submitEWaiterOrder({ profile, table, body }) {
     }
   }
 
+  const deals = body.deals ?? []
+  if (body.lines.length === 0 && deals.length === 0) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'VALIDATION_ERROR',
+      message: 'Add at least one item to your order',
+    }
+  }
+
   const resolvedLines = await resolveEWaiterOrderLines(profile.id, body.lines)
   if (!resolvedLines.ok) {
     return {
@@ -98,105 +128,150 @@ export async function submitEWaiterOrder({ profile, table, body }) {
     }
   }
 
+  // Preview (fast, unlocked) so invalid deals / changed prices fail early.
+  try {
+    const preview = await resolveCartOffers({
+      businessProfileId: profile.id,
+      lines: resolvedLines.lines,
+      deals,
+    })
+    if (!offerDiscountMatches(body.expectedOfferDiscount, preview.pricing.totalDiscount)) {
+      return {
+        ok: false,
+        status: 409,
+        code: 'OFFER_PRICES_CHANGED',
+        message: 'Offer prices changed — please review the updated total',
+      }
+    }
+  } catch (err) {
+    const mapped = eWaiterOfferErrorResult(err)
+    if (mapped) return mapped
+    throw err
+  }
+
   const loyaltyAccountId = await resolveOwnedLoyaltyAccountId(
     profile.id,
     body.loyaltyAccountId,
   )
 
-  const result = await prisma.$transaction(async (tx) => {
-    let session = await tx.tableSession.findFirst({
-      where: { tableId: table.id, status: 'open' },
-    })
+  let result
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      let session = await tx.tableSession.findFirst({
+        where: { tableId: table.id, status: 'open' },
+      })
 
-    if (session?.billRequestedAt) {
-      return {
-        blocked: true,
-        status: 409,
-        code: 'BILL_REQUESTED',
-        message:
-          'Bill already requested — ask staff to reopen ordering if you would like to order more',
-      }
-    }
-
-    let createdSession = false
-    if (!session) {
-      try {
-        session = await tx.tableSession.create({
-          data: {
-            businessProfileId: profile.id,
-            tableId: table.id,
-            status: 'open',
-            ...(loyaltyAccountId ? { loyaltyAccountId } : {}),
-          },
-        })
-        createdSession = true
-      } catch {
-        session = await tx.tableSession.findFirst({
-          where: { tableId: table.id, status: 'open' },
-        })
-        if (!session) throw new Error('Could not open table session')
-        if (session.billRequestedAt) {
-          return {
-            blocked: true,
-            status: 409,
-            code: 'BILL_REQUESTED',
-            message:
-              'Bill already requested — ask staff to reopen ordering if you would like to order more',
-          }
+      if (session?.billRequestedAt) {
+        return {
+          blocked: true,
+          status: 409,
+          code: 'BILL_REQUESTED',
+          message:
+            'Bill already requested — ask staff to reopen ordering if you would like to order more',
         }
       }
-    } else if (!session.loyaltyAccountId && loyaltyAccountId) {
-      // Logged in after anonymous round 1: attach once if session has no link yet.
-      session = await tx.tableSession.update({
-        where: { id: session.id },
-        data: { loyaltyAccountId },
+
+      let createdSession = false
+      if (!session) {
+        try {
+          session = await tx.tableSession.create({
+            data: {
+              businessProfileId: profile.id,
+              tableId: table.id,
+              status: 'open',
+              ...(loyaltyAccountId ? { loyaltyAccountId } : {}),
+            },
+          })
+          createdSession = true
+        } catch {
+          session = await tx.tableSession.findFirst({
+            where: { tableId: table.id, status: 'open' },
+          })
+          if (!session) throw new Error('Could not open table session')
+          if (session.billRequestedAt) {
+            return {
+              blocked: true,
+              status: 409,
+              code: 'BILL_REQUESTED',
+              message:
+                'Bill already requested — ask staff to reopen ordering if you would like to order more',
+            }
+          }
+        }
+      } else if (!session.loyaltyAccountId && loyaltyAccountId) {
+        // Logged in after anonymous round 1: attach once if session has no link yet.
+        session = await tx.tableSession.update({
+          where: { id: session.id },
+          data: { loyaltyAccountId },
+        })
+      }
+
+      if (createdSession) {
+        await tx.table.update({
+          where: { id: table.id },
+          data: { status: 'occupied' },
+        })
+      }
+
+      const agg = await tx.kitchenOrder.aggregate({
+        where: { tableSessionId: session.id },
+        _max: { roundNumber: true },
       })
-    }
+      const roundNumber = (agg._max.roundNumber ?? 0) + 1
 
-    if (createdSession) {
-      await tx.table.update({
-        where: { id: table.id },
-        data: { status: 'occupied' },
+      // Price locked at order time (kept at settle even if the offer ends).
+      const priced = await priceEWaiterRoundInTx(tx, {
+        businessProfileId: profile.id,
+        resolvedLines: resolvedLines.lines,
+        deals,
       })
-    }
+      const roundLines = roundLinesWithOffers(resolvedLines.lines, priced)
 
-    const agg = await tx.kitchenOrder.aggregate({
-      where: { tableSessionId: session.id },
-      _max: { roundNumber: true },
-    })
-    const roundNumber = (agg._max.roundNumber ?? 0) + 1
-
-    const kitchenOrder = await createKitchenOrderInTx(tx, {
-      businessProfileId: profile.id,
-      invoiceId: null,
-      tableSessionId: session.id,
-      roundNumber,
-      lines: resolvedLines.lines,
-    })
-
-    await tx.tableSessionLine.createMany({
-      data: resolvedLines.lines.map((line) => ({
+      const kitchenOrder = await createKitchenOrderInTx(tx, {
+        businessProfileId: profile.id,
+        invoiceId: null,
         tableSessionId: session.id,
-        kitchenOrderId: kitchenOrder.id,
-        menuItemId: line.menuItemId,
-        quantity: line.quantity,
-        variantOptionIds: line.variantOptionIds,
-        customizationIds: line.customizationIds,
-        lineNote: line.lineNote,
-      })),
-    })
+        roundNumber,
+        lines: roundLines,
+      })
 
-    return {
-      blocked: false,
-      sessionId: session.id,
-      kitchenOrderId: kitchenOrder.id,
-      orderNumber: kitchenOrder.orderNumber,
-      roundNumber,
-      status: kitchenOrder.status,
-      createdSession,
-      loyaltyAccountId: session.loyaltyAccountId ?? null,
-    }
-  }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
+      await tx.tableSessionLine.createMany({
+        data: roundLines.map((line) => ({
+          tableSessionId: session.id,
+          kitchenOrderId: kitchenOrder.id,
+          menuItemId: line.menuItemId,
+          quantity: line.quantity,
+          variantOptionIds: line.variantOptionIds,
+          customizationIds: line.customizationIds,
+          lineNote: line.lineNote,
+          offerId: line.offerId,
+          offerGroupKey: line.offerGroupKey,
+          offerDiscount: line.offerDiscount,
+        })),
+      })
+
+      await recordOfferUsages(tx, {
+        businessProfileId: profile.id,
+        usage: priced.pricing.usage,
+        kitchenOrderId: kitchenOrder.id,
+      })
+
+      return {
+        blocked: false,
+        sessionId: session.id,
+        kitchenOrderId: kitchenOrder.id,
+        orderNumber: kitchenOrder.orderNumber,
+        roundNumber,
+        status: kitchenOrder.status,
+        createdSession,
+        loyaltyAccountId: session.loyaltyAccountId ?? null,
+      }
+    }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
+  } catch (err) {
+    const mapped = eWaiterOfferErrorResult(err)
+    if (mapped) return mapped
+    throw err
+  }
 
   if (result.blocked) {
     return {

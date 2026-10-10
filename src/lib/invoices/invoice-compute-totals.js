@@ -21,11 +21,26 @@ export function decimalStringFromNumber(n) {
 }
 
 /**
+ * KSA standard VAT rate in percent — the only non-zero rate this app issues.
+ * Single source for invoice math, notes, coupons and the ZATCA tax mapping.
+ */
+export const STANDARD_VAT_PERCENT = 15
+
+/**
+ * VAT percent for a line preset (`standard` | `zero` | `exempt`).
+ * @param {string | null | undefined} preset
+ * @returns {number}
+ */
+export function vatPercentForPreset(preset) {
+  if (preset === 'zero' || preset === 'exempt') return 0
+  return STANDARD_VAT_PERCENT
+}
+
+/**
  * @param {{ vatPreset: string }} line
  */
 function vatRateFraction(line) {
-  if (line.vatPreset === 'zero' || line.vatPreset === 'exempt') return 0
-  return 0.15
+  return vatPercentForPreset(line.vatPreset) / 100
 }
 
 /**

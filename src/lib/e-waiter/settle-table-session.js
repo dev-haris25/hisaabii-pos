@@ -88,6 +88,14 @@ export function buildSettlementCheckoutLines(lines) {
       variantOptionIds: asIdArray(line.variantOptionIds),
       customizationIds: asIdArray(line.customizationIds),
       lineNote: line.lineNote?.trim() || null,
+      // Offer price locked when the round was placed (not sent to checkout body).
+      offerLock: line.offerId
+        ? {
+            offerId: line.offerId,
+            offerGroupKey: line.offerGroupKey ?? null,
+            discount: line.offerDiscount ?? '0.00',
+          }
+        : null,
     })
   }
   return out
@@ -434,6 +442,18 @@ export async function settleTableSession(opts) {
       ? String(opts.body.discount).trim()
       : null
 
+  // Offers & Deals exclude coupons, loyalty redeem and manual discounts.
+  const sessionHasOffers = checkoutLines.some((l) => l.offerLock)
+  if (
+    sessionHasOffers &&
+    (couponCodeRaw || requestedRaw || (discountRaw && parseMoney(discountRaw) > 0))
+  ) {
+    throwSettleError(
+      'OFFERS_EXCLUSIVE_DISCOUNT',
+      'Offers and deals cannot be combined with a coupon, loyalty points or a manual discount',
+    )
+  }
+
   if (requestedRaw && (couponCodeRaw || discountRaw)) {
     throwSettleError(
       couponCodeRaw
@@ -465,7 +485,7 @@ export async function settleTableSession(opts) {
 
   /** @type {Parameters<typeof checkoutPosSale>[0]['body']} */
   const checkoutBody = {
-    lines: checkoutLines,
+    lines: checkoutLines.map(({ offerLock: _lock, ...line }) => line),
     paymentMethod: opts.body.paymentMethod,
     amountTendered: opts.body.amountTendered ?? null,
     notes: opts.body.notes ?? null,
@@ -482,7 +502,10 @@ export async function settleTableSession(opts) {
       profileId: opts.profileId,
       staffId: opts.staffId,
       body: checkoutBody,
-      settlement: { existingKitchenOrderIds: kitchenOrderIds },
+      settlement: {
+        existingKitchenOrderIds: kitchenOrderIds,
+        offerLocks: checkoutLines.map((l) => l.offerLock),
+      },
     })
   } catch (err) {
     const code =

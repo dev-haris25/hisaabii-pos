@@ -4,7 +4,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   ChevronLeft,
   Hash,
-  Loader2,
   Percent,
   Plus,
   Save,
@@ -17,6 +16,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useId, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { useIsRtl } from '@/components/auth/use-is-rtl'
 import { SearchableEntityPicker } from '@/components/invoices/searchable-entity-picker'
@@ -1555,10 +1555,7 @@ export function CouponFormView({ mode, coupon = null }) {
                   >
                     {t('formNameEn')}
                     {loadingNameEn ? (
-                      <Loader2
-                        className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                        aria-label={tBi('translating')}
-                      />
+                      <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
                     ) : null}
                   </label>
                   <input
@@ -1585,10 +1582,7 @@ export function CouponFormView({ mode, coupon = null }) {
                     {t('formNameAr')}
                     <RequiredMark />
                     {loadingNameAr ? (
-                      <Loader2
-                        className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                        aria-label={tBi('translating')}
-                      />
+                      <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
                     ) : null}
                   </label>
                   <input

@@ -1,13 +1,15 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Eye, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { EditRestaurantSheet } from './edit-restaurant-sheet'
 import { ViewRestaurantSheet } from './view-restaurant-sheet'
+import { AppLoader } from '@/components/app-loader'
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { HisabiStatusModal } from '@/components/hisabi-status-modal'
 import { ZatcaOnboardingModal } from '@/components/app-shell/zatca-onboarding-modal'
 import { ListBulkActionsBar } from '@/components/list-views/list-bulk-actions-bar'
@@ -362,11 +364,7 @@ export function RestaurantsListView() {
               {listBusy ? (
                 <tr>
                   <td colSpan={7} className="px-hisabi-lg py-16 text-center">
-                    <Loader2
-                      className="mx-auto size-8 animate-spin text-hisabi-primary"
-                      aria-hidden
-                    />
-                    <span className="sr-only">{t('loadingList')}</span>
+                    <AppLoader size="lg" label={t('loadingList')} />
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
@@ -442,10 +440,7 @@ export function RestaurantsListView() {
                           >
                             {activateMutation.isPending &&
                             activateMutation.variables === row.id ? (
-                              <Loader2
-                                className="size-4 shrink-0 animate-spin"
-                                aria-hidden
-                              />
+                              <HisabiSpinner size="inline" />
                             ) : null}
                             {t('makeActive')}
                           </button>

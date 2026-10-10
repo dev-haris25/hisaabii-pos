@@ -31,12 +31,26 @@ import {
 } from '@/components/pos/pos-on-screen-numpad'
 import { PosLoyaltyRedeemPhoneModal } from '@/components/pos/pos-loyalty-redeem-phone-modal'
 import { PosItemModifiersFlow } from '@/components/pos/pos-item-modifiers-flow'
+import { PosDealCard } from '@/components/pos/pos-deal-card'
+import { PosDealCartEntry } from '@/components/pos/pos-deal-cart-entry'
+import { PosDealConfigurator } from '@/components/pos/pos-deal-configurator'
+import {
+  DEAL_ENTRY_MAX_QTY,
+  buildDealComponents,
+  comboItemsOf,
+  componentNeedsChoice,
+  dealEntryKey,
+  dealIsSellable,
+  dealNormalTotal,
+  dealOrderLimit,
+} from '@/components/pos/pos-deal-utils'
 import { GiveLoyaltyPointsModal } from '@/components/invoices/give-loyalty-points-modal'
 import { RequiredMark } from '@/components/ui/required-mark'
 import { useIsHisabiDesktop } from '@/hooks/use-is-hisabi-desktop'
 import { Link, useRouter } from '@/i18n/navigation'
 import { AuthApiError, authGet, authPost } from '@/lib/api/auth-client'
-import { logoutOnlineOrOffline } from '@/lib/desktop/desktop-auth'
+import { toastAuthApiError } from '@/lib/api/toast-auth-api-error'
+import { logoutSession } from '@/lib/desktop/desktop-auth'
 import { getHisabiDesktop } from '@/lib/desktop/hisabi-desktop'
 import {
   openTillCashDrawer,
@@ -49,15 +63,23 @@ import { toastPrintResult } from '@/lib/print/toast-print-result'
 import {
   allocateOrderDiscount,
   computeInvoiceTotals,
+  computeLineAmounts,
   decimalStringFromNumber,
   parseMoney,
 } from '@/lib/invoices/invoice-compute-totals'
 import {
   buildModifiersSnapshotFromItem,
   cartLineKey,
+  computeUnitPriceFromItem,
+  defaultVariantSelection,
   menuItemHasCustomizations,
   menuItemHasVariantGroups,
+  optionIdsFromSelection,
 } from '@/lib/menu/item-modifiers'
+import {
+  bestDisplayDiscount,
+  priceCartWithOffers,
+} from '@/lib/offers/offer-pricing'
 import {
   isDiscountWithinCap,
   isValidDiscountPercent,
@@ -70,6 +92,15 @@ import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
 
 const MONEY_RE = /^\d+(\.\d{1,4})?$/
+
+/** Checkout errors after which the POS reloads offers and keeps the cart. */
+const OFFER_REFRESH_CODES = new Set([
+  'OFFER_PRICES_CHANGED',
+  'OFFER_NOT_AVAILABLE',
+  'OFFER_LIMIT_REACHED',
+  'OFFER_MAX_PER_ORDER',
+  'OFFER_DEAL_INVALID',
+])
 
 /**
  * Plain-language shortfall list for the POS stock modal.
@@ -170,13 +201,22 @@ export function PosCheckoutView({
   )
 
   const cartPanelRef = useRef(/** @type {HTMLElement | null} */ (null))
-  const [cartStickTop, setCartStickTop] = useState(/** @type {string | null} */ (null))
 
   const [categoryId, setCategoryId] = useState(/** @type {string | 'all'} */ ('all'))
   const [itemSearch, setItemSearch] = useState('')
   const [redeemableOnly, setRedeemableOnly] = useState(false)
   /** @type {[CartLine[], function]} */
   const [cart, setCart] = useState(/** @type {CartLine[]} */ ([]))
+  /** Combo deals in the cart (Offers & Deals) — separate from normal lines. */
+  const [dealEntries, setDealEntries] = useState(
+    /** @type {import('@/components/pos/pos-deal-utils').DealEntry[]} */ ([]),
+  )
+  /** Deal waiting for variant choices (picker open). */
+  const [dealPickerOffer, setDealPickerOffer] = useState(
+    /** @type {Record<string, any> | null} */ (null),
+  )
+  /** Last seen "offers in the order" flag — clears other discounts on change. */
+  const [offersLockSeen, setOffersLockSeen] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState(
     /** @type {'cash' | 'card'} */ ('cash'),
   )
@@ -257,6 +297,8 @@ export function PosCheckoutView({
     setItemSearch('')
     setRedeemableOnly(false)
     setCart([])
+    setDealEntries([])
+    setDealPickerOffer(null)
     setReceipt(null)
     setReceiptLoyaltyAwarded(false)
     setGivePointsModalOpen(false)
@@ -295,6 +337,61 @@ export function PosCheckoutView({
     () => items.some((item) => item.loyaltyRedeemable === true),
     [items],
   )
+  const menuData = menuQuery.data
+  /** Active offers for this restaurant (Offers & Deals). */
+  const offers = useMemo(
+    () => (Array.isArray(menuData?.offers) ? menuData.offers : []),
+    [menuData],
+  )
+  const itemsById = useMemo(
+    () =>
+      new Map(
+        (Array.isArray(menuData?.items) ? menuData.items : []).map((item) => [
+          item.id,
+          item,
+        ]),
+      ),
+    [menuData],
+  )
+  const offersById = useMemo(
+    () => new Map(offers.map((offer) => [offer.id, offer])),
+    [offers],
+  )
+  /** COMBO offers the POS can sell now, with their normal (pre-deal) price. */
+  const sellableDeals = useMemo(
+    () =>
+      offers
+        .filter((offer) => dealIsSellable(offer, itemsById))
+        .map((offer) => ({
+          offer,
+          normalTotal: dealNormalTotal(offer, itemsById),
+        })),
+    [offers, itemsById],
+  )
+  const dealsAvailable = sellableDeals.length > 0
+  const effectiveCategoryId =
+    categoryId === 'deals' && !dealsAvailable ? 'all' : categoryId
+  /** Card prices: menuItemId → { was, now } when a DISCOUNT offer applies. */
+  const cardOfferPrices = useMemo(() => {
+    /** @type {Map<string, { was: string, now: string }>} */
+    const map = new Map()
+    if (offers.length === 0) return map
+    for (const item of Array.isArray(menuData?.items) ? menuData.items : []) {
+      const variantOptionIds = optionIdsFromSelection(
+        defaultVariantSelection(item),
+      )
+      const unitPrice = computeUnitPriceFromItem(item, variantOptionIds, [])
+      const hit = bestDisplayDiscount(offers, {
+        menuItemId: item.id,
+        unitPrice,
+        variantOptionIds,
+      })
+      if (hit && parseMoney(hit.unitPrice) < parseMoney(unitPrice)) {
+        map.set(item.id, { was: unitPrice, now: hit.unitPrice })
+      }
+    }
+    return map
+  }, [offers, menuData])
   const desktop = useIsHisabiDesktop()
 
   const tillQuery = useQuery({
@@ -316,7 +413,12 @@ export function PosCheckoutView({
   const filteredItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase()
     return items.filter((item) => {
-      if (categoryId !== 'all' && item.categoryId !== categoryId) return false
+      if (
+        effectiveCategoryId !== 'all' &&
+        item.categoryId !== effectiveCategoryId
+      ) {
+        return false
+      }
       if (redeemableOnly && loyaltyEnabled) {
         // Empty restriction list ⇒ whole menu is redeemable (same as Step 6).
         if (anyLoyaltyRedeemableMarked && item.loyaltyRedeemable !== true) {
@@ -330,12 +432,131 @@ export function PosCheckoutView({
     })
   }, [
     items,
-    categoryId,
+    effectiveCategoryId,
     itemSearch,
     redeemableOnly,
     loyaltyEnabled,
     anyLoyaltyRedeemableMarked,
   ])
+
+  /** Deals shown in the grid: "All" and "Deals" only (never loyalty-redeemable). */
+  const filteredDeals = useMemo(() => {
+    if (effectiveCategoryId !== 'all' && effectiveCategoryId !== 'deals') {
+      return []
+    }
+    if (redeemableOnly && loyaltyEnabled) return []
+    const q = itemSearch.trim().toLowerCase()
+    if (!q) return sellableDeals
+    return sellableDeals.filter(({ offer }) => {
+      const nameAr = String(offer.nameAr ?? '').toLowerCase()
+      const nameEn = String(offer.nameEn ?? '').toLowerCase()
+      return nameAr.includes(q) || nameEn.includes(q)
+    })
+  }, [
+    sellableDeals,
+    effectiveCategoryId,
+    redeemableOnly,
+    loyaltyEnabled,
+    itemSearch,
+  ])
+
+  /**
+   * Offers engine (display). The server reprices at checkout; a mismatch with
+   * `expectedOfferDiscount` returns OFFER_PRICES_CHANGED.
+   */
+  const offerPricing = useMemo(() => {
+    if (offers.length === 0 && dealEntries.length === 0) return null
+    if (cart.length === 0 && dealEntries.length === 0) return null
+    return priceCartWithOffers({
+      lines: cart.map((line) => ({
+        menuItemId: line.menuItemId,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        variantOptionIds: line.variantOptionIds ?? [],
+      })),
+      deals: dealEntries.map((entry) => ({
+        offerId: entry.offerId,
+        quantity: entry.quantity,
+        components: entry.components.map((comp) => ({
+          offerItemId: comp.offerItemId,
+          unitPrice: comp.unitPrice,
+          variantOptionIds: comp.variantOptionIds,
+        })),
+      })),
+      offers,
+    })
+  }, [offers, cart, dealEntries])
+  const offerPricingOk = offerPricing?.ok === true
+  const offersApplied = offerPricingOk && offerPricing.applied === true
+  /** Any offer/deal in the order → coupon, loyalty and manual discount are off. */
+  const offersInOrder = offersApplied || dealEntries.length > 0
+  const offerPricingError =
+    offerPricing && offerPricing.ok === false ? offerPricing.error : null
+
+  // Offers exclude every other discount: clear them when an offer enters the
+  // order (adjust-state-during-render, no effect).
+  if (offersInOrder !== offersLockSeen) {
+    setOffersLockSeen(offersInOrder)
+    if (offersInOrder) {
+      setDiscount('')
+      setCouponCodeInput('')
+      setAppliedCoupon(null)
+      setCouponError(null)
+      setLoyaltyPhoneInput('')
+      setLoyaltyAccount(null)
+      setLoyaltyPointsInput('')
+      setLoyaltyCeilings(null)
+      setLoyaltyGateReason(null)
+      setLoyaltyAmountError(null)
+      setLoyaltyPhoneModalOpen(false)
+      setLoyaltyLineDiscounts(null)
+      setLoyaltyDiscountAmount(null)
+      setLoyaltyCartFingerprint(null)
+      setFieldErrors((prev) =>
+        prev.discount ? { ...prev, discount: '' } : prev,
+      )
+      setNumpadField((field) =>
+        field === 'discount' || field === 'loyaltyPoints' ? null : field,
+      )
+    }
+  }
+
+  /**
+   * Human message for an engine error (shown in the cart, blocks checkout).
+   * @param {{ code: string, offerId?: string, max?: number } | null} error
+   */
+  function offerProblemMessage(error) {
+    if (!error) return null
+    const offer = error.offerId ? offersById.get(error.offerId) : null
+    const entry = error.offerId
+      ? dealEntries.find((d) => d.offerId === error.offerId)
+      : null
+    const source = offer ?? entry
+    const name = source
+      ? locale === 'ar'
+        ? String(source.nameAr ?? '')
+        : String(source.nameEn?.trim() || source.nameAr || '')
+      : ''
+    if (error.code === 'OFFER_MAX_PER_ORDER') {
+      return t('offers.problemMaxPerOrder', {
+        name,
+        max: String(error.max ?? offer?.maxPerOrder ?? ''),
+      })
+    }
+    if (error.code === 'OFFER_LIMIT_REACHED') {
+      return t('offers.problemLimitReached', { name })
+    }
+    if (error.code === 'OFFER_DEAL_INVALID') {
+      return t('offers.problemDealInvalid', { name })
+    }
+    if (error.code === 'OFFER_NOT_AVAILABLE') {
+      return name
+        ? t('offers.problemNotAvailable', { name })
+        : tErr('OFFER_NOT_AVAILABLE')
+    }
+    return tErr.has(error.code) ? tErr(error.code) : tErr('generic')
+  }
+  const offerProblem = offerProblemMessage(offerPricingError)
 
   const cartFingerprint = useMemo(
     () => cart.map((l) => `${l.lineKey}:${l.quantity}`).join('|'),
@@ -374,10 +595,10 @@ export function PosCheckoutView({
     Boolean(loyaltyPointsInput.trim()) &&
     parseMoney(loyaltyPointsInput) > 0
   const couponBlocksManualDiscount =
-    appliedCoupon != null || loyaltyRedeemActive
+    appliedCoupon != null || loyaltyRedeemActive || offersInOrder
   const loyaltyBlocksCoupon = loyaltyRedeemActive
   const couponOrDiscountBlocksLoyalty =
-    appliedCoupon != null || manualDiscountBlocksCoupon
+    appliedCoupon != null || manualDiscountBlocksCoupon || offersInOrder
 
   /**
    * @returns {Array<{
@@ -459,7 +680,7 @@ export function PosCheckoutView({
   }
 
   const cartTotals = useMemo(() => {
-    if (cart.length === 0) {
+    if (cart.length === 0 && dealEntries.length === 0) {
       return {
         subtotal: '0.00',
         totalDiscount: '0.00',
@@ -467,6 +688,30 @@ export function PosCheckoutView({
         grandTotal: '0.00',
         perLine: [],
       }
+    }
+    if (offersInOrder) {
+      // Normal lines first, then deal components (same order as checkout).
+      // Engine error → no offer discount (checkout is blocked until fixed).
+      const normal = cart.map((line, i) => ({
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        vatPreset: line.vatPreset,
+        discount: offerPricingOk
+          ? (offerPricing.lines[i]?.discount ?? '0.00')
+          : '0.00',
+      }))
+      const dealRows = dealEntries.flatMap((entry, j) => {
+        const priced = offerPricingOk ? offerPricing.deals[j] : null
+        return entry.components.map((comp) => ({
+          quantity: comp.quantity * entry.quantity,
+          unitPrice: comp.unitPrice,
+          vatPreset: comp.vatPreset,
+          discount:
+            priced?.components.find((c) => c.offerItemId === comp.offerItemId)
+              ?.discount ?? '0.00',
+        }))
+      })
+      return computeInvoiceTotals([...normal, ...dealRows])
     }
     const base = cart.map((line) => ({
       quantity: line.quantity,
@@ -507,6 +752,10 @@ export function PosCheckoutView({
     )
   }, [
     cart,
+    dealEntries,
+    offersInOrder,
+    offerPricingOk,
+    offerPricing,
     discount,
     appliedCoupon,
     loyaltyRedeemActive,
@@ -515,14 +764,28 @@ export function PosCheckoutView({
     loyaltyGateReason,
   ])
 
+  /** perLine index of each deal entry's first component in `cartTotals`. */
+  const dealLineOffsets = useMemo(() => {
+    const offsets = []
+    let at = cart.length
+    for (const entry of dealEntries) {
+      offsets.push(at)
+      at += entry.components.length
+    }
+    return offsets
+  }, [cart.length, dealEntries])
+
   useEffect(() => {
     if (!desktop) return undefined
-    const text = cart.length === 0 ? '0.00' : String(cartTotals.grandTotal)
+    const text =
+      cart.length === 0 && dealEntries.length === 0
+        ? '0.00'
+        : String(cartTotals.grandTotal)
     const timer = window.setTimeout(() => {
       void writeTillCustomerDisplay(boundTill, text).catch(() => {})
     }, 200)
     return () => window.clearTimeout(timer)
-  }, [desktop, boundTill, cart.length, cartTotals.grandTotal])
+  }, [desktop, boundTill, cart.length, dealEntries.length, cartTotals.grandTotal])
 
   const changeDisplay = useMemo(() => {
     if (paymentMethod !== 'cash') return null
@@ -539,13 +802,14 @@ export function PosCheckoutView({
     const update = () => {
       const desktop = window.matchMedia('(min-width: 1024px)').matches
       if (!desktop) {
-        setCartStickTop(null)
+        el.style.removeProperty('--hisabi-pos-cart-stick-top')
         return
       }
       const headerPx = embedded ? 16 : 72
       const gapPx = 16
       const top = Math.min(headerPx, window.innerHeight - el.offsetHeight - gapPx)
-      setCartStickTop(`${top}px`)
+      // Consumed by `.hisabi-pos-cart-sticky` (design system) — no inline style prop.
+      el.style.setProperty('--hisabi-pos-cart-stick-top', `${top}px`)
     }
 
     update()
@@ -556,10 +820,10 @@ export function PosCheckoutView({
       ro.disconnect()
       window.removeEventListener('resize', update)
     }
-  }, [embedded, cart, discount, paymentMethod, amountTendered])
+  }, [embedded, cart, dealEntries, discount, paymentMethod, amountTendered])
 
   const logoutMutation = useMutation({
-    mutationFn: () => logoutOnlineOrOffline(),
+    mutationFn: () => logoutSession(),
     onSuccess: () => {
       setUser(null)
       queryClient.clear()
@@ -580,15 +844,31 @@ export function PosCheckoutView({
       if (paymentMethod === 'cash') {
         body.amountTendered = amountTendered.trim()
       }
+      if (dealEntries.length > 0) {
+        body.deals = dealEntries.map((entry) => ({
+          offerId: entry.offerId,
+          quantity: entry.quantity,
+          components: entry.components.map((comp) => ({
+            offerItemId: comp.offerItemId,
+            variantOptionIds: comp.variantOptionIds,
+          })),
+        }))
+      }
+      if (offersApplied) {
+        body.expectedOfferDiscount = offerPricing.totalDiscount
+      }
       const redeemPoints = loyaltyPointsInput.trim()
       const loyaltyCheckoutActive =
+        !offersInOrder &&
         loyaltyAccount != null &&
         redeemPoints &&
         parseMoney(redeemPoints) > 0 &&
         Array.isArray(loyaltyLineDiscounts) &&
         !loyaltyAmountError &&
         !loyaltyGateReason
-      if (loyaltyCheckoutActive) {
+      if (offersInOrder) {
+        // Offers & Deals: never send coupon / loyalty / manual discount.
+      } else if (loyaltyCheckoutActive) {
         body.loyaltyAccountId = loyaltyAccount.accountId
         body.loyaltyRedeemPoints = redeemPoints
       } else if (appliedCoupon) {
@@ -625,6 +905,8 @@ export function PosCheckoutView({
       setReceiptLoyaltyAwarded(false)
       setGivePointsModalOpen(false)
       setCart([])
+      setDealEntries([])
+      setDealPickerOffer(null)
       setAmountTendered('')
       setDiscount('')
       setPaymentMethod('cash')
@@ -674,6 +956,11 @@ export function PosCheckoutView({
           return
         }
         toast.error(tErr('INSUFFICIENT_STOCK'))
+        return
+      }
+      if (code && OFFER_REFRESH_CODES.has(code)) {
+        toastAuthApiError(tErr, err)
+        void refreshOffersKeepCart()
         return
       }
       toast.error(code ? tErr(code) : tErr('generic'))
@@ -819,8 +1106,186 @@ export function PosCheckoutView({
     setCart((prev) => prev.filter((l) => l.lineKey !== lineKey))
   }
 
+  /**
+   * Boxes of one offer already in the cart (all its deal entries).
+   * @param {string} offerId
+   * @param {string | null} [exceptKey]
+   */
+  function dealBoxesInCart(offerId, exceptKey = null) {
+    return dealEntries
+      .filter((d) => d.offerId === offerId && d.entryKey !== exceptKey)
+      .reduce((sum, d) => sum + d.quantity, 0)
+  }
+
+  /**
+   * Respect maxPerOrder / remaining uses; tells the cashier when blocked.
+   * @param {Record<string, any> | undefined} offer
+   * @param {number} nextTotal boxes of this offer after the change
+   */
+  function dealWithinLimit(offer, nextTotal) {
+    const limit = dealOrderLimit(offer)
+    if (nextTotal <= limit) return true
+    toast.error(
+      limit <= 0
+        ? tErr('OFFER_LIMIT_REACHED')
+        : t('offers.dealMaxReached', { max: String(limit) }),
+    )
+    return false
+  }
+
+  /** @param {Record<string, any>} offer */
+  function addDeal(offer) {
+    if (!dealWithinLimit(offer, dealBoxesInCart(offer.id) + 1)) return
+    const needsPicker = comboItemsOf(offer).some((oi) =>
+      componentNeedsChoice(oi, itemsById.get(oi.menuItemId)),
+    )
+    if (needsPicker) {
+      setDealPickerOffer(offer)
+      return
+    }
+    commitDeal(offer, {})
+  }
+
+  /**
+   * @param {Record<string, any>} offer
+   * @param {Record<string, Record<string, string>>} selections
+   */
+  function commitDeal(offer, selections) {
+    setDealPickerOffer(null)
+    if (!dealWithinLimit(offer, dealBoxesInCart(offer.id) + 1)) return
+    const components = buildDealComponents(offer, itemsById, selections)
+    const entryKey = dealEntryKey(offer.id, components)
+    setDealEntries((prev) => {
+      const idx = prev.findIndex((d) => d.entryKey === entryKey)
+      if (idx >= 0) {
+        const next = [...prev]
+        next[idx] = {
+          ...next[idx],
+          quantity: Math.min(DEAL_ENTRY_MAX_QTY, next[idx].quantity + 1),
+        }
+        return next
+      }
+      return [
+        ...prev,
+        {
+          entryKey,
+          offerId: String(offer.id),
+          nameAr: String(offer.nameAr ?? ''),
+          nameEn: String(offer.nameEn ?? ''),
+          imageUrl:
+            typeof offer.imageUrl === 'string' && offer.imageUrl
+              ? offer.imageUrl
+              : null,
+          comboPrice: String(offer.comboPrice ?? '0'),
+          quantity: 1,
+          components,
+        },
+      ]
+    })
+  }
+
+  /**
+   * @param {import('@/components/pos/pos-deal-utils').DealEntry} entry
+   * @param {number} quantity
+   */
+  function setDealQty(entry, quantity) {
+    if (quantity <= 0) {
+      removeDeal(entry.entryKey)
+      return
+    }
+    if (quantity > entry.quantity) {
+      const offer = offersById.get(entry.offerId)
+      if (
+        !dealWithinLimit(
+          offer,
+          dealBoxesInCart(entry.offerId, entry.entryKey) + quantity,
+        )
+      ) {
+        return
+      }
+    }
+    setDealEntries((prev) =>
+      prev.map((d) =>
+        d.entryKey === entry.entryKey
+          ? { ...d, quantity: Math.min(DEAL_ENTRY_MAX_QTY, quantity) }
+          : d,
+      ),
+    )
+  }
+
+  /** @param {string} entryKey */
+  function removeDeal(entryKey) {
+    setDealEntries((prev) => prev.filter((d) => d.entryKey !== entryKey))
+  }
+
+  /**
+   * After an offer checkout error: reload offers (fresh prices/limits), keep
+   * the cart, drop deals whose offer is gone and tell the cashier.
+   */
+  async function refreshOffersKeepCart() {
+    const res = await menuQuery.refetch()
+    const data = res.data
+    if (!data || !Array.isArray(data.offers)) return
+    const freshItems = new Map(
+      (Array.isArray(data.items) ? data.items : []).map((item) => [item.id, item]),
+    )
+    const freshOffers = new Map(data.offers.map((offer) => [offer.id, offer]))
+    /** @param {import('@/components/pos/pos-deal-utils').DealEntry} entry */
+    const stillSellable = (entry) => {
+      const offer = freshOffers.get(entry.offerId)
+      if (!offer || !dealIsSellable(offer, freshItems)) return false
+      const ids = new Set(comboItemsOf(offer).map((oi) => String(oi.id)))
+      return (
+        ids.size === entry.components.length &&
+        entry.components.every((c) => ids.has(c.offerItemId))
+      )
+    }
+    // Re-price kept lines from the fresh menu so the next try sends the same
+    // expectedOfferDiscount the server computes.
+    setCart((prev) =>
+      prev.map((line) => {
+        const item = freshItems.get(line.menuItemId)
+        if (!item) return line
+        const unitPrice = computeUnitPriceFromItem(
+          item,
+          line.variantOptionIds ?? [],
+          line.customizationIds ?? [],
+        )
+        return unitPrice === line.unitPrice ? line : { ...line, unitPrice }
+      }),
+    )
+    const gone = dealEntries.filter((entry) => !stillSellable(entry))
+    const goneKeys = new Set(gone.map((d) => d.entryKey))
+    setDealEntries((prev) =>
+      prev
+        .filter((d) => !goneKeys.has(d.entryKey) && stillSellable(d))
+        .map((d) => {
+          const offer = freshOffers.get(d.offerId)
+          const selections = Object.fromEntries(
+            d.components.map((c) => [c.offerItemId, c.variantSelection]),
+          )
+          return {
+            ...d,
+            comboPrice: String(offer.comboPrice ?? d.comboPrice),
+            components: buildDealComponents(offer, freshItems, selections),
+          }
+        }),
+    )
+    if (gone.length === 0) return
+    const names = [
+      ...new Set(
+        gone.map((d) =>
+          locale === 'ar' ? d.nameAr : d.nameEn?.trim() || d.nameAr,
+        ),
+      ),
+    ].join(locale === 'ar' ? '، ' : ', ')
+    toast.warning(t('offers.dealsRemoved', { names }))
+  }
+
   function clearCart() {
     setCart([])
+    setDealEntries([])
+    setDealPickerOffer(null)
     setAmountTendered('')
     setDiscount('')
     resetCouponState()
@@ -835,6 +1300,10 @@ export function PosCheckoutView({
     }
     if (cart.length === 0) {
       setCouponError(t('couponNeedsItems'))
+      return
+    }
+    if (offersInOrder) {
+      setCouponError(t('offers.exclusiveHint'))
       return
     }
     if (manualDiscountBlocksCoupon || loyaltyBlocksCoupon) {
@@ -914,11 +1383,18 @@ export function PosCheckoutView({
     setReceipt(null)
   }
 
-  const canCheckout = cart.length > 0 && !checkoutMutation.isPending
+  const canCheckout =
+    (cart.length > 0 || dealEntries.length > 0) &&
+    !offerPricingError &&
+    !checkoutMutation.isPending
 
   function handleCheckout() {
+    if (offerPricingError) {
+      toast.error(offerProblem ?? tErr('generic'))
+      return
+    }
     const nextErrors = { discount: '', tendered: '' }
-    if (!appliedCoupon && !loyaltyRedeemActive) {
+    if (!offersInOrder && !appliedCoupon && !loyaltyRedeemActive) {
       const disc = discount.trim()
       if (disc) {
         if (!isValidDiscountPercent(disc)) {
@@ -1182,17 +1658,39 @@ export function PosCheckoutView({
               onClick={() => setCategoryId('all')}
               className={cn(
                 'type-label-sm shrink-0 cursor-pointer rounded-xl px-hisabi-md py-2 font-bold transition-colors',
-                categoryId === 'all'
+                effectiveCategoryId === 'all'
                   ? 'bg-hisabi-primary-container text-white'
                   : 'bg-hisabi-surface-container-lowest text-hisabi-on-surface-variant hover:bg-hisabi-surface-container',
               )}
             >
               {t('allCategories')}
             </button>
+            {dealsAvailable ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setCategoryId('deals')
+                  setRedeemableOnly(false)
+                }}
+                aria-pressed={effectiveCategoryId === 'deals'}
+                className={cn(
+                  'type-label-sm shrink-0 cursor-pointer rounded-xl px-hisabi-md py-2 font-bold transition-colors',
+                  effectiveCategoryId === 'deals'
+                    ? 'bg-hisabi-primary-container text-white'
+                    : 'bg-hisabi-surface-container-lowest text-hisabi-on-surface-variant hover:bg-hisabi-surface-container',
+                )}
+              >
+                {t('offers.dealsFilter')}
+              </button>
+            ) : null}
             {loyaltyEnabled ? (
               <button
                 type="button"
-                onClick={() => setRedeemableOnly((v) => !v)}
+                onClick={() => {
+                  setRedeemableOnly((v) => !v)
+                  // Deals are never loyalty-redeemable.
+                  if (categoryId === 'deals') setCategoryId('all')
+                }}
                 aria-pressed={redeemableOnly}
                 className={cn(
                   'type-label-sm shrink-0 cursor-pointer rounded-xl px-hisabi-md py-2 font-bold transition-colors',
@@ -1211,7 +1709,7 @@ export function PosCheckoutView({
                 onClick={() => setCategoryId(cat.id)}
                 className={cn(
                   'type-label-sm shrink-0 cursor-pointer rounded-xl px-hisabi-md py-2 font-bold transition-colors',
-                  categoryId === cat.id
+                  effectiveCategoryId === cat.id
                     ? 'bg-hisabi-primary-container text-white'
                     : 'bg-hisabi-surface-container-lowest text-hisabi-on-surface-variant hover:bg-hisabi-surface-container',
                 )}
@@ -1233,9 +1731,9 @@ export function PosCheckoutView({
                   : 'generic',
               )}
             </p>
-          ) : filteredItems.length === 0 ? (
+          ) : filteredItems.length === 0 && filteredDeals.length === 0 ? (
             <p className="type-body-md text-hisabi-on-surface-variant py-hisabi-xl text-center">
-              {items.length === 0
+              {items.length === 0 && sellableDeals.length === 0
                 ? t('emptyMenu')
                 : itemSearch.trim()
                   ? t('emptySearch')
@@ -1243,6 +1741,15 @@ export function PosCheckoutView({
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-hisabi-sm sm:grid-cols-3 xl:grid-cols-4">
+              {filteredDeals.map(({ offer, normalTotal }) => (
+                <PosDealCard
+                  key={`deal-${offer.id}`}
+                  offer={offer}
+                  normalTotal={normalTotal}
+                  locale={locale}
+                  onAdd={() => addDeal(offer)}
+                />
+              ))}
               {filteredItems.map((item) => {
                 const name = itemDisplayName(item)
                 const arabicUnderEn =
@@ -1251,6 +1758,7 @@ export function PosCheckoutView({
                   loyaltyEnabled &&
                   (!anyLoyaltyRedeemableMarked ||
                     item.loyaltyRedeemable === true)
+                const offerPrice = cardOfferPrices.get(item.id) ?? null
                 return (
                   <button
                     key={item.id}
@@ -1274,6 +1782,11 @@ export function PosCheckoutView({
                           {t('redeemableBadge')}
                         </span>
                       ) : null}
+                      {offerPrice ? (
+                        <span className="hisabi-pos-offer-badge absolute end-2 top-2 z-[1]">
+                          {t('offers.offerBadge')}
+                        </span>
+                      ) : null}
                     </div>
                     <div className="flex flex-1 flex-col gap-1 p-hisabi-md">
                       <span className="type-body-md line-clamp-2 pb-0.5 font-bold leading-normal text-hisabi-on-surface">
@@ -1284,12 +1797,27 @@ export function PosCheckoutView({
                           {arabicUnderEn}
                         </span>
                       ) : null}
-                      <span
-                        dir="ltr"
-                        className="type-body-sm font-medium text-hisabi-teal"
-                      >
-                        {formatSarAmount(item.price, locale)}
-                      </span>
+                      {offerPrice ? (
+                        <span
+                          dir="ltr"
+                          className="type-body-sm flex flex-wrap items-baseline gap-x-hisabi-xs"
+                        >
+                          <span className="hisabi-pos-price-was">
+                            <span className="sr-only">{t('offers.wasPrice')} </span>
+                            {formatSarAmount(offerPrice.was, locale)}
+                          </span>
+                          <span className="font-medium text-hisabi-teal">
+                            {formatSarAmount(offerPrice.now, locale)}
+                          </span>
+                        </span>
+                      ) : (
+                        <span
+                          dir="ltr"
+                          className="type-body-sm font-medium text-hisabi-teal"
+                        >
+                          {formatSarAmount(item.price, locale)}
+                        </span>
+                      )}
                     </div>
                   </button>
                 )
@@ -1300,8 +1828,7 @@ export function PosCheckoutView({
 
         <aside
           ref={cartPanelRef}
-          style={cartStickTop ? { top: cartStickTop } : undefined}
-          className="border-hisabi-outline-variant/30 flex w-full shrink-0 flex-col rounded-xl border bg-hisabi-surface-container-lowest shadow-sm lg:w-[380px] lg:self-start lg:sticky"
+          className="hisabi-pos-cart-sticky border-hisabi-outline-variant/30 flex w-full shrink-0 flex-col rounded-xl border bg-hisabi-surface-container-lowest shadow-sm lg:w-[380px] lg:self-start lg:sticky"
         >
           <div className="flex items-center justify-between gap-hisabi-sm border-b border-hisabi-outline-variant/20 px-hisabi-lg py-hisabi-md">
             <div className="flex items-center gap-hisabi-sm">
@@ -1310,7 +1837,7 @@ export function PosCheckoutView({
                 {t('cartTitle')}
               </h2>
             </div>
-            {cart.length > 0 ? (
+            {cart.length > 0 || dealEntries.length > 0 ? (
               <button
                 type="button"
                 onClick={clearCart}
@@ -1322,7 +1849,7 @@ export function PosCheckoutView({
           </div>
 
           <div className="space-y-hisabi-sm px-hisabi-md py-hisabi-md">
-            {cart.length === 0 ? (
+            {cart.length === 0 && dealEntries.length === 0 ? (
               <p className="type-body-md text-hisabi-on-surface-variant py-hisabi-xl text-center">
                 {t('emptyCart')}
               </p>
@@ -1333,6 +1860,20 @@ export function PosCheckoutView({
                   decimalStringFromNumber(
                     parseMoney(line.unitPrice) * line.quantity,
                   )
+                const lineOfferDiscount =
+                  offersApplied && offerPricing.lines[idx]?.offerId
+                    ? parseMoney(offerPricing.lines[idx].discount)
+                    : 0
+                const lineNormalTotal =
+                  lineOfferDiscount > 0
+                    ? decimalStringFromNumber(
+                        computeLineAmounts({
+                          quantity: line.quantity,
+                          unitPrice: line.unitPrice,
+                          vatPreset: line.vatPreset,
+                        }).lineTotal,
+                      )
+                    : null
                 return (
                   <div
                     key={line.lineKey}
@@ -1372,6 +1913,11 @@ export function PosCheckoutView({
                       <p dir="ltr" className="type-body-sm text-hisabi-on-surface-variant">
                         {formatSarAmount(line.unitPrice, locale)} × {line.quantity}
                       </p>
+                      {lineNormalTotal ? (
+                        <span className="hisabi-pos-offer-badge mt-0.5">
+                          {t('offers.offerBadge')}
+                        </span>
+                      ) : null}
                       <label className="mt-hisabi-xs block">
                         <span className="sr-only">{t('lineNote')}</span>
                         <input
@@ -1415,12 +1961,30 @@ export function PosCheckoutView({
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-col items-end justify-between self-stretch">
-                      <span
-                        dir="ltr"
-                        className="type-label-md font-bold text-hisabi-on-surface"
-                      >
-                        {formatSarAmount(lineTotal, locale)}
-                      </span>
+                      {lineNormalTotal ? (
+                        <div className="flex flex-col items-end">
+                          <span
+                            dir="ltr"
+                            className="type-body-sm hisabi-pos-price-was"
+                          >
+                            <span className="sr-only">{t('offers.wasPrice')} </span>
+                            {formatSarAmount(lineNormalTotal, locale)}
+                          </span>
+                          <span
+                            dir="ltr"
+                            className="type-label-md font-bold text-hisabi-on-surface"
+                          >
+                            {formatSarAmount(lineTotal, locale)}
+                          </span>
+                        </div>
+                      ) : (
+                        <span
+                          dir="ltr"
+                          className="type-label-md font-bold text-hisabi-on-surface"
+                        >
+                          {formatSarAmount(lineTotal, locale)}
+                        </span>
+                      )}
                       <button
                         type="button"
                         aria-label={t('removeLine')}
@@ -1434,6 +1998,48 @@ export function PosCheckoutView({
                 )
               })
             )}
+            {dealEntries.map((entry, j) => {
+              const start = dealLineOffsets[j] ?? 0
+              let net = 0
+              let normal = 0
+              entry.components.forEach((comp, k) => {
+                const row = cartTotals.perLine[start + k]
+                const full = computeLineAmounts({
+                  quantity: comp.quantity * entry.quantity,
+                  unitPrice: comp.unitPrice,
+                  vatPreset: comp.vatPreset,
+                }).lineTotal
+                normal += full
+                net += row ? row.lineTotal : full
+              })
+              const offer = offersById.get(entry.offerId)
+              const limit = dealOrderLimit(offer)
+              return (
+                <PosDealCartEntry
+                  key={entry.entryKey}
+                  entry={
+                    offer?.comboPrice != null
+                      ? { ...entry, comboPrice: String(offer.comboPrice) }
+                      : entry
+                  }
+                  locale={locale}
+                  lineTotal={decimalStringFromNumber(net)}
+                  normalLineTotal={decimalStringFromNumber(normal)}
+                  canIncrease={
+                    entry.quantity < DEAL_ENTRY_MAX_QTY &&
+                    dealBoxesInCart(entry.offerId) < limit
+                  }
+                  problem={
+                    offerPricingError?.offerId === entry.offerId
+                      ? offerProblem
+                      : null
+                  }
+                  onDecrease={() => setDealQty(entry, entry.quantity - 1)}
+                  onIncrease={() => setDealQty(entry, entry.quantity + 1)}
+                  onRemove={() => removeDeal(entry.entryKey)}
+                />
+              )
+            })}
           </div>
 
           <div className="space-y-hisabi-md border-t border-hisabi-outline-variant/20 px-hisabi-lg py-hisabi-md">
@@ -1443,8 +2049,17 @@ export function PosCheckoutView({
                 <span dir="ltr">{formatSarAmount(cartTotals.subtotal, locale)}</span>
               </div>
               {parseMoney(cartTotals.totalDiscount) > 0 ? (
-                <div className="type-body-sm flex justify-between text-hisabi-on-surface-variant">
-                  <span>{t('discount')}</span>
+                <div
+                  className={cn(
+                    'type-body-sm flex justify-between',
+                    offersInOrder
+                      ? 'font-medium text-green-700'
+                      : 'text-hisabi-on-surface-variant',
+                  )}
+                >
+                  <span>
+                    {offersInOrder ? t('offers.offerSavings') : t('discount')}
+                  </span>
                   <span dir="ltr">−{formatSarAmount(cartTotals.totalDiscount, locale)}</span>
                 </div>
               ) : null}
@@ -1457,6 +2072,18 @@ export function PosCheckoutView({
                 <span dir="ltr">{formatSarAmount(cartTotals.grandTotal, locale)}</span>
               </div>
             </div>
+
+            {offerProblem ? (
+              <p className="type-body-sm text-hisabi-error" role="alert">
+                {offerProblem}
+              </p>
+            ) : null}
+
+            {offersInOrder ? (
+              <p className="type-body-sm text-hisabi-on-surface-variant" role="status">
+                {t('offers.exclusiveHint')}
+              </p>
+            ) : null}
 
             {hasAvailableCoupons ? (
               <div className="space-y-hisabi-xs">
@@ -1486,6 +2113,7 @@ export function PosCheckoutView({
                     autoCapitalize="characters"
                     spellCheck={false}
                     disabled={
+                      offersInOrder ||
                       manualDiscountBlocksCoupon ||
                       loyaltyBlocksCoupon ||
                       couponValidating
@@ -1510,6 +2138,7 @@ export function PosCheckoutView({
                     type="button"
                     disabled={
                       couponValidating ||
+                      offersInOrder ||
                       manualDiscountBlocksCoupon ||
                       loyaltyBlocksCoupon ||
                       appliedCoupon != null ||
@@ -1522,7 +2151,8 @@ export function PosCheckoutView({
                     {couponValidating ? <AuthButtonSpinner /> : t('couponApply')}
                   </button>
                 </div>
-                {manualDiscountBlocksCoupon || loyaltyBlocksCoupon ? (
+                {!offersInOrder &&
+                (manualDiscountBlocksCoupon || loyaltyBlocksCoupon) ? (
                   <p className="type-body-sm text-hisabi-on-surface-variant">
                     {loyaltyBlocksCoupon
                       ? t('couponDisabledByLoyaltyHint')
@@ -1604,7 +2234,7 @@ export function PosCheckoutView({
                   {fieldErrors.discount}
                 </p>
               ) : null}
-              {couponBlocksManualDiscount ? (
+              {couponBlocksManualDiscount && !offersInOrder ? (
                 <p className="type-body-sm text-hisabi-on-surface-variant">
                   {loyaltyRedeemActive
                     ? t('discountDisabledByLoyaltyHint')
@@ -1658,7 +2288,7 @@ export function PosCheckoutView({
                       />
                       {t('loyaltyRedeemButton')}
                     </button>
-                    {couponOrDiscountBlocksLoyalty ? (
+                    {couponOrDiscountBlocksLoyalty && !offersInOrder ? (
                       <p className="type-body-sm text-hisabi-on-surface-variant">
                         {appliedCoupon
                           ? t('loyaltyDisabledByCouponHint')
@@ -1714,7 +2344,7 @@ export function PosCheckoutView({
                               : undefined
                           }
                         />
-                        {couponOrDiscountBlocksLoyalty ? (
+                        {couponOrDiscountBlocksLoyalty && !offersInOrder ? (
                           <p className="type-body-sm text-hisabi-on-surface-variant">
                             {appliedCoupon
                               ? t('loyaltyDisabledByCouponHint')
@@ -1903,6 +2533,17 @@ export function PosCheckoutView({
           setLoyaltyDiscountAmount(null)
         }}
       />
+
+      {dealPickerOffer ? (
+        <PosDealConfigurator
+          key={dealPickerOffer.id}
+          offer={dealPickerOffer}
+          itemsById={itemsById}
+          locale={locale}
+          onClose={() => setDealPickerOffer(null)}
+          onConfirm={(selections) => commitDeal(dealPickerOffer, selections)}
+        />
+      ) : null}
 
       <PosItemModifiersFlow
         open={Boolean(configurator.item)}

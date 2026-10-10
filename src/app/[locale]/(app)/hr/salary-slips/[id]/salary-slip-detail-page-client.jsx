@@ -1,9 +1,10 @@
 'use client'
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { formatSarAmount } from '@/lib/settings/format-helpers'
 
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Download, Loader2, Pencil, Send } from 'lucide-react'
+import { ArrowLeft, Download, Pencil, Send } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useMemo, useState } from 'react'
 
@@ -193,7 +194,7 @@ export function SalarySlipDetailPageClient({ salarySlipId, hasBusinessProfile })
             className="type-label-md border-hisabi-outline-variant text-hisabi-on-surface inline-flex min-h-[48px] w-[280px] max-w-full items-center justify-center gap-hisabi-sm rounded-xl border px-hisabi-lg py-3 font-semibold hover:bg-hisabi-surface-container-low disabled:opacity-50"
           >
             {downloadPdfPending ? (
-              <Loader2 className="size-5 shrink-0 animate-spin" aria-hidden />
+              <HisabiSpinner size="sm" />
             ) : (
               <Download className="size-5 shrink-0" aria-hidden />
             )}

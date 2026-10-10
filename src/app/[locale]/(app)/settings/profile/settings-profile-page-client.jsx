@@ -1,11 +1,12 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, Eye, EyeOff, Loader2, Lock, Map, User } from 'lucide-react'
+import { Bell, Eye, EyeOff, Lock, Map, User } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
+import { AppLoader } from '@/components/app-loader'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { applyDocumentLocale } from '@/components/document-locale-sync'
 import { useOptionalProductTour } from '@/components/product-tour/product-tour-provider'
@@ -153,7 +154,7 @@ export function SettingsProfilePageClient() {
     return (
       <SettingsPageShell title={t('profileTitle')} subtitle={t('profileSubtitle')}>
         <div className="flex justify-center py-16">
-          <Loader2 className="size-8 animate-spin text-hisabi-primary" />
+          <AppLoader size="lg" />
         </div>
       </SettingsPageShell>
     )

@@ -1,4 +1,5 @@
 import { jsonError } from '@/lib/api/json-response'
+import { zatcaRuleIdsFromRaw } from '@/lib/zatca/humanize-zatca-error'
 
 /**
  * Map unexpected route errors to a safe JSON 500 (logs full detail server-side).
@@ -73,11 +74,18 @@ export function handleRouteError(err, context) {
     /compliance.?request/i.test(message) ||
     /dispositionMessage/i.test(message)
   ) {
-    return jsonError(502, 'ZATCA_ERROR', message.slice(0, 900))
+    // Raw ZATCA text stays in the server log; the client gets rule ids only.
+    return jsonError(502, 'ZATCA_ERROR', 'ZATCA could not complete the request', {
+      zatcaRuleIds: zatcaRuleIdsFromRaw(message),
+    })
   }
 
   if (message.includes('Complete ZATCA onboarding')) {
-    return jsonError(400, 'ZATCA_NOT_ONBOARDED', message.slice(0, 500))
+    return jsonError(400, 'ZATCA_NOT_ONBOARDED', 'Complete ZATCA onboarding first')
+  }
+
+  if (code === 'NOT_EDITABLE') {
+    return jsonError(409, code, 'This document can no longer be edited')
   }
 
   if (code === 'SELLER_PROFILE_INCOMPLETE') {

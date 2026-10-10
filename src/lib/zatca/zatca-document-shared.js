@@ -1,4 +1,7 @@
-import { computeLineAmounts } from '@/lib/invoices/invoice-compute-totals'
+import {
+  computeLineAmounts,
+  STANDARD_VAT_PERCENT,
+} from '@/lib/invoices/invoice-compute-totals'
 
 /** @param {number} n */
 export function round2(n) {
@@ -36,7 +39,7 @@ export function riyadhIssueParts(date) {
 export function vatPresetToTax(line) {
   if (line.vatPreset === 'zero') return { taxCategoryId: 'Z', taxPercent: 0 }
   if (line.vatPreset === 'exempt') return { taxCategoryId: 'E', taxPercent: 0 }
-  return { taxCategoryId: 'S', taxPercent: 15 }
+  return { taxCategoryId: 'S', taxPercent: STANDARD_VAT_PERCENT }
 }
 
 /**

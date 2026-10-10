@@ -1,13 +1,14 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Pencil, Plus, Power } from 'lucide-react'
+import { Pencil, Plus, Power } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { MenuCategoryDeactivateDialog } from './menu-category-deactivate-dialog'
 import { MenuCategoryEditModal } from './menu-category-edit-modal'
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { AppLoader } from '@/components/app-loader'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
 import { HisabiStatusModal } from '@/components/hisabi-status-modal'
@@ -262,10 +263,7 @@ export function MenuCategoriesView() {
                 >
                   {t('categoryNameEn')}
                   {loadingNameEn ? (
-                    <Loader2
-                      className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                      aria-label={tBi('translating')}
-                    />
+                    <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
                   ) : null}
                 </label>
                 <input
@@ -297,10 +295,7 @@ export function MenuCategoriesView() {
                   {t('categoryNameAr')}
                   <RequiredMark />
                   {loadingNameAr ? (
-                    <Loader2
-                      className="text-hisabi-teal size-4 shrink-0 animate-spin"
-                      aria-label={tBi('translating')}
-                    />
+                    <HisabiSpinner size="inline" className="text-hisabi-teal" label={tBi('translating')} />
                   ) : null}
                 </label>
                 <input

@@ -46,6 +46,7 @@ function mapNoteListItem(documentNature, row) {
     zatcaStatus: row.zatcaStatus,
     zatcaLastError: row.zatcaLastError,
     hasQr: Boolean(row.qrCode?.trim()),
+    zatcaSigned: Boolean(row.cryptographicStamp?.trim()),
     staffName: row.createdByStaff?.name ?? null,
     staffId: row.createdByStaff?.id ?? null,
   }
@@ -115,6 +116,7 @@ function mapNoteDetail(documentNature, note) {
     sellerPhone: note.sellerPhone ?? null,
     qrCode: note.qrCode,
     zatcaStatus: note.zatcaStatus,
+    zatcaSigned: Boolean(note.cryptographicStamp?.trim()),
     zatcaClearedAt: note.zatcaClearedAt?.toISOString() ?? null,
     zatcaReportAttempts: note.zatcaReportAttempts,
     zatcaLastAttemptAt: note.zatcaLastAttemptAt?.toISOString() ?? null,

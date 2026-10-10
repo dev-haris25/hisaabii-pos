@@ -20,7 +20,7 @@ import {
 } from '@/lib/hr/employees/employee-route-helpers'
 import { createEmployeeInvitation } from '@/lib/hr/employees/create-employee-invitation'
 import {
-  ensurePredefinedRolesExist,
+  ensurePredefinedRolesSynced,
   rolesRequireNoLogin,
 } from '@/lib/rbac/seed-predefined-roles'
 import { employeeExcludeOwnerWhere } from '@/lib/rbac/owner-admin-gates'
@@ -125,7 +125,7 @@ export async function POST(request) {
     return jsonError(400, 'VALIDATION_ERROR', `Invalid ${fk.field}`)
   }
 
-  await ensurePredefinedRolesExist(profile.id)
+  await ensurePredefinedRolesSynced(profile.id)
 
   /** @type {string[]} */
   const roleIds = Array.isArray(parsed.data.roleIds)

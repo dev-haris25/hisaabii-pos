@@ -14,6 +14,7 @@ import {
   readFor,
 } from '@/lib/rbac/permission-registry'
 import { ensureSystemAdvancePayslipCategory } from '@/lib/hr/payslip-categories/system-advance-category'
+import { PRISMA_INTERACTIVE_TRANSACTION_OPTIONS } from '@/lib/db/prisma-interactive-transaction-options'
 import { prisma } from '@/lib/prisma'
 
 /**
@@ -42,6 +43,7 @@ export function predefinedRolePermissionMap() {
         ...invoicesAll,
         'Pos',
         'Coupon',
+        'Offer',
         'Loyalty',
         'ETable',
         'TableSession',
@@ -232,6 +234,14 @@ export async function deleteLegacyQueueDisplayRoles(tx = prisma) {
  * @param {import('@/generated/prisma/client').Prisma.TransactionClient | typeof prisma} [tx]
  */
 export async function ensurePredefinedRolesExist(businessProfileId, tx = prisma) {
+  // Delete + recreate must be atomic so a concurrent ability read never sees a
+  // role with no permissions (transient 403s).
+  if (tx === prisma) {
+    return prisma.$transaction(
+      (inner) => ensurePredefinedRolesExist(businessProfileId, inner),
+      PRISMA_INTERACTIVE_TRANSACTION_OPTIONS,
+    )
+  }
   const permissionMap = predefinedRolePermissionMap()
   for (const roleName of PREDEFINED_ROLE_NAMES) {
     const roleId = await resolvePredefinedRoleId(tx, businessProfileId, roleName)
@@ -265,6 +275,30 @@ export async function ensurePredefinedRolesExist(businessProfileId, tx = prisma)
     }
   }
   await deleteLegacyQueueDisplayRoles(tx)
+}
+
+/** @type {Map<string, Promise<void>>} */
+const rolesSyncedThisProcess = new Map()
+
+/**
+ * Hot-path variant of {@link ensurePredefinedRolesExist}: resyncs each
+ * restaurant's predefined roles once per server process. The seed map only
+ * changes with a deploy (which restarts the process), so matrix changes still
+ * reach existing restaurants without rewriting RolePermission rows on every
+ * authorized request. Concurrent callers share the in-flight sync.
+ *
+ * @param {string} businessProfileId
+ */
+export function ensurePredefinedRolesSynced(businessProfileId) {
+  let pending = rolesSyncedThisProcess.get(businessProfileId)
+  if (!pending) {
+    pending = ensurePredefinedRolesExist(businessProfileId).catch((err) => {
+      rolesSyncedThisProcess.delete(businessProfileId)
+      throw err
+    })
+    rolesSyncedThisProcess.set(businessProfileId, pending)
+  }
+  return pending
 }
 
 /**

@@ -1,13 +1,23 @@
 'use client'
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, Loader2, Minus, Plus, Receipt, Trash2 } from 'lucide-react'
+import { Bell, Minus, Plus, Receipt, Trash2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { EWaiterConfirmSheet } from '@/components/e-waiter/e-waiter-confirm-sheet'
 import { EWaiterSheetScaffold } from '@/components/e-waiter/e-waiter-sheet-scaffold'
+import { EWaiterOfferPrice } from '@/components/e-waiter/e-waiter-offer-price'
+import {
+  OFFER_REFRESH_CODES,
+  expectedOfferDiscountForLines,
+  lineInclusiveAmounts,
+  offerDisplayName,
+  optionNamesFor,
+} from '@/components/e-waiter/e-waiter-offer-utils'
 import {
   computeUnitPriceFromItem,
   defaultVariantSelection,
@@ -21,10 +31,13 @@ import {
   selectedVariantOptionsFromItem,
 } from '@/lib/menu/resolve-display-calories'
 import { vatInclusiveLineTotal } from '@/lib/e-waiter/vat-inclusive-price'
+import { decimalStringFromNumber } from '@/lib/invoices/invoice-compute-totals'
 import { formatSarAmount } from '@/lib/settings/format-helpers'
 import { cn } from '@/lib/utils'
 
 const POLL_MS = 4000
+/** @type {Array<Record<string, unknown>>} */
+const NO_OFFERS = []
 
 /**
  * @param {unknown} item
@@ -45,6 +58,25 @@ function bilingualName(row, locale) {
 }
 
 /**
+ * VAT-inclusive amounts of a round line, before and after the offer discount
+ * locked when the round was placed.
+ *
+ * @param {Record<string, unknown>} line
+ */
+function roundLineAmounts(line) {
+  return lineInclusiveAmounts({
+    quantity: Number(line.quantity) || 0,
+    unitPrice: computeUnitPriceFromItem(
+      line,
+      /** @type {string[]} */ (line.variantOptionIds ?? []),
+      /** @type {string[]} */ (line.customizationIds ?? []),
+    ),
+    vatPreset: String(line.vatPreset ?? 'standard'),
+    discount: line.offerId ? String(line.offerDiscount ?? '0') : '0',
+  })
+}
+
+/**
  * @param {Record<string, unknown>} round
  * @returns {string}
  */
@@ -54,20 +86,45 @@ function roundInclusiveTotal(round) {
   )
   let sum = 0
   for (const line of lines) {
-    const unit = computeUnitPriceFromItem(
-      line,
-      line.variantOptionIds ?? [],
-      line.customizationIds ?? [],
-    )
-    sum += Number(
-      vatInclusiveLineTotal({
-        quantity: Number(line.quantity) || 0,
-        unitPrice: unit,
-        vatPreset: String(line.vatPreset ?? 'standard'),
-      }),
-    )
+    sum += roundLineAmounts(line).netIncl
   }
-  return sum.toFixed(2)
+  return decimalStringFromNumber(sum)
+}
+
+/**
+ * Round lines in display order: normal lines, and deal components grouped
+ * by `offerGroupKey` (one block per deal box set).
+ *
+ * @param {Array<Record<string, unknown>>} lines
+ * @returns {Array<{ type: 'line', line: Record<string, unknown> } | { type: 'deal', key: string, offerId: string, lines: Array<Record<string, unknown>> }>}
+ */
+function groupRoundLines(lines) {
+  /** @type {Array<any>} */
+  const entries = []
+  /** @type {Map<string, any>} */
+  const deals = new Map()
+  for (const line of lines) {
+    const key = line.offerGroupKey ? String(line.offerGroupKey) : ''
+    if (!key) {
+      entries.push({ type: 'line', line })
+      continue
+    }
+    let deal = deals.get(key)
+    if (!deal) {
+      deal = { type: 'deal', key, offerId: String(line.offerId ?? ''), lines: [] }
+      deals.set(key, deal)
+      entries.push(deal)
+    }
+    deal.lines.push(line)
+  }
+  return entries
+}
+
+/**
+ * @param {Record<string, unknown>} line
+ */
+function isDealLine(line) {
+  return Boolean(line.offerGroupKey)
 }
 
 /**
@@ -90,6 +147,8 @@ function roundInclusiveTotal(round) {
  *   onAskForBill?: () => void
  *   onCallWaiter?: () => void
  *   parentActionMessage?: string
+ *   offers?: Array<Record<string, unknown>>
+ *   redeemBlockedNote?: string
  * }} props
  */
 export function EWaiterRoundView({
@@ -108,8 +167,12 @@ export function EWaiterRoundView({
   onAskForBill,
   onCallWaiter,
   parentActionMessage = '',
+  offers = NO_OFFERS,
+  redeemBlockedNote = '',
 }) {
   const t = useTranslations('EWaiter')
+  const tErr = useTranslations('AuthErrors')
+  const router = useRouter()
   const queryClient = useQueryClient()
   const [actionError, setActionError] = useState('')
   const [actionPending, setActionPending] = useState(false)
@@ -185,6 +248,12 @@ export function EWaiterRoundView({
    * @param {Array<Record<string, unknown>>} nextLines
    */
   async function patchLines(kitchenOrderId, nextLines) {
+    // Deal lines are kept by the server — never resend them.
+    const normalLines = nextLines.filter((line) => !isDealLine(line))
+    const expectedOfferDiscount = expectedOfferDiscountForLines(
+      normalLines,
+      offers,
+    )
     setActionPending(true)
     setActionError('')
     try {
@@ -195,13 +264,14 @@ export function EWaiterRoundView({
           credentials: 'omit',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            lines: nextLines.map((line) => ({
+            lines: normalLines.map((line) => ({
               menuItemId: line.menuItemId,
               quantity: Number(line.quantity) || 1,
               variantOptionIds: line.variantOptionIds ?? line.optionIds ?? [],
               customizationIds: line.customizationIds ?? [],
               lineNote: line.lineNote ?? null,
             })),
+            ...(expectedOfferDiscount ? { expectedOfferDiscount } : {}),
           }),
         },
       )
@@ -212,6 +282,12 @@ export function EWaiterRoundView({
           setActionError(t('roundLocked'))
         } else if (code === 'INVALID_MENU_ITEM') {
           setActionError(t('orderInvalidItems'))
+        } else if (OFFER_REFRESH_CODES.has(code)) {
+          // Offers changed since the menu loaded → fresh offers, then retry.
+          setActionError(tErr(code))
+          router.refresh()
+        } else if (code.startsWith('OFFER')) {
+          setActionError(tErr(code))
         } else {
           setActionError(t('roundEditFailed'))
         }
@@ -387,17 +463,20 @@ export function EWaiterRoundView({
                     </div>
 
                     <ul className="flex flex-col gap-hisabi-md">
-                      {lines.map((line) => {
-                        const unit = computeUnitPriceFromItem(
-                          line,
-                          line.variantOptionIds ?? [],
-                          line.customizationIds ?? [],
-                        )
-                        const lineInc = vatInclusiveLineTotal({
-                          quantity: Number(line.quantity) || 0,
-                          unitPrice: unit,
-                          vatPreset: String(line.vatPreset ?? 'standard'),
-                        })
+                      {groupRoundLines(lines).map((entry) => {
+                        if (entry.type === 'deal') {
+                          return (
+                            <RoundDealBlock
+                              key={entry.key}
+                              entry={entry}
+                              offers={offers}
+                              locale={locale}
+                              editable={editable}
+                            />
+                          )
+                        }
+                        const line = entry.line
+                        const amounts = roundLineAmounts(line)
                         return (
                           <li
                             key={String(line.id)}
@@ -412,9 +491,13 @@ export function EWaiterRoundView({
                                   {t('calories', { count: line.calories })}
                                 </p>
                               ) : null}
-                              <p className="type-label-md e-waiter-primary-text font-bold">
-                                {formatSarAmount(lineInc, locale)}
-                              </p>
+                              <EWaiterOfferPrice
+                                original={amounts.grossIncl}
+                                discounted={
+                                  line.offerId ? amounts.netIncl : null
+                                }
+                                locale={locale}
+                              />
                               {editable ? (
                                 <div className="flex flex-wrap gap-hisabi-sm pt-hisabi-xs">
                                   <button
@@ -549,10 +632,7 @@ export function EWaiterRoundView({
                     )}
                   >
                     {askBillPending ? (
-                      <Loader2
-                        className="size-4 shrink-0 animate-spin"
-                        aria-hidden
-                      />
+                      <HisabiSpinner size="inline" />
                     ) : (
                       <Receipt className="size-4 shrink-0" aria-hidden />
                     )}
@@ -567,6 +647,11 @@ export function EWaiterRoundView({
               {billRequested ? (
                 <p className="type-body-sm e-waiter-text-muted text-center">
                   {t('billRequestedHint')}
+                </p>
+              ) : null}
+              {redeemBlockedNote ? (
+                <p className="type-body-sm e-waiter-text-muted text-center">
+                  {redeemBlockedNote}
                 </p>
               ) : null}
               {parentActionMessage && !billRequested ? (
@@ -680,6 +765,74 @@ export function EWaiterRoundView({
         />
       ) : null}
     </div>
+  )
+}
+
+/**
+ * One deal in a round: read-only (cancel the round to drop it), shows the
+ * VAT-inclusive price locked when the round was placed.
+ *
+ * @param {{
+ *   entry: { key: string, offerId: string, lines: Array<Record<string, unknown>> }
+ *   offers: Array<Record<string, unknown>>
+ *   locale: 'ar' | 'en'
+ *   editable: boolean
+ * }} props
+ */
+function RoundDealBlock({ entry, offers, locale, editable }) {
+  const t = useTranslations('EWaiter')
+  const first = entry.lines[0]
+  const offer =
+    offers.find((o) => String(o.id) === entry.offerId) ??
+    (first?.offerNameAr || first?.offerNameEn
+      ? { nameAr: first.offerNameAr, nameEn: first.offerNameEn }
+      : null)
+  let gross = 0
+  let net = 0
+  for (const line of entry.lines) {
+    const amounts = roundLineAmounts(line)
+    gross += amounts.grossIncl
+    net += amounts.netIncl
+  }
+  return (
+    <li className="space-y-hisabi-xs rounded-xl border e-waiter-border p-hisabi-md">
+      <p className="type-label-md flex flex-wrap items-center gap-hisabi-xs font-semibold">
+        <span className="type-label-sm e-waiter-btn-accent inline-flex rounded-full px-hisabi-sm font-semibold">
+          {t('offers.dealBadge')}
+        </span>
+        <span className="min-w-0">
+          {offer ? offerDisplayName(offer, locale) : t('offers.dealGeneric')}
+        </span>
+      </p>
+      <ul className="type-body-sm e-waiter-text-muted space-y-0.5">
+        {entry.lines.map((line) => {
+          const opts = optionNamesFor(
+            line,
+            /** @type {string[]} */ (line.variantOptionIds ?? []),
+            locale,
+          )
+          return (
+            <li key={String(line.id)}>
+              {t('offers.componentQty', {
+                qty: Number(line.quantity) || 1,
+                name: itemName(line, locale),
+              })}
+              {opts.length > 0 ? ` · ${opts.join(' · ')}` : ''}
+            </li>
+          )
+        })}
+      </ul>
+      <EWaiterOfferPrice
+        original={decimalStringFromNumber(gross)}
+        discounted={decimalStringFromNumber(net)}
+        locale={locale}
+      />
+      {editable ? (
+        <p className="type-body-sm e-waiter-text-muted">
+          {t('offers.dealLocked')}
+        </p>
+      ) : null}
+    </li>
   )
 }
 

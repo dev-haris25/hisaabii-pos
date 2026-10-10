@@ -1,11 +1,12 @@
 'use client'
 
+import { AppLoader } from '@/components/app-loader'
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { formatSarAmount } from '@/lib/settings/format-helpers'
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Download,
-  Loader2,
   Eye,
   Pencil,
   Plus,
@@ -417,7 +418,7 @@ function SalarySlipsListWithCompanyProfile() {
               {busy && rows.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-hisabi-lg py-16 text-center">
-                    <Loader2 className="mx-auto size-8 animate-spin text-hisabi-primary" aria-hidden />
+                    <AppLoader size="lg" />
                   </td>
                 </tr>
               ) : pageRows.length === 0 ? (
@@ -493,7 +494,7 @@ function SalarySlipsListWithCompanyProfile() {
                           className="hover:text-hisabi-secondary disabled:opacity-50"
                         >
                           {downloadPendingId === row.id ? (
-                            <Loader2 className="size-5 animate-spin" aria-hidden />
+                            <HisabiSpinner size="sm" />
                           ) : (
                             <Download className="size-5" aria-hidden />
                           )}

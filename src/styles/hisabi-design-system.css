@@ -108,6 +108,15 @@
   --size-hisabi-icon-sm: calc(1rem * var(--hisabi-ui-scale));
   --size-hisabi-icon-md: calc(1.25rem * var(--hisabi-ui-scale));
   --size-hisabi-icon-lg: calc(1.5rem * var(--hisabi-ui-scale));
+  /* 32px at scale 1 — list / section loaders (matches svg.size-8) */
+  --size-hisabi-icon-xl: clamp(1.1rem, calc(2rem * var(--hisabi-ui-scale)), 2rem);
+
+  /* Shared Tooltip (rules §13) */
+  --size-hisabi-tooltip-gap: clamp(0.25rem, calc(0.375rem * var(--hisabi-ui-scale)), 0.375rem);
+  --size-hisabi-tooltip-px: clamp(0.4rem, calc(0.625rem * var(--hisabi-ui-scale)), 0.625rem);
+  --size-hisabi-tooltip-py: clamp(0.2rem, calc(0.3125rem * var(--hisabi-ui-scale)), 0.3125rem);
+  --size-hisabi-tooltip-radius: clamp(0.25rem, calc(0.375rem * var(--hisabi-ui-scale)), 0.375rem);
+  --size-hisabi-tooltip-max-w: clamp(10rem, 40vw, 18rem);
 
   /* Primary button chrome: 52px / 16px padding at scale 1 */
   --size-hisabi-btn-min-h: calc(52px * var(--hisabi-ui-scale));
@@ -444,6 +453,50 @@ body[data-locale='en'] {
     height: var(--size-hisabi-icon-lg);
   }
 
+  .size-hisabi-icon-xl {
+    width: var(--size-hisabi-icon-xl);
+    height: var(--size-hisabi-icon-xl);
+  }
+
+  /* Shared Tooltip (src/components/shared/tooltip.jsx). Position comes from
+   * --hisabi-tooltip-x / --hisabi-tooltip-y set on the element from a ref. */
+  .hisabi-tooltip-trigger {
+    display: inline-flex;
+  }
+
+  .hisabi-tooltip {
+    position: fixed;
+    z-index: 300;
+    top: var(--hisabi-tooltip-y, -9999px);
+    left: var(--hisabi-tooltip-x, -9999px);
+    transform: translate(-50%, calc(-100% - var(--size-hisabi-tooltip-gap)));
+    width: max-content;
+    max-width: var(--size-hisabi-tooltip-max-w);
+    padding: var(--size-hisabi-tooltip-py) var(--size-hisabi-tooltip-px);
+    border-radius: var(--size-hisabi-tooltip-radius);
+    background: var(--hisabi-inverse-surface);
+    color: var(--hisabi-inverse-on-surface);
+    box-shadow: var(--hisabi-shadow-2);
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--type-label-sm);
+    font-weight: 500;
+    line-height: 1.3;
+    text-align: center;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+    animation: hisabi-tooltip-in 120ms ease-out both;
+  }
+
+  .hisabi-tooltip[data-side='bottom'] {
+    transform: translate(-50%, var(--size-hisabi-tooltip-gap));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hisabi-tooltip {
+      animation: none;
+    }
+  }
+
   .min-h-\[52px\] {
     min-height: var(--size-hisabi-btn-min-h);
   }
@@ -553,7 +606,7 @@ body[data-locale='en'] {
   }
 
   .hisabi-global-search-panel {
-    /* Position/size set inline when portaled (header overflow-hidden). */
+    /* Portaled (header overflow-hidden); position via .hisabi-floating-panel vars. */
     z-index: 250;
     min-width: min(18rem, calc(100vw - clamp(1rem, 4vw, 2rem)));
     max-height: var(--hisabi-global-search-panel-max-height);
@@ -588,6 +641,204 @@ body[data-locale='en'] {
   .hisabi-global-search-row:focus-visible {
     background: var(--hisabi-surface-container-low);
   }
+
+  /*
+   * Portaled floating panels (global search, country / entity pickers). Geometry is
+   * measured at runtime and handed over as CSS custom properties set from a ref.
+   */
+  .hisabi-floating-panel {
+    position: fixed;
+    top: var(--hisabi-floating-top, 0px);
+    left: var(--hisabi-floating-left, 0px);
+    width: var(--hisabi-floating-width, auto);
+    max-height: var(--hisabi-floating-max-h, none);
+  }
+
+  .hisabi-global-search-panel.hisabi-floating-panel {
+    max-width: calc(100vw - clamp(0.75rem, 2vw, 1rem));
+    max-height: var(--hisabi-global-search-panel-max-height);
+  }
+
+  .hisabi-floating-list {
+    max-height: var(--hisabi-floating-list-max-h, none);
+  }
+
+  /* POS cart panel — sticky offset measured at runtime (lg+ only). */
+  .hisabi-pos-cart-sticky {
+    top: var(--hisabi-pos-cart-stick-top, auto);
+  }
+
+  /* Dashboard category-mix legend swatches (matches CHART.mix order). */
+  .hisabi-chart-swatch[data-mix='0'] {
+    background-color: var(--hisabi-primary);
+  }
+  .hisabi-chart-swatch[data-mix='1'] {
+    background-color: var(--hisabi-primary-fixed-dim);
+  }
+  .hisabi-chart-swatch[data-mix='2'] {
+    background-color: var(--hisabi-gold);
+  }
+  .hisabi-chart-swatch[data-mix='3'] {
+    background-color: var(--hisabi-primary-container);
+  }
+  .hisabi-chart-swatch[data-mix='4'] {
+    background-color: var(--hisabi-secondary);
+  }
+  .hisabi-chart-swatch[data-mix='5'] {
+    background-color: var(--hisabi-primary-fixed);
+  }
+  .hisabi-chart-swatch[data-mix='6'] {
+    background-color: var(--hisabi-secondary-fixed-dim);
+  }
+
+  /* Emoji flag fallback — system emoji fonts so flags render on Windows. */
+  .hisabi-emoji-font {
+    font-family:
+      system-ui,
+      'Segoe UI Emoji',
+      'Apple Color Emoji',
+      'Noto Color Emoji',
+      sans-serif;
+  }
+
+
+  /*
+   * Off-screen thermal receipt capture (src/lib/print/mount-thermal-receipt-pages.js).
+   * Fixed px on purpose: this is print geometry for an 80mm roll (html2canvas / print
+   * bridge serialisation), not on-screen UI, so it must not scale with the viewport.
+   */
+
+  /* ---- Offers & Deals ---- */
+  /* offers: admin */
+  /* Offers & Deals admin form — image pickers + weekday chips */
+    .offer-image-drop {
+      min-height: clamp(7rem, 16vw, 9rem);
+    }
+
+    /* Banner preview mirrors the recommended 3:1 menu banner. */
+    .offer-banner-preview {
+      width: 100%;
+      aspect-ratio: 3 / 1;
+      max-height: clamp(6rem, 22vw, 12rem);
+      object-fit: contain;
+    }
+
+    .offer-product-preview {
+      width: 100%;
+      max-height: clamp(6rem, 18vw, 9rem);
+      object-fit: contain;
+    }
+
+    .offer-weekday-chip {
+      min-width: clamp(3rem, 9vw, 4rem);
+      min-height: clamp(2.25rem, 6vw, 2.75rem);
+      padding-inline: clamp(0.6rem, 1.6vw, 0.9rem);
+    }
+
+  /* offers: pos */
+  /* POS — Offers & Deals: small badge on product cards / cart lines. */
+    .hisabi-pos-offer-badge {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: clamp(0.1rem, 0.3vw, 0.15rem) clamp(0.35rem, 0.9vw, 0.5rem);
+      border-radius: clamp(0.375rem, 0.9vw, 0.5rem);
+      background-color: var(--color-hisabi-error);
+      color: var(--hisabi-on-error);
+      font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+      font-size: var(--type-label-sm);
+      font-weight: 700;
+      line-height: 1.3;
+      white-space: nowrap;
+      box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+    }
+
+    /* POS — original price shown struck through next to the offer price. */
+    .hisabi-pos-price-was {
+      color: var(--color-hisabi-on-surface-variant);
+      font-weight: 500;
+      text-decoration-line: line-through;
+      text-decoration-thickness: clamp(1px, 0.12vw, 1.5px);
+      opacity: 0.8;
+    }
+
+    /* POS — component items listed under a deal in the cart. */
+    .hisabi-pos-deal-components {
+      border-inline-start: clamp(0.125rem, 0.3vw, 0.1875rem) solid var(--color-hisabi-outline-variant);
+      padding-inline-start: clamp(0.4rem, 1vw, 0.6rem);
+    }
+
+  /* offers: ewaiter */
+  /* E-Waiter (QR menu) — Offers & Deals banner slider. White-label: only
+       --e-waiter-* colours. Wide 3:1 banners (≈1200 × 400) fill the top of the
+       menu; other sizes are centre-cropped. */
+    .e-waiter-banner-track {
+      display: flex;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scroll-snap-type: x mandatory;
+      scroll-behavior: smooth;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .e-waiter-banner-track::-webkit-scrollbar {
+      display: none;
+    }
+
+    .e-waiter-banner-slide {
+      flex: 0 0 100%;
+      width: 100%;
+      aspect-ratio: 3 / 1;
+      min-height: clamp(6.5rem, 30vw, 14rem);
+      max-height: clamp(8rem, 34vw, 20rem);
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+      background-color: var(--e-waiter-chip-bg);
+    }
+
+    .e-waiter-banner-slide:focus-visible {
+      outline: clamp(2px, 0.25vw, 3px) solid var(--e-waiter-primary);
+      outline-offset: calc(-1 * clamp(2px, 0.25vw, 3px));
+    }
+
+    .e-waiter-banner-img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+    }
+
+    /* Dot buttons: big enough to tap, small visual dot inside. */
+    .e-waiter-banner-dot-hit {
+      min-width: clamp(1.5rem, 6vw, 2rem);
+      min-height: clamp(1.5rem, 6vw, 2rem);
+    }
+
+    .e-waiter-banner-dot {
+      display: block;
+      width: clamp(0.4rem, 1.6vw, 0.5rem);
+      height: clamp(0.4rem, 1.6vw, 0.5rem);
+      border-radius: 9999px;
+      background-color: var(--e-waiter-border);
+      transition: width 200ms ease, background-color 200ms ease;
+    }
+
+    .e-waiter-banner-dot-active {
+      width: clamp(1rem, 4vw, 1.25rem);
+      background-color: var(--e-waiter-primary);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .e-waiter-banner-track {
+        scroll-behavior: auto;
+      }
+
+      .e-waiter-banner-dot {
+        transition: none;
+      }
+    }
 }
 
 /* Moyasar Payment Form — give wallet buttons room to paint */
@@ -825,5 +1076,14 @@ body[data-locale='en'] {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes hisabi-tooltip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }

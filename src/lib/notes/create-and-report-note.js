@@ -10,9 +10,9 @@ import { emitZatcaReportFailed } from '@/lib/notifications/emit-zatca-report-fai
 import { notifyPosAudience } from '@/lib/notifications/notify-owner-and-actor'
 import { reconcileLoyaltyPointsForInvoice } from '@/lib/loyalty/reconcile-loyalty-points-for-invoice'
 import { cancelKitchenOrderForInvoice } from '@/lib/orders/sync-kitchen-order'
+import { releaseOfferUsages } from '@/lib/offers/offer-usage'
 import { prisma } from '@/lib/prisma'
-import { humanizeZatcaError } from '@/lib/zatca/humanize-zatca-error'
-import { runNoteZatcaSend } from '@/lib/zatca/run-note-zatca-send'
+import { reportDocumentToZatca } from '@/lib/zatca/zatca-document-chain'
 
 /**
  * Seller snapshot fields copied from a profile or invoice onto a note.
@@ -111,8 +111,6 @@ export function resolveOriginalInvoiceUuid(xmlPayload) {
  *   invoice: import('@/generated/prisma/client').Invoice & {
  *     lines: import('@/generated/prisma/client').InvoiceLine[]
  *   }
- *   profile: import('@/generated/prisma/client').BusinessProfile
- *   device: import('@/generated/prisma/client').ZatcaDevice
  *   reasonAr: string
  *   reasonEn?: string | null
  *   noteLines: Array<{
@@ -131,8 +129,6 @@ export async function createAndReportNote(opts) {
     profileId,
     staffId,
     invoice,
-    profile,
-    device,
     reasonAr,
     reasonEn,
     noteLines,
@@ -252,68 +248,12 @@ export async function createAndReportNote(opts) {
   })
 
   try {
-    await runNoteZatcaSend({
-      note,
-      device,
-      documentNature,
-      selectedEnvironment: profile.zatcaEnvironment,
+    await reportDocumentToZatca({
+      kind: documentNature,
+      id: note.id,
+      businessProfileId: profileId,
     })
-    if (documentNature === 'credit') {
-      await prisma.creditNote.update({
-        where: { id: note.id },
-        data: {
-          zatcaReportAttempts: { increment: 1 },
-          zatcaLastAttemptAt: new Date(),
-          zatcaLastError: null,
-        },
-      })
-    } else {
-      await prisma.debitNote.update({
-        where: { id: note.id },
-        data: {
-          zatcaReportAttempts: { increment: 1 },
-          zatcaLastAttemptAt: new Date(),
-          zatcaLastError: null,
-        },
-      })
-    }
-    if (markInvoiceVoided) {
-      await prisma.invoice.update({
-        where: { id: invoice.id },
-        data: { status: 'voided' },
-      })
-      await cancelKitchenOrderForInvoice(prisma, invoice.id)
-      void notifyPosAudience({
-        businessProfileId: profileId,
-        audience: 'salesOps',
-        type: 'invoice_voided',
-        kind: 'salesOps',
-        vars: { detail: `Invoice ${invoice.invoiceNumber} was voided` },
-        link: `/invoices/${invoice.id}`,
-        dedupeKey: `invoice-voided:${invoice.id}`,
-        actorUserId: staffId,
-      })
-    }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    const humanized = humanizeZatcaError(msg)
-    const first = humanized.issues?.[0]
-    const summary = first?.message
-      ? [first.title, first.message, first.actionHint]
-          .filter(Boolean)
-          .join(' — ')
-      : msg
-    const failData = {
-      zatcaStatus: /** @type {const} */ ('failed'),
-      zatcaReportAttempts: { increment: 1 },
-      zatcaLastAttemptAt: new Date(),
-      zatcaLastError: summary.slice(0, 1000),
-    }
-    if (documentNature === 'credit') {
-      await prisma.creditNote.update({ where: { id: note.id }, data: failData })
-    } else {
-      await prisma.debitNote.update({ where: { id: note.id }, data: failData })
-    }
     void emitZatcaReportFailed({
       businessProfileId: profileId,
       actorUserId: staffId,
@@ -322,10 +262,29 @@ export async function createAndReportNote(opts) {
       documentNumber: noteNumber,
     })
     // Cancel still voids only after successful report — leave invoice completed on failure.
-    throw Object.assign(new Error(msg), {
-      code: 'ZATCA_ERROR',
-      noteId: note.id,
-      documentNature,
+    throw Object.assign(
+      new Error(err instanceof Error ? err.message : String(err)),
+      { code: 'ZATCA_ERROR', noteId: note.id, documentNature },
+    )
+  }
+
+  if (markInvoiceVoided) {
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { status: 'voided' },
+    })
+    // Offers & Deals: a voided sale gives its offer uses back.
+    await releaseOfferUsages(prisma, { invoiceId: invoice.id })
+    await cancelKitchenOrderForInvoice(prisma, invoice.id)
+    void notifyPosAudience({
+      businessProfileId: profileId,
+      audience: 'salesOps',
+      type: 'invoice_voided',
+      kind: 'salesOps',
+      vars: { detail: `Invoice ${invoice.invoiceNumber} was voided` },
+      link: `/invoices/${invoice.id}`,
+      dedupeKey: `invoice-voided:${invoice.id}`,
+      actorUserId: staffId,
     })
   }
 

@@ -3,11 +3,11 @@
 import { useQuery } from '@tanstack/react-query'
 import {
   Eye,
-  Loader2,
-} from 'lucide-react'
+  } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { AppLoader } from '@/components/app-loader'
 import { NoCompanyProfileBanner } from '@/components/clients/no-company-profile-banner'
 import { ListTablePagination } from '@/components/list-views/list-table-pagination'
 import { ListTableToolbar } from '@/components/list-views/list-table-toolbar'
@@ -172,7 +172,7 @@ function VisaStatusListWithCompanyProfile() {
               {busy && rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-hisabi-lg py-16 text-center">
-                    <Loader2 className="mx-auto size-8 animate-spin text-hisabi-primary" aria-hidden />
+                    <AppLoader size="lg" />
                   </td>
                 </tr>
               ) : pageRows.length === 0 ? (

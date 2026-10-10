@@ -147,27 +147,15 @@ function zeroLineDiscounts(lines) {
 }
 
 /**
- * @param {CartDiscountLine[]} lines
- * @param {CouponItemRuleInput} rule
- */
-function totalQtyForRule(lines, rule) {
-  let qty = 0
-  for (const line of lines) {
-    if (line.menuItemId !== rule.menuItemId) continue
-    if (!lineMatchesRuleVariants(line, rule)) continue
-    qty += Math.max(0, Math.round(Number(line.quantity)) || 0)
-  }
-  return qty
-}
-
-/**
- * Indices of cart lines matching rule (menuItemId + variants), cheapest first.
+ * Indices of cart lines matching rule (menuItemId + variants), cheapest first
+ * (or most expensive first when `order` is `'desc'`).
  *
  * @param {CartDiscountLine[]} lines
  * @param {CouponItemRuleInput} rule
+ * @param {'asc' | 'desc'} [order]
  * @returns {number[]}
  */
-function cheapestFirstIndices(lines, rule) {
+function cheapestFirstIndices(lines, rule, order = 'asc') {
   /** @type {number[]} */
   const idxs = []
   for (let i = 0; i < lines.length; i++) {
@@ -179,35 +167,49 @@ function cheapestFirstIndices(lines, rule) {
   idxs.sort((a, b) => {
     const pa = parseMoney(lines[a].unitPrice)
     const pb = parseMoney(lines[b].unitPrice)
-    if (pa !== pb) return pa - pb
+    if (pa !== pb) return order === 'desc' ? pb - pa : pa - pb
     return a - b
   })
   return idxs
 }
 
 /**
- * Consume up to `needQty` units from matching lines (cheapest-first).
+ * Consume up to `needQty` units from matching lines (cheapest-first by default).
+ * With `pool` (units still free per line index), consumed units are removed
+ * from it so the same physical unit can never satisfy two rules.
  *
  * @param {CartDiscountLine[]} lines
  * @param {CouponItemRuleInput} rule
  * @param {number} needQty
+ * @param {{ pool?: number[], order?: 'asc' | 'desc' }} [opts]
  * @returns {Map<number, number>}
  */
-function consumeCheapestUnits(lines, rule, needQty) {
+function consumeCheapestUnits(lines, rule, needQty, opts = {}) {
   /** @type {Map<number, number>} */
   const taken = new Map()
   let remaining = Math.max(0, Math.round(Number(needQty)) || 0)
   if (remaining <= 0) return taken
 
-  for (const i of cheapestFirstIndices(lines, rule)) {
+  for (const i of cheapestFirstIndices(lines, rule, opts.order)) {
     if (remaining <= 0) break
-    const avail = Math.max(0, Math.round(Number(lines[i].quantity)) || 0)
+    const avail = opts.pool
+      ? opts.pool[i]
+      : Math.max(0, Math.round(Number(lines[i].quantity)) || 0)
     if (avail <= 0) continue
     const use = Math.min(avail, remaining)
     taken.set(i, (taken.get(i) ?? 0) + use)
+    if (opts.pool) opts.pool[i] -= use
     remaining -= use
   }
   return taken
+}
+
+/**
+ * @param {CartDiscountLine[]} lines
+ * @returns {number[]}
+ */
+function unitPool(lines) {
+  return lines.map((l) => Math.max(0, Math.round(Number(l.quantity)) || 0))
 }
 
 /**
@@ -271,6 +273,11 @@ function applyBogoDiscount(lines, itemRules) {
     }
   }
 
+  // BUY units are reserved first (most expensive first) so a GET rule for the
+  // same item can never make the qualifying unit itself free — "buy 1 Pepsi,
+  // get 1 Pepsi" needs two Pepsis, and the cheaper one is the free one.
+  const pool = unitPool(lines)
+
   // BUY-side only gates acceptance. GET rules never reject the coupon.
   for (const buy of buyRules) {
     const need = Math.max(0, Math.round(Number(buy.quantity)) || 0)
@@ -282,7 +289,12 @@ function applyBogoDiscount(lines, itemRules) {
         lineDiscounts: zeros,
       }
     }
-    if (totalQtyForRule(lines, buy) < need) {
+    const reserved = consumeCheapestUnits(lines, buy, need, {
+      pool,
+      order: 'desc',
+    })
+    const reservedQty = [...reserved.values()].reduce((a, b) => a + b, 0)
+    if (reservedQty < need) {
       return {
         eligible: false,
         reason: 'bogo_requirements_not_met',
@@ -314,10 +326,16 @@ function applyBogoDiscount(lines, itemRules) {
       }
     }
     const p = Math.min(100, Math.max(0, parseMoney(get.discountPercent)))
-    const taken = consumeCheapestUnits(lines, get, getQty)
+    // Each GET rule is its own reward (several GET rules → several free items);
+    // within one rule, any matching variant qualifies and the cheapest units win.
+    const snapshot = [...pool]
+    const taken = consumeCheapestUnits(lines, get, getQty, { pool })
     const takenQty = [...taken.values()].reduce((a, b) => a + b, 0)
     // Missing / insufficient GET qty → this rule contributes 0; keep evaluating others.
-    if (takenQty < getQty) continue
+    if (takenQty < getQty) {
+      pool.splice(0, pool.length, ...snapshot)
+      continue
+    }
     for (const [lineIndex, units] of taken) {
       const unit = parseMoney(lines[lineIndex].unitPrice)
       amounts[lineIndex] += units * unit * (p / 100)
@@ -364,6 +382,11 @@ function applyComboDiscount(lines, coupon, itemRules) {
   }
   const comboPrice = Math.max(0, parseMoney(rawPrice))
 
+  // Shared pool: a unit matched by one combo rule cannot also satisfy another.
+  const pool = unitPool(lines)
+  /** @type {Map<number, number>} */
+  const matchedQtyByLine = new Map()
+
   for (const rule of comboRules) {
     const need = Math.max(0, Math.round(Number(rule.quantity)) || 0)
     if (need < 1) {
@@ -374,7 +397,9 @@ function applyComboDiscount(lines, coupon, itemRules) {
         lineDiscounts: zeros,
       }
     }
-    if (totalQtyForRule(lines, rule) < need) {
+    const taken = consumeCheapestUnits(lines, rule, need, { pool })
+    const takenQty = [...taken.values()].reduce((x, y) => x + y, 0)
+    if (takenQty < need) {
       return {
         eligible: false,
         reason: 'combo_requirements_not_met',
@@ -382,14 +407,6 @@ function applyComboDiscount(lines, coupon, itemRules) {
         lineDiscounts: zeros,
       }
     }
-  }
-
-  /** @type {Map<number, number>} */
-  const matchedQtyByLine = new Map()
-
-  for (const rule of comboRules) {
-    const need = Math.max(0, Math.round(Number(rule.quantity)) || 0)
-    const taken = consumeCheapestUnits(lines, rule, need)
     for (const [lineIndex, units] of taken) {
       matchedQtyByLine.set(
         lineIndex,

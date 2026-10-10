@@ -1,8 +1,9 @@
 'use client'
 
-import { Download, Loader2 } from 'lucide-react'
+import { Download } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 
+import { AppLoader } from '@/components/app-loader'
 import { NoCompanyProfileBanner } from '@/components/clients/no-company-profile-banner'
 import { cn } from '@/lib/utils'
 import {
@@ -108,7 +109,7 @@ export function ReportPageShell({
         </div>
       ) : loading ? (
         <div className="flex justify-center py-hisabi-xxl">
-          <Loader2 className="size-8 animate-spin text-hisabi-primary" aria-hidden />
+          <AppLoader size="lg" />
         </div>
       ) : (
         children

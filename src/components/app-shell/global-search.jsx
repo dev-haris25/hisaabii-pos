@@ -1,6 +1,6 @@
 'use client'
 
-import { Loader2, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import {
   startTransition,
@@ -13,6 +13,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { useRouter } from '@/i18n/navigation'
 import { globalSearchRequest } from '@/lib/global-search-client'
 import { cn } from '@/lib/utils'
@@ -123,6 +124,15 @@ export function GlobalSearch({
     }
   }, [showPanel, query])
 
+  /** Hand the measured geometry to `.hisabi-floating-panel` via CSS custom properties. */
+  useLayoutEffect(() => {
+    const el = panelRef.current
+    if (!el || !panelBox) return
+    el.style.setProperty('--hisabi-floating-top', `${panelBox.top}px`)
+    el.style.setProperty('--hisabi-floating-left', `${panelBox.left}px`)
+    el.style.setProperty('--hisabi-floating-width', `${panelBox.width}px`)
+  }, [panelBox, mounted, showPanel])
+
   useEffect(() => {
     if (!showPanel) return undefined
 
@@ -199,22 +209,14 @@ export function GlobalSearch({
             id={listboxId}
             role="listbox"
             aria-label={t('searchResultsAria')}
-            className={cn('hisabi-global-search-panel', panelClassName)}
-            style={{
-              position: 'fixed',
-              top: panelBox.top,
-              left: panelBox.left,
-              width: panelBox.width,
-              maxWidth: 'calc(100vw - 1rem)',
-              zIndex: 250,
-            }}
+            className={cn(
+              'hisabi-global-search-panel hisabi-floating-panel',
+              panelClassName,
+            )}
           >
             {showLoading ? (
               <div className="text-hisabi-outline flex items-center justify-center gap-2 p-hisabi-md type-body-sm">
-                <Loader2
-                  className="text-hisabi-teal size-4 animate-spin"
-                  aria-hidden
-                />
+                <HisabiSpinner size="inline" className="text-hisabi-teal" />
                 {t('searchLoading')}
               </div>
             ) : null}

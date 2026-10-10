@@ -46,6 +46,7 @@ import {
   validateBusinessProfileInvoiceFields,
 } from '@/lib/business-profile/validate-business-profile-invoice'
 
+/** Keep in sync with the `duration-300` transition classes on the overlay + panel. */
 const SHEET_TRANSITION_MS = 300
 
 /**
@@ -581,10 +582,9 @@ export function EditRestaurantSheet({
       <button
         type="button"
         className={cn(
-          'absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity ease-out',
+          'absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ease-out',
           animateIn ? 'opacity-100' : 'opacity-0',
         )}
-        style={{ transitionDuration: `${SHEET_TRANSITION_MS}ms` }}
         aria-label={t('editCloseAria')}
         onClick={handleClose}
       />
@@ -594,10 +594,9 @@ export function EditRestaurantSheet({
         aria-modal="true"
         aria-labelledby={titleId}
         className={cn(
-          'border-hisabi-outline-variant/30 relative z-10 flex h-full w-full max-w-[min(var(--width-hisabi-overlay-2xl),calc(100vw-0.5rem))] flex-col overflow-hidden border-s bg-hisabi-surface-container-lowest shadow-2xl transition-transform ease-out',
+          'border-hisabi-outline-variant/30 relative z-10 flex h-full w-full max-w-[min(var(--width-hisabi-overlay-2xl),calc(100vw-0.5rem))] flex-col overflow-hidden border-s bg-hisabi-surface-container-lowest shadow-2xl transition-transform duration-300 ease-out',
           animateIn ? 'translate-x-0' : 'translate-x-full',
         )}
-        style={{ transitionDuration: `${SHEET_TRANSITION_MS}ms` }}
         onTransitionEnd={handleSheetTransitionEnd}
         onMouseDown={(e) => e.stopPropagation()}
       >

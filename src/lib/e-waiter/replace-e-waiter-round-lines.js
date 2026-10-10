@@ -1,5 +1,13 @@
 import { kitchenLinesSnapshot } from '@/lib/orders/kitchen-lines-snapshot'
 import { PRISMA_INTERACTIVE_TRANSACTION_OPTIONS } from '@/lib/db/prisma-interactive-transaction-options'
+import { resolveCheckoutModifiers } from '@/lib/menu/resolve-checkout-modifiers'
+import {
+  eWaiterOfferErrorResult,
+  priceEWaiterRoundInTx,
+  roundLinesWithOffers,
+} from '@/lib/offers/e-waiter-round-offers'
+import { recordOfferUsages, releaseOfferUsages } from '@/lib/offers/offer-usage'
+import { offerDiscountMatches } from '@/lib/offers/resolve-cart-offers'
 import { prisma } from '@/lib/prisma'
 
 /**
@@ -69,6 +77,8 @@ export async function cancelEWaiterRoundInDb(db, kitchenOrderId) {
     where: { kitchenOrderId, cancelled: false },
     data: { cancelled: true },
   })
+  // Offer / deal uses of this round go back into the offer limits.
+  await releaseOfferUsages(db, { kitchenOrderId })
   const cancelled = await db.kitchenOrder.update({
     where: { id: kitchenOrderId },
     data: {
@@ -95,18 +105,25 @@ export async function cancelEWaiterRoundInDb(db, kitchenOrderId) {
 
 /**
  * Replace round lines while status is still pending.
- * Empty `resolvedLines` → auto-cancel the round (no empty kitchen ticket).
+ * Empty `resolvedLines` (and no deal in the round) → auto-cancel the round.
  * Does NOT force status to preparing (unlike invoice-edit refresh).
  *
+ * Offers: normal lines are re-priced now (offer row locks). Combo deal lines
+ * already in the round stay exactly as ordered — a guest removes a deal by
+ * cancelling the round — so their locked price and use stay untouched.
+ *
  * @param {{
+ *   businessProfileId: string
  *   kitchenOrderId: string
  *   tableSessionId: string
+ *   expectedOfferDiscount?: string | null
  *   resolvedLines: Array<{
  *     menuItemId: string
  *     nameAr: string
  *     nameEn: string | null
  *     quantity: number
  *     lineNote: string | null
+ *     unitPrice: string
  *     variantOptionIds: string[]
  *     customizationIds: string[]
  *     modifiersSnapshot: unknown
@@ -114,8 +131,33 @@ export async function cancelEWaiterRoundInDb(db, kitchenOrderId) {
  * }} args
  */
 export async function replaceEWaiterRoundLines({
+  businessProfileId,
   kitchenOrderId,
   tableSessionId,
+  expectedOfferDiscount = null,
+  resolvedLines,
+}) {
+  try {
+    return await replaceEWaiterRoundLinesTx({
+      businessProfileId,
+      kitchenOrderId,
+      tableSessionId,
+      expectedOfferDiscount,
+      resolvedLines,
+    })
+  } catch (err) {
+    const mapped = eWaiterOfferErrorResult(err)
+    if (mapped) return mapped
+    throw err
+  }
+}
+
+/** @param {Parameters<typeof replaceEWaiterRoundLines>[0]} args */
+async function replaceEWaiterRoundLinesTx({
+  businessProfileId,
+  kitchenOrderId,
+  tableSessionId,
+  expectedOfferDiscount,
   resolvedLines,
 }) {
   return prisma.$transaction(async (tx) => {
@@ -135,7 +177,20 @@ export async function replaceEWaiterRoundLines({
       }
     }
 
-    if (resolvedLines.length === 0) {
+    const dealLines = await tx.tableSessionLine.findMany({
+      where: { kitchenOrderId, cancelled: false, offerGroupKey: { not: null } },
+      include: {
+        menuItem: {
+          include: {
+            variantGroups: { include: { options: true } },
+            customizations: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    if (resolvedLines.length === 0 && dealLines.length === 0) {
       const cancelled = await cancelEWaiterRoundInDb(tx, kitchenOrderId)
       return {
         ok: true,
@@ -148,11 +203,35 @@ export async function replaceEWaiterRoundLines({
       }
     }
 
+    // Give back this round's non-deal offer uses, then re-price normal lines.
+    await tx.offerUsage.updateMany({
+      where: {
+        kitchenOrderId,
+        releasedAt: null,
+        offer: { kind: { not: 'COMBO' } },
+      },
+      data: { releasedAt: new Date() },
+    })
+    const priced = await priceEWaiterRoundInTx(tx, {
+      businessProfileId,
+      resolvedLines,
+      deals: [],
+    })
+    if (!offerDiscountMatches(expectedOfferDiscount, priced.pricing.totalDiscount)) {
+      return {
+        ok: false,
+        status: 409,
+        code: 'OFFER_PRICES_CHANGED',
+        message: 'Offer prices changed — please review the updated total',
+      }
+    }
+    const normalLines = roundLinesWithOffers(resolvedLines, priced)
+
     await tx.tableSessionLine.deleteMany({
-      where: { kitchenOrderId },
+      where: { kitchenOrderId, offerGroupKey: null },
     })
     await tx.tableSessionLine.createMany({
-      data: resolvedLines.map((line) => ({
+      data: normalLines.map((line) => ({
         tableSessionId,
         kitchenOrderId,
         menuItemId: line.menuItemId,
@@ -160,7 +239,36 @@ export async function replaceEWaiterRoundLines({
         variantOptionIds: line.variantOptionIds,
         customizationIds: line.customizationIds,
         lineNote: line.lineNote,
+        offerId: line.offerId,
+        offerGroupKey: null,
+        offerDiscount: line.offerDiscount,
       })),
+    })
+    await recordOfferUsages(tx, {
+      businessProfileId,
+      usage: priced.pricing.usage,
+      kitchenOrderId,
+    })
+
+    const dealSnapshotLines = dealLines.map((line) => {
+      let modifiersSnapshot = null
+      try {
+        modifiersSnapshot = resolveCheckoutModifiers(
+          line.menuItem,
+          Array.isArray(line.variantOptionIds) ? line.variantOptionIds.map(String) : [],
+          [],
+        ).modifiersSnapshot
+      } catch {
+        modifiersSnapshot = null
+      }
+      return {
+        menuItemId: line.menuItemId,
+        nameAr: line.menuItem.nameAr,
+        nameEn: line.menuItem.nameEn,
+        quantity: line.quantity,
+        lineNote: null,
+        modifiersSnapshot,
+      }
     })
 
     const updated = await tx.kitchenOrder.update({
@@ -168,7 +276,7 @@ export async function replaceEWaiterRoundLines({
       data: {
         // Stay pending — customer edit must not mimic invoice-edit → preparing.
         status: 'pending',
-        linesSnapshot: kitchenLinesSnapshot(resolvedLines),
+        linesSnapshot: kitchenLinesSnapshot([...normalLines, ...dealSnapshotLines]),
         itemsUpdatedAt: new Date(),
       },
     })

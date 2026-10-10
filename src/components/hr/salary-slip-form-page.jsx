@@ -1,9 +1,10 @@
 'use client'
 
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { formatSarAmount } from '@/lib/settings/format-helpers'
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronLeft, Download, Loader2, Plus, Save, Send, Trash2, Wallet } from 'lucide-react'
+import { ChevronDown, ChevronLeft, Download, Plus, Save, Send, Trash2, Wallet } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useCallback, useId, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -493,7 +494,7 @@ export function SalarySlipFormPage({ mode, salarySlip, salarySlipId, hasBusiness
                 className="type-label-md border-hisabi-outline-variant text-hisabi-on-surface inline-flex min-h-[44px] items-center justify-center gap-hisabi-xs rounded-xl border px-hisabi-md py-2 font-semibold hover:bg-hisabi-surface-container-low disabled:opacity-50"
               >
                 {downloadPdfPending ? (
-                  <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
+                  <HisabiSpinner size="inline" />
                 ) : (
                   <Download className="size-4 shrink-0" aria-hidden />
                 )}

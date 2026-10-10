@@ -1,11 +1,13 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { BarChart3, Download, Loader2 } from 'lucide-react'
+import { BarChart3, Download } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 
+import { AppLoader } from '@/components/app-loader'
+import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { useAppAbility } from '@/components/rbac/ability-provider'
 import {
   SettingsPageShell,
@@ -111,7 +113,7 @@ export function SettingsDataPageClient() {
     <SettingsPageShell title={t('dataTitle')} subtitle={t('dataSubtitle')}>
       <SettingsSection title={t('sectionDataSummary')} icon={BarChart3}>
         {isPending ? (
-          <Loader2 className="size-6 animate-spin text-hisabi-primary" />
+          <AppLoader size="md" />
         ) : (
           <dl className="grid gap-hisabi-sm sm:grid-cols-2 lg:grid-cols-3">
             {COUNT_KEYS.map(([labelKey, countKey]) => (
@@ -155,7 +157,7 @@ export function SettingsDataPageClient() {
                 )}
               >
                 {busy ? (
-                  <Loader2 className="size-5 animate-spin text-hisabi-primary" />
+                  <HisabiSpinner size="sm" className="text-hisabi-primary" />
                 ) : (
                   <Download className="size-5 text-hisabi-primary" />
                 )}
