@@ -293,17 +293,6 @@ export async function createAndReportNote(opts) {
         dedupeKey: `invoice-voided:${invoice.id}`,
         actorUserId: staffId,
       })
-      // Loyalty reverse only after void is finalized (post-ZATCA success).
-      await reconcileLoyaltyPointsForInvoice({
-        invoice: { ...invoice, status: 'voided' },
-        cashierUserId: staffId,
-      })
-    } else {
-      // Partial credit/debit note — recompute earn after successful report.
-      await reconcileLoyaltyPointsForInvoice({
-        invoice,
-        cashierUserId: staffId,
-      })
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -338,6 +327,33 @@ export async function createAndReportNote(opts) {
       noteId: note.id,
       documentNature,
     })
+  }
+
+  // Loyalty is a post-success side-effect. Never remap failures to ZATCA_ERROR —
+  // the note (and void, when applicable) already committed.
+  try {
+    if (markInvoiceVoided) {
+      await reconcileLoyaltyPointsForInvoice({
+        invoice: { ...invoice, status: 'voided' },
+        cashierUserId: staffId,
+      })
+    } else {
+      await reconcileLoyaltyPointsForInvoice({
+        invoice,
+        cashierUserId: staffId,
+      })
+    }
+  } catch (loyaltyErr) {
+    console.error(
+      '[loyalty] reconcile after note/cancel failed (document already finalized):',
+      loyaltyErr instanceof Error ? loyaltyErr.message : loyaltyErr,
+      {
+        invoiceId: invoice.id,
+        noteId: note.id,
+        documentNature,
+        markInvoiceVoided: Boolean(markInvoiceVoided),
+      },
+    )
   }
 
   if (documentNature === 'credit') {

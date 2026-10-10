@@ -64,4 +64,5 @@ export async function ensureRecipes(db, { businessProfileId, stockByKey }) {
   }
 
   log(`Recipes: created=${created} updated=${updated}`)
+  return { created, updated }
 }

@@ -1639,18 +1639,33 @@ export function PosCheckoutView({
                 </div>
 
                 {!loyaltyAccount ? (
-                  <button
-                    type="button"
-                    disabled={cart.length === 0}
-                    onClick={() => {
-                      setLoyaltyPhoneInput('')
-                      setLoyaltyPhoneModalOpen(true)
-                    }}
-                    className="type-label-md inline-flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-hisabi-sm rounded-xl border border-hisabi-outline-variant/60 bg-white px-hisabi-md py-2 font-bold text-hisabi-on-surface transition-colors hover:bg-hisabi-surface-container disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Gift className="size-4 shrink-0 text-hisabi-teal" aria-hidden />
-                    {t('loyaltyRedeemButton')}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      disabled={
+                        cart.length === 0 || couponOrDiscountBlocksLoyalty
+                      }
+                      onClick={() => {
+                        if (couponOrDiscountBlocksLoyalty) return
+                        setLoyaltyPhoneInput('')
+                        setLoyaltyPhoneModalOpen(true)
+                      }}
+                      className="type-label-md inline-flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-hisabi-sm rounded-xl border border-hisabi-outline-variant/60 bg-white px-hisabi-md py-2 font-bold text-hisabi-on-surface transition-colors hover:bg-hisabi-surface-container disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Gift
+                        className="size-4 shrink-0 text-hisabi-teal"
+                        aria-hidden
+                      />
+                      {t('loyaltyRedeemButton')}
+                    </button>
+                    {couponOrDiscountBlocksLoyalty ? (
+                      <p className="type-body-sm text-hisabi-on-surface-variant">
+                        {appliedCoupon
+                          ? t('loyaltyDisabledByCouponHint')
+                          : t('loyaltyDisabledByDiscountHint')}
+                      </p>
+                    ) : null}
+                  </>
                 ) : (
                   <>
                     {loyaltyGateReason ? (

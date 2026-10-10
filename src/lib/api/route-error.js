@@ -12,6 +12,24 @@ export function handleRouteError(err, context) {
   const code =
     err && typeof err === 'object' && 'code' in err ? String(err.code) : ''
 
+  // Coupon-linked variant options use onDelete: Restrict — surface that clearly.
+  if (code === 'P2003') {
+    const metaBlob = JSON.stringify(
+      err && typeof err === 'object' && 'meta' in err ? err.meta : {},
+    )
+    if (
+      /coupon_item_rule_variant_options/i.test(message) ||
+      /coupon_item_rule_variant_options/i.test(metaBlob) ||
+      /RestrictViolation/i.test(metaBlob)
+    ) {
+      return jsonError(
+        409,
+        'VARIANT_OPTION_IN_USE',
+        'This variant option is used by a coupon and cannot be removed or replaced right now',
+      )
+    }
+  }
+
   // Prisma / DB first — bundled error messages can contain unrelated source text.
   if (
     code.startsWith('P') ||

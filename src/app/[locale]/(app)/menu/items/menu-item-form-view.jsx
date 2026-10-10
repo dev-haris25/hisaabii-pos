@@ -475,12 +475,15 @@ export function MenuItemFormView({ mode, itemId }) {
     setVariantGroups(
       (item.variantGroups ?? []).map((group) => ({
         clientId: group.id,
+        /** Persisted DB id — sent on save so the API can update in place. */
+        id: group.id,
         nameAr: group.nameAr ?? '',
         nameEn: group.nameEn ?? '',
         nameArBaseline: group.nameAr ?? '',
         nameEnBaseline: group.nameEn ?? '',
         options: (group.options ?? []).map((option) => ({
           clientId: option.id,
+          id: option.id,
           nameAr: option.nameAr ?? '',
           nameEn: option.nameEn ?? '',
           nameArBaseline: option.nameAr ?? '',
@@ -539,12 +542,14 @@ export function MenuItemFormView({ mode, itemId }) {
         active,
         loyaltyRedeemable,
         variantGroups: variantGroups.map((group) => ({
+          ...(group.id ? { id: group.id } : {}),
           nameAr: group.nameAr.trim(),
           nameEn: group.nameEn.trim() || null,
           options: group.options.map((option) => {
             const calRaw = String(option.calories ?? '').trim()
             const calN = calRaw ? Number.parseInt(calRaw, 10) : NaN
             return {
+              ...(option.id ? { id: option.id } : {}),
               nameAr: option.nameAr.trim(),
               nameEn: option.nameEn.trim() || null,
               priceChange: option.priceChange.trim() || '0',

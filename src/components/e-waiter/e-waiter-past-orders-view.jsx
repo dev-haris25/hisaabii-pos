@@ -5,6 +5,7 @@ import { ArrowLeft, ImageIcon, RotateCcw } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useEffect } from 'react'
 
+import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { formatSarAmount } from '@/lib/settings/format-helpers'
 import { cn } from '@/lib/utils'
 
@@ -117,6 +118,7 @@ export function EWaiterPastOrdersView({
               {t('pastOrdersScreenHint')}
             </p>
           </div>
+          <AuthLocaleToggle />
         </div>
       </header>
 

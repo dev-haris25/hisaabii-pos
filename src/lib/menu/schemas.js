@@ -34,7 +34,11 @@ const optionalCalories = z.preprocess((v) => {
   return Number.isFinite(n) ? n : v
 }, z.number().int().min(0).max(999999).nullable().optional())
 
+const optionalPersistedId = z.string().trim().min(1).max(64).optional()
+
 const variantOptionBodySchema = z.object({
+  /** Existing option id — omit for new options (reconcile update-in-place). */
+  id: optionalPersistedId,
   nameAr: z.string().trim().min(1).max(200),
   nameEn: z.string().trim().max(200).optional().nullable(),
   priceChange: moneyString,
@@ -43,6 +47,8 @@ const variantOptionBodySchema = z.object({
 })
 
 const variantGroupBodySchema = z.object({
+  /** Existing group id — omit for new groups (reconcile update-in-place). */
+  id: optionalPersistedId,
   nameAr: z.string().trim().min(1).max(200),
   nameEn: z.string().trim().max(200).optional().nullable(),
   options: z.array(variantOptionBodySchema).min(1).max(40),

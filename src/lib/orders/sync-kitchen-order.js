@@ -8,13 +8,15 @@ import { kitchenLinesSnapshot } from '@/lib/orders/kitchen-lines-snapshot'
  * @param {Array<{ nameAr?: string | null, nameEn?: string | null, quantity?: number }>} lines
  */
 export async function refreshKitchenOrderAfterEdit(db, invoiceId, lines) {
-  const existing = await db.kitchenOrder.findUnique({
+  // invoiceId is indexed, not unique (E-Waiter can have multiple rounds).
+  const existing = await db.kitchenOrder.findFirst({
     where: { invoiceId },
     select: { id: true },
+    orderBy: { createdAt: 'asc' },
   })
   if (!existing) return null
   return db.kitchenOrder.update({
-    where: { invoiceId },
+    where: { id: existing.id },
     data: {
       status: 'preparing',
       linesSnapshot: kitchenLinesSnapshot(lines),
@@ -28,15 +30,17 @@ export async function refreshKitchenOrderAfterEdit(db, invoiceId, lines) {
  * @param {string} invoiceId
  */
 export async function cancelKitchenOrderForInvoice(db, invoiceId) {
-  const existing = await db.kitchenOrder.findUnique({
+  // invoiceId is indexed, not unique — cancel every ticket linked to the invoice.
+  const existing = await db.kitchenOrder.findMany({
     where: { invoiceId },
     select: { id: true },
   })
-  if (!existing) return null
-  return db.kitchenOrder.update({
+  if (existing.length === 0) return null
+  await db.kitchenOrder.updateMany({
     where: { invoiceId },
     data: { status: 'cancelled' },
   })
+  return existing
 }
 
 const ACTIVE_STATUSES = new Set(['pending', 'preparing', 'ready'])

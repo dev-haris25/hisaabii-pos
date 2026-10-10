@@ -1,7 +1,8 @@
 import { AR } from './ar.mjs'
 
 /**
- * Opening warehouse for a small chicken / burger shop (about one week of cover).
+ * Opening warehouse for Demo Restaurant QA (large cover for repeated testing).
+ * Existing stock rows are reused by ensure-stock aliases and not overwritten.
  */
 export const STOCK_ITEMS = [
   {
@@ -9,7 +10,7 @@ export const STOCK_ITEMS = [
     nameAr: AR.chicken,
     nameEn: 'Fresh chicken',
     unit: 'kg',
-    quantityOnHand: '90',
+    quantityOnHand: '50',
     lowStockThreshold: '20',
     unitCost: '18.00',
   },
@@ -18,7 +19,7 @@ export const STOCK_ITEMS = [
     nameAr: AR.beef,
     nameEn: 'Ground beef',
     unit: 'kg',
-    quantityOnHand: '22',
+    quantityOnHand: '30',
     lowStockThreshold: '6',
     unitCost: '32.00',
   },
@@ -27,7 +28,7 @@ export const STOCK_ITEMS = [
     nameAr: AR.flour,
     nameEn: 'Flour',
     unit: 'kg',
-    quantityOnHand: '30',
+    quantityOnHand: '25',
     lowStockThreshold: '8',
     unitCost: '3.50',
   },
@@ -36,7 +37,7 @@ export const STOCK_ITEMS = [
     nameAr: AR.oil,
     nameEn: 'Fryer oil',
     unit: 'l',
-    quantityOnHand: '28',
+    quantityOnHand: '20',
     lowStockThreshold: '8',
     unitCost: '9.00',
     isBulk: true,
@@ -47,7 +48,7 @@ export const STOCK_ITEMS = [
     nameAr: AR.potato,
     nameEn: 'Potato',
     unit: 'kg',
-    quantityOnHand: '45',
+    quantityOnHand: '50',
     lowStockThreshold: '12',
     unitCost: '4.00',
   },
@@ -56,7 +57,7 @@ export const STOCK_ITEMS = [
     nameAr: AR.bun,
     nameEn: 'Burger bun',
     unit: 'piece',
-    quantityOnHand: '160',
+    quantityOnHand: '100',
     lowStockThreshold: '40',
     unitCost: '0.80',
   },
@@ -74,7 +75,7 @@ export const STOCK_ITEMS = [
     nameAr: AR.wrap,
     nameEn: 'Shawarma wrap',
     unit: 'piece',
-    quantityOnHand: '140',
+    quantityOnHand: '100',
     lowStockThreshold: '30',
     unitCost: '0.50',
   },
@@ -92,7 +93,7 @@ export const STOCK_ITEMS = [
     nameAr: AR.ranchStock,
     nameEn: 'Ranch sauce (stock)',
     unit: 'ml',
-    quantityOnHand: '2500',
+    quantityOnHand: '5000',
     lowStockThreshold: '400',
     unitCost: '0.03',
   },
@@ -101,7 +102,7 @@ export const STOCK_ITEMS = [
     nameAr: AR.waterBottle,
     nameEn: 'Bottled water',
     unit: 'piece',
-    quantityOnHand: '96',
+    quantityOnHand: '200',
     lowStockThreshold: '24',
     unitCost: '0.40',
   },
@@ -110,7 +111,7 @@ export const STOCK_ITEMS = [
     nameAr: AR.sodaCan,
     nameEn: 'Soft drink cans',
     unit: 'piece',
-    quantityOnHand: '96',
+    quantityOnHand: '200',
     lowStockThreshold: '24',
     unitCost: '1.20',
   },
@@ -119,7 +120,7 @@ export const STOCK_ITEMS = [
     nameAr: AR.orange,
     nameEn: 'Oranges',
     unit: 'kg',
-    quantityOnHand: '12',
+    quantityOnHand: '30',
     lowStockThreshold: '4',
     unitCost: '7.00',
   },

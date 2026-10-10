@@ -535,6 +535,9 @@ export function EmployeeFormPage({ mode, employee, employeeId, hasBusinessProfil
         toast.success(res?.invitationSent ? t('invitationSentToast') : t('employeeUpdated'))
       }
       await queryClient.invalidateQueries({ queryKey: ['hr-employees'] })
+      // Refresh auth/me so a self-linked HR name edit updates the client store
+      // (kitchen/POS SSR re-reads User.name on next navigation/reload anyway).
+      await queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
       router.push('/hr/employees')
     } catch (err) {
       toastAuthApiError(t, err)

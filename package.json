@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack -p 4517",
+    "email:dev": "email dev",
     "build": "bunx prisma generate && bun run scripts/prisma-migrate-deploy.mjs && bunx next build --webpack",
     "build:app": "prisma generate && bunx next build --webpack",
     "db:migrate": "bun run scripts/prisma-migrate-deploy.mjs",
@@ -60,11 +61,14 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@react-email/ui": "6.11.1",
     "@types/nodemailer": "^8.0.1",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.2.4",
     "pm2": "^7.0.1",
     "prisma": "^7.8.0",
+    "react-email": "^6.11.1",
+    "smtp-tester": "^2.1.0",
     "typescript": "^5.9.3"
   }
 }

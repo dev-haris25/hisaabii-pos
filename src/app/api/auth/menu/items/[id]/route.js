@@ -128,6 +128,17 @@ export async function PATCH(request, context) {
 
     return jsonOk({ item: mapMenuItemToJson(updated) })
   } catch (err) {
+    const code =
+      err && typeof err === 'object' && 'code' in err ? String(err.code) : ''
+    if (code === 'VARIANT_OPTION_IN_USE') {
+      return jsonError(
+        409,
+        'VARIANT_OPTION_IN_USE',
+        err instanceof Error
+          ? err.message
+          : 'This variant option is used by a coupon and cannot be removed right now',
+      )
+    }
     return handleRouteError(err, 'PATCH /api/auth/menu/items/[id]')
   }
 }

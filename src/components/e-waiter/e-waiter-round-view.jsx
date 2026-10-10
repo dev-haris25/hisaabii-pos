@@ -5,6 +5,8 @@ import { Bell, Loader2, Minus, Plus, Receipt, Trash2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useEffect, useMemo, useState } from 'react'
 
+import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
+import { EWaiterConfirmSheet } from '@/components/e-waiter/e-waiter-confirm-sheet'
 import { EWaiterSheetScaffold } from '@/components/e-waiter/e-waiter-sheet-scaffold'
 import {
   computeUnitPriceFromItem,
@@ -113,6 +115,11 @@ export function EWaiterRoundView({
   const [actionPending, setActionPending] = useState(false)
   const [editTarget, setEditTarget] = useState(
     /** @type {{ kitchenOrderId: string, line: Record<string, unknown> } | null} */ (
+      null
+    ),
+  )
+  const [confirmTarget, setConfirmTarget] = useState(
+    /** @type {null | { kind: 'cancel-round', kitchenOrderId: string } | { kind: 'remove-line', kitchenOrderId: string, lineId: string }} */ (
       null
     ),
   )
@@ -306,13 +313,16 @@ export function EWaiterRoundView({
       dir={locale === 'ar' ? 'rtl' : 'ltr'}
     >
       <header className="e-waiter-surface sticky top-0 z-20 border-b e-waiter-border px-hisabi-margin-mobile py-hisabi-md shadow-sm">
-        <div className="e-waiter-content-narrow">
-          <h1 className="type-headline-sm font-semibold">
-            {t('roundManageTitle')}
-          </h1>
-          <p className="type-body-sm e-waiter-text-muted">
-            {t('roundsSessionHint', { count: rounds.length })}
-          </p>
+        <div className="e-waiter-content-narrow flex items-start gap-hisabi-sm">
+          <div className="min-w-0 flex-1">
+            <h1 className="type-headline-sm font-semibold">
+              {t('roundManageTitle')}
+            </h1>
+            <p className="type-body-sm e-waiter-text-muted">
+              {t('roundsSessionHint', { count: rounds.length })}
+            </p>
+          </div>
+          <AuthLocaleToggle />
         </div>
       </header>
 
@@ -427,7 +437,13 @@ export function EWaiterRoundView({
                                     disabled={actionPending}
                                     className="type-label-sm inline-flex items-center gap-1 rounded-full px-hisabi-md py-2 font-semibold text-hisabi-error disabled:opacity-50"
                                     onClick={() =>
-                                      removeLine(round, String(line.id))
+                                      setConfirmTarget({
+                                        kind: 'remove-line',
+                                        kitchenOrderId: String(
+                                          round.kitchenOrderId,
+                                        ),
+                                        lineId: String(line.id),
+                                      })
                                     }
                                   >
                                     <Trash2 className="size-3.5" aria-hidden />
@@ -488,7 +504,10 @@ export function EWaiterRoundView({
                         type="button"
                         disabled={actionPending}
                         onClick={() =>
-                          void cancelRound(String(round.kitchenOrderId))
+                          setConfirmTarget({
+                            kind: 'cancel-round',
+                            kitchenOrderId: String(round.kitchenOrderId),
+                          })
                         }
                         className="type-label-md flex min-h-[var(--e-waiter-tap)] w-full items-center justify-center rounded-2xl border border-hisabi-error/40 font-semibold text-hisabi-error disabled:opacity-50"
                       >
@@ -615,6 +634,48 @@ export function EWaiterRoundView({
             })
             setEditTarget(null)
             void patchLines(editTarget.kitchenOrderId, next)
+          }}
+        />
+      ) : null}
+
+      {confirmTarget ? (
+        <EWaiterConfirmSheet
+          title={
+            confirmTarget.kind === 'cancel-round'
+              ? t('cancelRoundTitle')
+              : t('removeItemTitle')
+          }
+          body={
+            confirmTarget.kind === 'cancel-round'
+              ? t('cancelRoundBody')
+              : t('removeItemBody')
+          }
+          confirmLabel={
+            confirmTarget.kind === 'cancel-round'
+              ? t('cancelRoundConfirm')
+              : t('removeItemConfirm')
+          }
+          cancelLabel={
+            confirmTarget.kind === 'cancel-round'
+              ? t('cancelRoundKeep')
+              : t('removeItemKeep')
+          }
+          pending={actionPending}
+          onClose={() => {
+            if (!actionPending) setConfirmTarget(null)
+          }}
+          onConfirm={() => {
+            if (actionPending) return
+            const target = confirmTarget
+            setConfirmTarget(null)
+            if (target.kind === 'cancel-round') {
+              void cancelRound(target.kitchenOrderId)
+              return
+            }
+            const round = rounds.find(
+              (r) => String(r.kitchenOrderId) === target.kitchenOrderId,
+            )
+            if (round) removeLine(round, target.lineId)
           }}
         />
       ) : null}

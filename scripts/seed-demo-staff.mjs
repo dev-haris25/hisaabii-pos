@@ -1,11 +1,12 @@
 /**
- * Dev seed: Manager + Cashier login users on the demo restaurant.
- * Idempotent. Does not create menu/stock/owner — run db:seed-demo-dev first
- * if the owner restaurant does not exist yet.
+ * Dev seed: Manager + Cashier + Kitchen board manager login users on the demo
+ * restaurant. Idempotent. Does not create menu/stock/owner — run
+ * db:seed-demo-dev first if the owner restaurant does not exist yet.
  *
  * Credentials (same password as demo owner):
  *   manager@hisaabiipos.com / Demo@123
  *   cashier@hisaabiipos.com / Demo@123
+ *   kitchenmanager@hisaabiipos.com / Demo@123  (HR Employee row linked)
  *
  * Run: bun scripts/seed-demo-staff.mjs
  *   or: bun run db:seed-demo-staff
@@ -13,6 +14,7 @@
 import { hashPassword } from '../src/lib/auth/password.js'
 import {
   CASHIER_ROLE_NAME,
+  KITCHEN_BOARD_MANAGER_ROLE_NAME,
   MANAGER_ROLE_NAME,
 } from '../src/lib/rbac/permission-registry.js'
 import {
@@ -34,6 +36,13 @@ const STAFF = [
     email: 'cashier@hisaabiipos.com',
     name: 'Demo Cashier',
     roleName: CASHIER_ROLE_NAME,
+  },
+  {
+    email: 'kitchenmanager@hisaabiipos.com',
+    name: 'Kitchen Manager',
+    roleName: KITCHEN_BOARD_MANAGER_ROLE_NAME,
+    /** Create/link an HR Employee row so name edits via HR sync User.name. */
+    createEmployee: true,
   },
 ]
 
@@ -109,6 +118,41 @@ async function main() {
         },
         update: {},
       })
+
+      if (staff.createEmployee) {
+        const linked = await prisma.employee.findFirst({
+          where: {
+            businessProfileId: profileId,
+            businessMembershipId: membership.id,
+          },
+          select: { id: true },
+        })
+        if (linked) {
+          await prisma.employee.update({
+            where: { id: linked.id },
+            data: {
+              name: staff.name,
+              emailOfficial: staff.email,
+              status: 'active',
+              deletedAt: null,
+            },
+          })
+          log(`Employee linked (updated): ${staff.name}`)
+        } else {
+          await prisma.employee.create({
+            data: {
+              businessProfileId: profileId,
+              businessMembershipId: membership.id,
+              name: staff.name,
+              emailOfficial: staff.email,
+              joiningDate: new Date(),
+              salary: '0',
+              status: 'active',
+            },
+          })
+          log(`Employee linked (created): ${staff.name}`)
+        }
+      }
 
       log(`${staff.roleName}: ${staff.email} / ${DEMO_PASSWORD}`)
     }

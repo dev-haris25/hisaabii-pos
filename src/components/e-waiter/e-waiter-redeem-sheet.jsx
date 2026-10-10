@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 
+import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { EWaiterSheetScaffold } from '@/components/e-waiter/e-waiter-sheet-scaffold'
 
 /**
@@ -51,6 +52,7 @@ export function EWaiterRedeemSheet({
       title={t('redeemTitle')}
       onClose={onClose}
       closeDisabled={pending}
+      headerTrailing={<AuthLocaleToggle />}
     >
       <div className="space-y-hisabi-md px-hisabi-margin-mobile pb-hisabi-md">
         <p className="type-body-md e-waiter-text-muted">

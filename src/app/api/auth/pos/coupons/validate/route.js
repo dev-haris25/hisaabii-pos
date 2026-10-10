@@ -77,9 +77,18 @@ export async function POST(request) {
       coupon.discountKind === 'BOGO' ||
       coupon.discountKind === 'COMBO'
     ) {
+      // Same include as compute-coupon-discount-for-priced-lines.js (checkout).
+      // Without groupId, buildVariantConstraintsByGroup is empty and all lines match.
       const itemRules = await prisma.couponItemRule.findMany({
         where: { couponId: coupon.id },
         orderBy: { sortOrder: 'asc' },
+        include: {
+          allowedVariantOptions: {
+            include: {
+              variantOption: { select: { id: true, groupId: true } },
+            },
+          },
+        },
       })
       calcResult = applyCouponItemDiscount(
         priced.pricedLines,

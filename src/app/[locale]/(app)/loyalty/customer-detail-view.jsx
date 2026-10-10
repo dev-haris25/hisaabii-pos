@@ -35,16 +35,22 @@ import { cn } from '@/lib/utils'
 const PAGE_SIZE_OPTIONS = [10, 25, 50]
 
 /**
- * @param {{ label: string, children: import('react').ReactNode, className?: string, dir?: string }} props
+ * Stacked label-above-value tile. Keep the pair as one start-aligned unit
+ * (right in RTL / left in LTR). Put `dir="ltr"` on an inner span for numbers,
+ * never on the value container — same pattern as the tables in this file.
+ *
+ * @param {{ label: string, children: import('react').ReactNode, className?: string }} props
  */
-function DetailField({ label, children, className, dir }) {
+function DetailField({ label, children, className }) {
   return (
-    <div className={cn('min-w-0 space-y-1', className)}>
+    <div
+      className={cn(
+        'flex min-w-0 flex-col items-start gap-1 text-start',
+        className,
+      )}
+    >
       <dt className="type-label-md text-hisabi-on-surface-variant">{label}</dt>
-      <dd
-        className="type-body-md font-semibold text-hisabi-on-surface"
-        dir={dir}
-      >
+      <dd className="type-body-md font-semibold text-hisabi-on-surface">
         {children}
       </dd>
     </div>
@@ -389,11 +395,15 @@ export function CustomerDetailView({
       <div className="space-y-hisabi-xl">
         <SettingsSection title={t('customerSectionBasics')} icon={Gift}>
           <dl className="grid grid-cols-1 gap-hisabi-lg min-[480px]:grid-cols-2">
-            <DetailField label={t('colPhone')} dir="ltr">
-              {String(customer.phone ?? '—')}
+            <DetailField label={t('colPhone')}>
+              <span dir="ltr" className="inline-block">
+                {String(customer.phone ?? '—')}
+              </span>
             </DetailField>
-            <DetailField label={t('colBalance')} dir="ltr">
-              {String(customer.balance ?? '0')}
+            <DetailField label={t('colBalance')}>
+              <span dir="ltr" className="inline-block">
+                {String(customer.balance ?? '0')}
+              </span>
             </DetailField>
             <DetailField label={t('colCreatedAt')}>
               {formatDate(
@@ -403,17 +413,25 @@ export function CustomerDetailView({
                 locale,
               )}
             </DetailField>
-            <DetailField label={t('statVisitCount')} dir="ltr">
-              {String(stats.visitCount ?? 0)}
+            <DetailField label={t('statVisitCount')}>
+              <span dir="ltr" className="inline-block">
+                {String(stats.visitCount ?? 0)}
+              </span>
             </DetailField>
-            <DetailField label={t('statTotalSpend')} dir="ltr">
-              {String(stats.totalSpend ?? '0')}
+            <DetailField label={t('statTotalSpend')}>
+              <span dir="ltr" className="inline-block">
+                {String(stats.totalSpend ?? '0')}
+              </span>
             </DetailField>
-            <DetailField label={t('statTotalEarned')} dir="ltr">
-              {String(stats.totalPointsEarned ?? '0')}
+            <DetailField label={t('statTotalEarned')}>
+              <span dir="ltr" className="inline-block">
+                {String(stats.totalPointsEarned ?? '0')}
+              </span>
             </DetailField>
-            <DetailField label={t('statTotalRedeemed')} dir="ltr">
-              {String(stats.totalPointsRedeemed ?? '0')}
+            <DetailField label={t('statTotalRedeemed')}>
+              <span dir="ltr" className="inline-block">
+                {String(stats.totalPointsRedeemed ?? '0')}
+              </span>
             </DetailField>
           </dl>
         </SettingsSection>
@@ -478,9 +496,10 @@ export function CustomerDetailView({
                           className={listTableTdClass(
                             'type-body-sm text-hisabi-on-surface tabular-nums',
                           )}
-                          dir="ltr"
                         >
-                          {String(row.grandTotal ?? '—')}
+                          <span dir="ltr" className="inline-block">
+                            {String(row.grandTotal ?? '—')}
+                          </span>
                         </td>
                         <td
                           className={listTableTdClass(
@@ -598,12 +617,13 @@ export function CustomerDetailView({
                                 pointsClass,
                               ),
                             )}
-                            dir="ltr"
                           >
-                            {formatSignedPoints(
-                              type,
-                              String(row.points ?? '0'),
-                            )}
+                            <span dir="ltr" className="inline-block">
+                              {formatSignedPoints(
+                                type,
+                                String(row.points ?? '0'),
+                              )}
+                            </span>
                           </td>
                           <td className={listTableTdClass()}>
                             {row.invoiceId && row.invoiceNumber ? (

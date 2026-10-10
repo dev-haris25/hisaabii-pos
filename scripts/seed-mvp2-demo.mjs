@@ -471,10 +471,11 @@ async function main() {
     let stockByKey = new Map()
     await prisma.$transaction(
       async (tx) => {
-        stockByKey = await ensureStockItems(tx, {
+        const stockStats = await ensureStockItems(tx, {
           businessProfileId: profileId,
           createdByUserId: user.id,
         })
+        stockByKey = stockStats.byKey
         await ensureRecipes(tx, { businessProfileId: profileId, stockByKey })
       },
       { maxWait: 20_000, timeout: 120_000 },

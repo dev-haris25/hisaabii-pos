@@ -1,5 +1,6 @@
 import { jsonOk, jsonError } from '@/lib/api/json-response'
 import { authorizeBusinessRequest } from '@/lib/rbac/authorize-api-request'
+import { PRISMA_INTERACTIVE_TRANSACTION_OPTIONS } from '@/lib/db/prisma-interactive-transaction-options'
 import { WHERE_NOT_DELETED } from '@/lib/db/soft-delete-scope'
 import { prisma } from '@/lib/prisma'
 import { applyDuePromotions } from '@/lib/hr/promotions/apply-due-promotions'
@@ -211,14 +212,32 @@ export async function PATCH(request, ctx) {
     return jsonError(500, 'SERVER_ERROR', 'Could not store documents')
   }
 
-  let updated = await prisma.employee.update({
-    where: { id },
-    data: {
-      ...employeePrismaDataFromParsed(parsed.data),
-      ...docPaths,
-    },
-    include: employeeDetailInclude,
-  })
+  // HR name is source of truth for the linked login User (kitchen/POS headers).
+  const nextName = String(parsed.data.name ?? '').trim()
+  const nameChanged = nextName !== String(existing.name ?? '').trim()
+  const linkedUserId =
+    existing.businessMembershipId && existing.businessMembership?.userId
+      ? String(existing.businessMembership.userId)
+      : null
+
+  let updated = await prisma.$transaction(async (tx) => {
+    const emp = await tx.employee.update({
+      where: { id },
+      data: {
+        ...employeePrismaDataFromParsed(parsed.data),
+        ...docPaths,
+      },
+      include: employeeDetailInclude,
+    })
+    // Skip when no login membership yet (pre-invite / no-login roles).
+    if (nameChanged && linkedUserId) {
+      await tx.user.update({
+        where: { id: linkedUserId },
+        data: { name: nextName },
+      })
+    }
+    return emp
+  }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
 
   let invitationSent = false
 

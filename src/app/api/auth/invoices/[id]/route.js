@@ -18,6 +18,7 @@ import {
   buildRepairedDocumentLines,
   CLEARED_ZATCA_ARTIFACTS,
 } from '@/lib/notes/repair-failed-document'
+import { reconcileLoyaltyPointsForInvoice } from '@/lib/loyalty/reconcile-loyalty-points-for-invoice'
 import {
   cancelKitchenOrderForInvoice,
   refreshKitchenOrderAfterEdit,
@@ -111,12 +112,18 @@ export async function DELETE(_request, context) {
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.invoice.update({
+      const deleted = await tx.invoice.update({
         where: { id },
         data: { deletedAt: new Date() },
       })
       await cancelKitchenOrderForInvoice(tx, id)
-    })
+      // Same clawback as cancel/void — no-op when invoice has no loyalty involvement.
+      await reconcileLoyaltyPointsForInvoice({
+        invoice: deleted,
+        cashierUserId: auth.session.id,
+        db: tx,
+      })
+    }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
     return jsonOk({ deleted: true })
   } catch (err) {
     return handleRouteError(err, 'DELETE /api/auth/invoices/[id]')

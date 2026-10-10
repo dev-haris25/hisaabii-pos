@@ -1,8 +1,10 @@
 /**
- * Reconcile loyalty points after a cancellation or credit/debit note is
- * successfully reported to ZATCA. Compensating ledger rows use type ADJUSTMENT.
+ * Reconcile loyalty points after a cancellation, soft-delete, or credit/debit
+ * note is finalized. Compensating ledger rows use type ADJUSTMENT.
  *
- * Call only on post-ZATCA success — never on failure/retry paths.
+ * For cancel/credit-debit: call only on post-ZATCA success — never on
+ * failure/retry paths. For soft-delete: call in the same transaction as
+ * deletedAt so a completed-but-unreported invoice still full-reverses.
  */
 
 import { WHERE_NOT_DELETED } from '@/lib/db/soft-delete-scope'
@@ -23,7 +25,12 @@ import { prisma } from '@/lib/prisma'
  * @template T
  */
 async function runInTransaction(db, fn) {
-  if (typeof db?.$transaction === 'function') {
+  // Only the root PrismaClient can open a transaction. Interactive `tx` clients
+  // may still expose `$transaction` under some adapters; nesting it closes the
+  // outer soft-delete/cancel unit of work.
+  const canOpenTransaction =
+    typeof db?.$transaction === 'function' && typeof db?.$connect === 'function'
+  if (canOpenTransaction) {
     return db.$transaction((tx) => fn(tx), PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
   }
   return fn(db)
@@ -137,6 +144,7 @@ export async function reconcileLoyaltyPointsForInvoice(opts) {
         id: true,
         businessProfileId: true,
         status: true,
+        deletedAt: true,
         grandTotal: true,
         loyaltyPointsAwarded: true,
         loyaltyAccountId: true,
@@ -149,7 +157,8 @@ export async function reconcileLoyaltyPointsForInvoice(opts) {
 
     let adjustments = 0
 
-    if (inv.status === 'voided') {
+    // Full reversal: formal void (cancel) or soft-delete of pending/failed.
+    if (inv.status === 'voided' || inv.deletedAt != null) {
       const ledger = await tx.loyaltyTransaction.findMany({
         where: { invoiceId: inv.id },
         select: { type: true, points: true, accountId: true },

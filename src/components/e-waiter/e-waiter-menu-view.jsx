@@ -20,6 +20,7 @@ const ROUND_STATUS_POLL_MS = 4000
 const LOYALTY_STORAGE_PREFIX = 'e-waiter-loyalty:'
 
 import { EWaiterLoyaltyLoginSheet } from '@/components/e-waiter/e-waiter-loyalty-login-sheet'
+import { AuthLocaleToggle } from '@/components/auth/auth-locale-toggle'
 import { EWaiterPastOrdersView } from '@/components/e-waiter/e-waiter-past-orders-view'
 import { EWaiterRedeemSheet } from '@/components/e-waiter/e-waiter-redeem-sheet'
 import { EWaiterRoundView } from '@/components/e-waiter/e-waiter-round-view'
@@ -822,6 +823,9 @@ export function EWaiterMenuView({
     >
       <header className="e-waiter-surface sticky top-0 z-20 border-b e-waiter-border shadow-sm">
         <div className="e-waiter-content relative flex min-h-[calc(var(--e-waiter-logo)+1.5rem)] items-center justify-center px-hisabi-margin-mobile py-hisabi-md">
+          <div className="absolute start-hisabi-margin-mobile top-1/2 z-10 -translate-y-1/2">
+            <AuthLocaleToggle />
+          </div>
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- public restaurant logo
             <img
@@ -830,7 +834,7 @@ export function EWaiterMenuView({
               className="e-waiter-logo rounded-xl object-contain e-waiter-surface"
             />
           ) : (
-            <h1 className="type-headline-sm max-w-[min(100%,20rem)] truncate px-hisabi-xxl text-center font-semibold tracking-tight">
+            <h1 className="type-headline-sm max-w-[min(100%,12rem)] truncate px-hisabi-xxl text-center font-semibold tracking-tight sm:max-w-[min(100%,20rem)]">
               {restaurantName}
             </h1>
           )}

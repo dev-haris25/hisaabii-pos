@@ -1,6 +1,8 @@
 /**
  * Develop / local seed: owner + menu + stock + recipes.
  * Idempotent on demo@hisaabiipos.com. No sales / invoices.
+ * When the owner already exists, ensures missing menu/stock/recipes only
+ * (never duplicates; never touches other businesses).
  *
  * Run: bun scripts/seed-demo-dev.mjs
  *   or: bun run db:seed-demo-dev
@@ -9,7 +11,7 @@ import { hashPassword } from '../src/lib/auth/password.js'
 import { generateRestaurantSlug } from '../src/lib/auth/restaurant-slug.js'
 import { AR } from './seed-demo-dev/ar.mjs'
 import { createPrisma, log } from './seed-demo-dev/db.mjs'
-import { seedMenu } from './seed-demo-dev/ensure-menu.mjs'
+import { ensureMenu } from './seed-demo-dev/ensure-menu.mjs'
 import { ensureRecipes } from './seed-demo-dev/ensure-recipes.mjs'
 import { ensureStockItems } from './seed-demo-dev/ensure-stock.mjs'
 
@@ -22,7 +24,7 @@ const DEMO_VAT = '300000000000003'
  * @param {import('../src/generated/prisma/client.ts').PrismaClient} prisma
  * @param {{ businessProfileId: string, userId: string }} opts
  */
-async function seedStockAndRecipes(prisma, { businessProfileId, userId }) {
+async function ensureDemoCatalog(prisma, { businessProfileId, userId }) {
   await prisma.businessSettings.upsert({
     where: { businessProfileId },
     create: {
@@ -35,11 +37,31 @@ async function seedStockAndRecipes(prisma, { businessProfileId, userId }) {
 
   await prisma.$transaction(
     async (tx) => {
-      const stockByKey = await ensureStockItems(tx, {
+      const menuStats = await ensureMenu(tx, businessProfileId)
+      const stockStats = await ensureStockItems(tx, {
         businessProfileId,
         createdByUserId: userId,
       })
-      await ensureRecipes(tx, { businessProfileId, stockByKey })
+      await ensureRecipes(tx, {
+        businessProfileId,
+        stockByKey: stockStats.byKey,
+      })
+
+      log(
+        `Menu — existing: ${menuStats.itemsExisting.length}, created: ${menuStats.itemsCreated.length}`,
+      )
+      log(
+        `Categories — existing: ${menuStats.categoriesExisting.length}, created: ${menuStats.categoriesCreated.length}`,
+      )
+      log(
+        `Stock — reused: ${stockStats.reused.length}, created: ${stockStats.created.length}`,
+      )
+      if (menuStats.itemsCreated.length) {
+        log(`New menu items: ${menuStats.itemsCreated.join(', ')}`)
+      }
+      if (stockStats.created.length) {
+        log(`New stock: ${stockStats.created.join(', ')}`)
+      }
     },
     { maxWait: 20_000, timeout: 120_000 },
   )
@@ -63,12 +85,14 @@ async function main() {
       if (!profileId) {
         throw new Error(`User ${DEMO_EMAIL} exists but has no business profile`)
       }
-      log(`Owner exists — stock + recipes only. profileId=${profileId}`)
-      await seedStockAndRecipes(prisma, {
+      log(
+        `Owner exists — ensure missing menu + stock + recipes. profileId=${profileId}`,
+      )
+      await ensureDemoCatalog(prisma, {
         businessProfileId: profileId,
         userId: existing.id,
       })
-      log('Done — stock + recipes (no sales).')
+      log('Done — Demo Restaurant catalog ensured (no duplicates).')
       return
     }
 
@@ -132,22 +156,16 @@ async function main() {
           },
         })
 
-        await seedMenu(tx, profile.id)
-
-        const stockByKey = await ensureStockItems(tx, {
-          businessProfileId: profile.id,
-          createdByUserId: user.id,
-        })
-        await ensureRecipes(tx, {
-          businessProfileId: profile.id,
-          stockByKey,
-        })
-
         created = { userId: user.id, profileId: profile.id }
         log(`Created owner userId=${user.id} profileId=${profile.id}`)
       },
       { maxWait: 20_000, timeout: 120_000 },
     )
+
+    await ensureDemoCatalog(prisma, {
+      businessProfileId: created.profileId,
+      userId: created.userId,
+    })
 
     log(
       `Done — owner + menu + stock + recipes (no sales). Login ${DEMO_EMAIL} / ${DEMO_PASSWORD}`,

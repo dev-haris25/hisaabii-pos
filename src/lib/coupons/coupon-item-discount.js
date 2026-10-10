@@ -271,6 +271,7 @@ function applyBogoDiscount(lines, itemRules) {
     }
   }
 
+  // BUY-side only gates acceptance. GET rules never reject the coupon.
   for (const buy of buyRules) {
     const need = Math.max(0, Math.round(Number(buy.quantity)) || 0)
     if (need < 1) {
@@ -285,17 +286,6 @@ function applyBogoDiscount(lines, itemRules) {
       return {
         eligible: false,
         reason: 'bogo_requirements_not_met',
-        discountAmount: '0.00',
-        lineDiscounts: zeros,
-      }
-    }
-  }
-
-  for (const get of getRules) {
-    if (totalQtyForRule(lines, get) < 1) {
-      return {
-        eligible: false,
-        reason: 'get_item_not_in_cart',
         discountAmount: '0.00',
         lineDiscounts: zeros,
       }
@@ -325,14 +315,9 @@ function applyBogoDiscount(lines, itemRules) {
     }
     const p = Math.min(100, Math.max(0, parseMoney(get.discountPercent)))
     const taken = consumeCheapestUnits(lines, get, getQty)
-    if ([...taken.values()].reduce((a, b) => a + b, 0) < 1) {
-      return {
-        eligible: false,
-        reason: 'get_item_not_in_cart',
-        discountAmount: '0.00',
-        lineDiscounts: zeros,
-      }
-    }
+    const takenQty = [...taken.values()].reduce((a, b) => a + b, 0)
+    // Missing / insufficient GET qty → this rule contributes 0; keep evaluating others.
+    if (takenQty < getQty) continue
     for (const [lineIndex, units] of taken) {
       const unit = parseMoney(lines[lineIndex].unitPrice)
       amounts[lineIndex] += units * unit * (p / 100)

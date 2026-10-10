@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils'
  *   closeDisabled?: boolean
  *   zClassName?: string
  *   panelClassName?: string
+ *   headerTrailing?: import('react').ReactNode
  * }} props
  */
 export function EWaiterSheetScaffold({
@@ -28,6 +29,7 @@ export function EWaiterSheetScaffold({
   closeDisabled = false,
   zClassName = 'z-50',
   panelClassName,
+  headerTrailing = null,
 }) {
   const t = useTranslations('EWaiter')
   const [portalTarget, setPortalTarget] = useState(
@@ -85,13 +87,16 @@ export function EWaiterSheetScaffold({
         aria-modal="true"
         aria-label={title}
       >
-        <div className="mb-hisabi-sm flex items-center justify-between px-hisabi-margin-mobile">
-          <h2 className="type-headline-sm font-semibold">{title}</h2>
+        <div className="mb-hisabi-sm flex items-center gap-hisabi-sm px-hisabi-margin-mobile">
+          <h2 className="type-headline-sm min-w-0 flex-1 font-semibold">
+            {title}
+          </h2>
+          {headerTrailing}
           <button
             type="button"
             disabled={closeDisabled}
             onClick={onClose}
-            className="e-waiter-tap e-waiter-chip inline-flex items-center justify-center rounded-full disabled:opacity-50"
+            className="e-waiter-tap e-waiter-chip inline-flex shrink-0 items-center justify-center rounded-full disabled:opacity-50"
             aria-label={t('closeSheet')}
           >
             <X className="size-5" aria-hidden />
