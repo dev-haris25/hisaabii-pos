@@ -12,20 +12,13 @@ import {
   canRepairFailedNote,
   canSoftDeleteNote,
 } from '@/lib/notes/can-repair-failed-note'
-import {
-  assertCreditWithinBalance,
-  noteTaxableCents,
-} from '@/lib/notes/invoice-outstanding'
-import {
-  loadInvoiceOutstanding,
-  lockInvoiceRow,
-} from '@/lib/notes/load-invoice-outstanding'
 import { mapCreditNoteDetailToJson } from '@/lib/notes/map-note-json'
 import { restaurantLogoPreviewUrl } from '@/lib/print/load-receipt-logo'
 import {
-  buildRepairedDocumentLines,
-  CLEARED_ZATCA_ARTIFACTS,
-} from '@/lib/notes/repair-failed-document'
+  centsToMoney,
+  moneyToCents,
+} from '@/lib/invoices/invoice-compute-totals'
+import { CLEARED_ZATCA_ARTIFACTS } from '@/lib/notes/repair-failed-document'
 import { prisma } from '@/lib/prisma'
 import { lockUnsignedDocumentForRepair } from '@/lib/zatca/zatca-document-chain'
 
@@ -40,11 +33,35 @@ const repairLineSchema = z.object({
   vatPreset: z.enum(['standard', 'zero', 'exempt']),
 })
 
+// Credit-note lines are locked (they carry invoice-line links and units
+// covered): repair changes the reason only. Lines may be omitted or sent back
+// unchanged; anything else is refused.
 const repairBodySchema = z.object({
   reasonAr: z.string().trim().min(1).max(500),
   reasonEn: z.string().trim().max(500).optional().nullable(),
-  lines: z.array(repairLineSchema).min(1).max(100),
+  lines: z.array(repairLineSchema).max(100).optional(),
 })
+
+/**
+ * True when the requested lines are exactly the stored ones (same order,
+ * names, quantities, unit prices and VAT presets).
+ *
+ * @param {Array<{ nameAr: string, nameEn?: string | null, quantity: number, unitPrice: string, vatPreset: string }>} requested
+ * @param {Array<{ nameAr: string, nameEn: string | null, quantity: number, unitPrice: string, vatPreset: string }>} stored
+ */
+function sameNoteLines(requested, stored) {
+  if (requested.length !== stored.length) return false
+  return requested.every((r, i) => {
+    const s = stored[i]
+    return (
+      r.nameAr.trim() === s.nameAr.trim() &&
+      (r.nameEn?.trim() || null) === (s.nameEn?.trim() || null) &&
+      r.quantity === s.quantity &&
+      centsToMoney(moneyToCents(r.unitPrice)) === centsToMoney(moneyToCents(s.unitPrice)) &&
+      r.vatPreset === s.vatPreset
+    )
+  })
+}
 
 export async function GET(_request, context) {
   try {
@@ -156,59 +173,34 @@ export async function PATCH(request, context) {
       )
     }
 
-    let built
-    try {
-      built = buildRepairedDocumentLines(parsed.data.lines, { kind: 'note' })
-    } catch (e) {
-      const code =
-        e && typeof e === 'object' && 'code' in e ? String(e.code) : 'VALIDATION_ERROR'
-      return jsonError(
-        400,
-        code,
-        e instanceof Error ? e.message : 'Invalid lines',
-      )
-    }
-
     let updated
     try {
       updated = await prisma.$transaction(async (tx) => {
-        // Lock the invoice first (same order as note creation), then the note.
-        let invoice = null
-        if (
-          note.invoiceId &&
-          (await lockInvoiceRow(tx, note.invoiceId, auth.profileId))
-        ) {
-          invoice = await tx.invoice.findFirst({
-            where: { id: note.invoiceId, businessProfileId: auth.profileId },
-            include: { lines: true },
-          })
-        }
         if (!(await lockUnsignedDocumentForRepair(tx, 'credit', id))) {
           throw Object.assign(new Error('Document was signed meanwhile'), {
             code: 'NOT_EDITABLE',
           })
         }
-        if (invoice) {
-          // Cap (before VAT): this note's new amount replaces its old one.
-          const outstanding = await loadInvoiceOutstanding(tx, invoice)
-          const oldLines = await tx.creditNoteLine.findMany({
+        if (parsed.data.lines) {
+          const stored = await tx.creditNoteLine.findMany({
             where: { creditNoteId: id },
+            orderBy: { sortOrder: 'asc' },
           })
-          assertCreditWithinBalance(
-            outstanding,
-            noteTaxableCents(parsed.data.lines.filter((l) => l.quantity > 0)),
-            noteTaxableCents(oldLines),
-          )
+          if (!sameNoteLines(parsed.data.lines, stored)) {
+            throw Object.assign(
+              new Error('Credit note lines cannot be changed. Delete the note and correct the invoice again.'),
+              { code: 'CREDIT_NOTE_LINES_LOCKED' },
+            )
+          }
         }
-        await tx.creditNoteLine.deleteMany({ where: { creditNoteId: id } })
+        // Reason only: lines, invoice-line links, units covered and amounts
+        // stay as they are; the note goes back to pending for a new report.
         return tx.creditNote.update({
           where: { id },
           data: {
             reasonAr: parsed.data.reasonAr.trim(),
             reasonEn: parsed.data.reasonEn?.trim() || null,
-            ...built.totals,
             ...CLEARED_ZATCA_ARTIFACTS,
-            lines: { create: built.lineCreates },
           },
           include: {
             lines: { orderBy: { sortOrder: 'asc' } },
@@ -218,7 +210,7 @@ export async function PATCH(request, context) {
       }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
     } catch (e) {
       const code = e && typeof e === 'object' && 'code' in e ? String(e.code) : ''
-      if (code === 'CREDIT_EXCEEDS_INVOICE_BALANCE') {
+      if (code === 'CREDIT_NOTE_LINES_LOCKED') {
         return jsonError(409, code, e instanceof Error ? e.message : code)
       }
       throw e

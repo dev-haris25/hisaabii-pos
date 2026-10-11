@@ -8,11 +8,6 @@ import { isWithinCashierDocumentWindow } from '@/lib/auth/cashier-document-windo
 import { requireInvoiceAppUser } from '@/lib/auth/require-invoice-app-user'
 import { sessionNeedsCashierDocumentWindow } from '@/lib/auth/require-invoice-restaurant'
 import { WHERE_NOT_DELETED } from '@/lib/db/soft-delete-scope'
-import {
-  mapMenuCategoryToJson,
-  mapMenuItemToJson,
-  menuItemInclude,
-} from '@/lib/menu/map-menu-json'
 import { canRepairFailedNote } from '@/lib/notes/can-repair-failed-note'
 import { mapCreditNoteDetailToJson } from '@/lib/notes/map-note-json'
 import { prisma } from '@/lib/prisma'
@@ -48,18 +43,6 @@ export default async function CreditNoteEditPage({ params }) {
     notFound()
   }
 
-  const [categories, items] = await Promise.all([
-    prisma.menuCategory.findMany({
-      where: { businessProfileId: user.businessProfileId, active: true },
-      orderBy: [{ sortOrder: 'asc' }, { nameAr: 'asc' }],
-    }),
-    prisma.menuItem.findMany({
-      where: { businessProfileId: user.businessProfileId, active: true },
-      orderBy: [{ sortOrder: 'asc' }, { nameAr: 'asc' }],
-      include: menuItemInclude,
-    }),
-  ])
-
   const noteJson = mapCreditNoteDetailToJson(note)
   const cartSeed = note.lines.map((line) => ({
     key: line.id,
@@ -83,8 +66,10 @@ export default async function CreditNoteEditPage({ params }) {
         documentNature="credit"
         note={noteJson}
         cartSeed={cartSeed}
-        categories={categories.map(mapMenuCategoryToJson)}
-        menuItems={items.map(mapMenuItemToJson)}
+        // Credit-note lines are linked to invoice lines: reason-only repair.
+        linesLocked
+        categories={[]}
+        menuItems={[]}
       />
     </Suspense>
   )

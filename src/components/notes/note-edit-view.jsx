@@ -35,7 +35,9 @@ const fieldClass =
  */
 
 /**
- * Repair a failed credit/debit note (mutate reason + lines, then re-report).
+ * Repair a failed credit/debit note, then re-report. Debit notes: reason and
+ * lines. Credit notes (`linesLocked`): reason only — their lines carry
+ * invoice-line links, so they are shown read-only.
  *
  * @param {{
  *   documentNature: 'credit' | 'debit'
@@ -54,6 +56,7 @@ const fieldClass =
  *     }>
  *   }
  *   cartSeed: NoteEditCartLine[]
+ *   linesLocked?: boolean
  *   categories: Array<{ id: string, nameAr: string, nameEn: string | null }>
  *   menuItems: Array<{
  *     id: string
@@ -70,6 +73,7 @@ export function NoteEditView({
   documentNature,
   note,
   cartSeed,
+  linesLocked = false,
   categories,
   menuItems,
 }) {
@@ -124,13 +128,18 @@ export function NoteEditView({
       authPatch(`/${apiSegment}/${note.id}`, {
         reasonAr: reasonAr.trim(),
         reasonEn: reasonEn.trim() || undefined,
-        lines: cart.map((l) => ({
-          nameAr: l.nameAr,
-          nameEn: l.nameEn ?? undefined,
-          quantity: l.quantity,
-          unitPrice: l.unitPrice,
-          vatPreset: l.vatPreset,
-        })),
+        // Locked lines are never sent: the server keeps them as stored.
+        ...(linesLocked
+          ? {}
+          : {
+              lines: cart.map((l) => ({
+                nameAr: l.nameAr,
+                nameEn: l.nameEn ?? undefined,
+                quantity: l.quantity,
+                unitPrice: l.unitPrice,
+                vatPreset: l.vatPreset,
+              })),
+            }),
       }),
     onSuccess: () => {
       toast.success(t('repairSuccess'))
@@ -139,7 +148,7 @@ export function NoteEditView({
     },
     onError: (err) => {
       const code = err instanceof AuthApiError ? err.code : undefined
-      setFormError(code ? tErr(code) : tErr('generic'))
+      setFormError(code && tErr.has(code) ? tErr(code) : tErr('generic'))
     },
   })
 
@@ -204,18 +213,22 @@ export function NoteEditView({
       return
     }
     setReasonError('')
-    if (cart.length === 0 || parseMoney(cartTotals.grandTotal) <= 0) {
+    if (
+      !linesLocked &&
+      (cart.length === 0 || parseMoney(cartTotals.grandTotal) <= 0)
+    ) {
       setFormError(tErr('VALIDATION_ERROR'))
       return
     }
     saveMutation.mutate()
   }
 
-  const canSubmit =
-    cart.length > 0 &&
-    reasonAr.trim() &&
-    parseMoney(cartTotals.grandTotal) > 0 &&
-    !saveMutation.isPending
+  const canSubmit = linesLocked
+    ? Boolean(reasonAr.trim()) && !saveMutation.isPending
+    : cart.length > 0 &&
+      reasonAr.trim() &&
+      parseMoney(cartTotals.grandTotal) > 0 &&
+      !saveMutation.isPending
 
   return (
     <div className="mx-auto max-w-hisabi-container">
@@ -231,57 +244,64 @@ export function NoteEditView({
       </div>
 
       <div className="mb-hisabi-xl flex flex-col gap-hisabi-lg lg:flex-row lg:items-start">
-        <section className="min-w-0 flex-1 space-y-hisabi-md">
-          <div className="flex gap-hisabi-sm overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <button
-              type="button"
-              onClick={() => setCategoryId('all')}
-              className={cn(
-                'type-label-sm shrink-0 cursor-pointer rounded-xl px-hisabi-md py-2 font-bold transition-colors',
-                categoryId === 'all'
-                  ? 'bg-hisabi-primary-container text-white'
-                  : 'bg-hisabi-surface-container-lowest text-hisabi-on-surface-variant hover:bg-hisabi-surface-container',
-              )}
-            >
-              {tPos('allCategories')}
-            </button>
-            {categories.map((cat) => (
+        {linesLocked ? null : (
+          <section className="min-w-0 flex-1 space-y-hisabi-md">
+            <div className="flex gap-hisabi-sm overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <button
-                key={cat.id}
                 type="button"
-                onClick={() => setCategoryId(cat.id)}
+                onClick={() => setCategoryId('all')}
                 className={cn(
                   'type-label-sm shrink-0 cursor-pointer rounded-xl px-hisabi-md py-2 font-bold transition-colors',
-                  categoryId === cat.id
+                  categoryId === 'all'
                     ? 'bg-hisabi-primary-container text-white'
                     : 'bg-hisabi-surface-container-lowest text-hisabi-on-surface-variant hover:bg-hisabi-surface-container',
                 )}
               >
-                {categoryDisplayName(cat)}
+                {tPos('allCategories')}
               </button>
-            ))}
-          </div>
+              {categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setCategoryId(cat.id)}
+                  className={cn(
+                    'type-label-sm shrink-0 cursor-pointer rounded-xl px-hisabi-md py-2 font-bold transition-colors',
+                    categoryId === cat.id
+                      ? 'bg-hisabi-primary-container text-white'
+                      : 'bg-hisabi-surface-container-lowest text-hisabi-on-surface-variant hover:bg-hisabi-surface-container',
+                  )}
+                >
+                  {categoryDisplayName(cat)}
+                </button>
+              ))}
+            </div>
 
-          <div className="grid grid-cols-2 gap-hisabi-sm sm:grid-cols-3 md:grid-cols-4">
-            {filteredItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => addToCart(item)}
-                className="flex cursor-pointer flex-col gap-2 rounded-xl border border-hisabi-outline-variant/40 bg-white p-hisabi-md text-start transition-colors hover:border-hisabi-primary/40 hover:bg-hisabi-surface-container-low"
-              >
-                <span className="type-label-md font-bold text-hisabi-on-surface line-clamp-2">
-                  {itemDisplayName(item)}
-                </span>
-                <span dir="ltr" className="type-body-sm text-hisabi-on-surface-variant">
-                  {item.price}
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
+            <div className="grid grid-cols-2 gap-hisabi-sm sm:grid-cols-3 md:grid-cols-4">
+              {filteredItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => addToCart(item)}
+                  className="flex cursor-pointer flex-col gap-2 rounded-xl border border-hisabi-outline-variant/40 bg-white p-hisabi-md text-start transition-colors hover:border-hisabi-primary/40 hover:bg-hisabi-surface-container-low"
+                >
+                  <span className="type-label-md font-bold text-hisabi-on-surface line-clamp-2">
+                    {itemDisplayName(item)}
+                  </span>
+                  <span dir="ltr" className="type-body-sm text-hisabi-on-surface-variant">
+                    {item.price}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
-        <aside className="w-full shrink-0 lg:w-[22rem]">
+        <aside
+          className={cn(
+            'w-full',
+            linesLocked ? 'max-w-2xl' : 'shrink-0 lg:w-[22rem]',
+          )}
+        >
           <form
             id="note-edit-form"
             onSubmit={handleSubmit}
@@ -312,41 +332,54 @@ export function NoteEditView({
                         {lineDisplayName(line)}
                       </p>
                       <p dir="ltr" className="type-body-sm text-hisabi-on-surface-variant">
-                        {line.unitPrice}
+                        {linesLocked
+                          ? `${line.unitPrice} × ${line.quantity}`
+                          : line.unitPrice}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        aria-label={tPos('qtyDecrease')}
-                        onClick={() => setQty(line.key, line.quantity - 1)}
-                        className="flex size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-white"
-                      >
-                        <Minus className="size-4" aria-hidden />
-                      </button>
-                      <span dir="ltr" className="type-label-md w-6 text-center font-bold">
-                        {line.quantity}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={tPos('qtyIncrease')}
-                        onClick={() => setQty(line.key, line.quantity + 1)}
-                        className="flex size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-white"
-                      >
-                        <Plus className="size-4" aria-hidden />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={tPos('removeLine')}
-                        onClick={() => removeLine(line.key)}
-                        className="text-hisabi-error hover:bg-hisabi-error/8 flex size-8 cursor-pointer items-center justify-center rounded-lg"
-                      >
-                        <Trash2 className="size-4" aria-hidden />
-                      </button>
-                    </div>
+                    {linesLocked ? null : (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          aria-label={tPos('qtyDecrease')}
+                          onClick={() => setQty(line.key, line.quantity - 1)}
+                          className="flex size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-white"
+                        >
+                          <Minus className="size-4" aria-hidden />
+                        </button>
+                        <span dir="ltr" className="type-label-md w-6 text-center font-bold">
+                          {line.quantity}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={tPos('qtyIncrease')}
+                          onClick={() => setQty(line.key, line.quantity + 1)}
+                          className="flex size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-white"
+                        >
+                          <Plus className="size-4" aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={tPos('removeLine')}
+                          onClick={() => removeLine(line.key)}
+                          className="text-hisabi-error hover:bg-hisabi-error/8 flex size-8 cursor-pointer items-center justify-center rounded-lg"
+                        >
+                          <Trash2 className="size-4" aria-hidden />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
+
+              {linesLocked ? (
+                <p
+                  role="note"
+                  className="type-body-sm rounded-lg border border-amber-300 bg-amber-50 px-hisabi-md py-hisabi-sm text-amber-900"
+                >
+                  {t('repairLinesLockedHint')}
+                </p>
+              ) : null}
 
               <div className="space-y-hisabi-xs pt-hisabi-sm">
                 <label
