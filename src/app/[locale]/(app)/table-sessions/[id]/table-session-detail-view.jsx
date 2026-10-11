@@ -162,7 +162,12 @@ export function TableSessionDetailView({
     },
     onSuccess: (data) => {
       const invoice = data?.invoice
-      toast.success(t('settleSuccess'))
+      // Settled and invoiced, but the ZATCA report failed (no QR yet).
+      if (invoice && !(typeof invoice.qrCode === 'string' && invoice.qrCode)) {
+        toast.warning(t('settleSuccessZatcaPending'))
+      } else {
+        toast.success(t('settleSuccess'))
+      }
       if (data?.loyaltyRedeem?.clamped) {
         toast.message(t('settleRedeemClamped'))
       }

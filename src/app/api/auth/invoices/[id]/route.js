@@ -17,6 +17,8 @@ import {
 import {
   buildRepairedDocumentLines,
   CLEARED_ZATCA_ARTIFACTS,
+  repairedInvoiceMoneyFields,
+  resolveInvoiceRepairLines,
 } from '@/lib/notes/repair-failed-document'
 import { releaseOfferUsages } from '@/lib/offers/offer-usage'
 import { reconcileLoyaltyPointsForInvoice } from '@/lib/loyalty/reconcile-loyalty-points-for-invoice'
@@ -29,6 +31,7 @@ import { prisma } from '@/lib/prisma'
 import { lockUnsignedDocumentForRepair } from '@/lib/zatca/zatca-document-chain'
 
 const repairLineSchema = z.object({
+  invoiceLineId: z.string().trim().min(1).optional().nullable(),
   menuItemId: z.string().trim().min(1).optional().nullable(),
   nameAr: z.string().trim().min(1).max(200),
   nameEn: z.string().trim().max(200).optional().nullable(),
@@ -181,13 +184,22 @@ export async function PATCH(request, context) {
     }
 
     let built
+    let moneyFields
     try {
-      built = buildRepairedDocumentLines(parsed.data.lines, { kind: 'invoice' })
+      // Existing lines keep their stored price / VAT / offer data and a
+      // discount scaled to the new quantity; new lines have no discount.
+      const resolved = resolveInvoiceRepairLines(invoice.lines, parsed.data.lines)
+      built = buildRepairedDocumentLines(resolved, { kind: 'invoice' })
+      moneyFields = repairedInvoiceMoneyFields(
+        invoice,
+        resolved,
+        built.totals.grandTotal,
+      )
     } catch (e) {
       const code =
         e && typeof e === 'object' && 'code' in e ? String(e.code) : 'VALIDATION_ERROR'
       return jsonError(
-        400,
+        code === 'INVOICE_CHANGED' ? 409 : 400,
         code,
         e instanceof Error ? e.message : 'Invalid lines',
       )
@@ -204,6 +216,7 @@ export async function PATCH(request, context) {
         where: { id },
         data: {
           ...built.totals,
+          ...moneyFields,
           ...CLEARED_ZATCA_ARTIFACTS,
           lines: { create: built.lineCreates },
         },

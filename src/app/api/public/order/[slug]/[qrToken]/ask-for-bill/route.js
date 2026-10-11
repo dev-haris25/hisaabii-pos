@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { jsonError, jsonOk } from '@/lib/api/json-response'
+import { qrTableKey, rateLimitResponse } from '@/lib/api/rate-limit'
 import { handleRouteError } from '@/lib/api/route-error'
 import { decimalStringFromNumber, parseMoney } from '@/lib/invoices/invoice-compute-totals'
 import {
@@ -23,6 +24,10 @@ const bodySchema = z.object({
 export async function POST(request, context) {
   try {
     const { slug, qrToken } = await context.params
+    const limited = rateLimitResponse([
+      ['qrAskForBillTable', qrTableKey(slug, qrToken)],
+    ])
+    if (limited) return limited
     const resolved = await resolvePublicOrderTable(slug, qrToken)
     if (!resolved) {
       return jsonError(404, 'NOT_FOUND', 'Order page not found')

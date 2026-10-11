@@ -2,6 +2,7 @@ import { forgotPasswordBodySchema } from '@/lib/auth/schemas'
 import { createOtpForStaff } from '@/lib/auth/otp'
 import { sendOtpEmail } from '@/lib/email/send-otp-email'
 import { jsonError, jsonOk } from '@/lib/api/json-response'
+import { getClientIp, rateLimitResponse } from '@/lib/api/rate-limit'
 import { prisma } from '@/lib/prisma'
 
 export async function POST(request) {
@@ -18,6 +19,11 @@ export async function POST(request) {
   }
 
   const emailNorm = parsed.data.email.toLowerCase()
+  const limited = rateLimitResponse([
+    ['forgotPasswordEmail', emailNorm],
+    ['forgotPasswordIp', getClientIp(request)],
+  ])
+  if (limited) return limited
   const staff = await prisma.user.findUnique({ where: { email: emailNorm } })
   if (!staff) {
     return jsonError(404, 'USER_NOT_FOUND', 'No account for this email')

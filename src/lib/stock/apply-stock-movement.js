@@ -57,6 +57,12 @@ export function computeQuantityAfter(before, quantity, type, opts = {}) {
 /**
  * Apply a stock movement and update on-hand qty in one transaction.
  *
+ * Row-locks the stock item first (`SELECT … FOR UPDATE`), so simultaneous
+ * movements on one item run one after the other and their before/after values
+ * chain. Must be called with a transaction client — the lock is released at
+ * commit. Callers moving several items in one transaction must apply them in
+ * ascending `stockItemId` order to avoid deadlocks.
+ *
  * @param {import('@/generated/prisma/client').Prisma.TransactionClient} db
  * @param {{
  *   businessProfileId: string
@@ -71,6 +77,7 @@ export function computeQuantityAfter(before, quantity, type, opts = {}) {
  * }} input
  */
 export async function applyStockMovement(db, input) {
+  await db.$queryRaw`SELECT "id" FROM "stock_items" WHERE "id" = ${input.stockItemId} AND "businessProfileId" = ${input.businessProfileId} FOR UPDATE`
   const item = await db.stockItem.findFirst({
     where: {
       id: input.stockItemId,

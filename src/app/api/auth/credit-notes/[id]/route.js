@@ -12,6 +12,14 @@ import {
   canRepairFailedNote,
   canSoftDeleteNote,
 } from '@/lib/notes/can-repair-failed-note'
+import {
+  assertCreditWithinBalance,
+  noteTaxableCents,
+} from '@/lib/notes/invoice-outstanding'
+import {
+  loadInvoiceOutstanding,
+  lockInvoiceRow,
+} from '@/lib/notes/load-invoice-outstanding'
 import { mapCreditNoteDetailToJson } from '@/lib/notes/map-note-json'
 import { restaurantLogoPreviewUrl } from '@/lib/print/load-receipt-logo'
 import {
@@ -161,28 +169,60 @@ export async function PATCH(request, context) {
       )
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
-      if (!(await lockUnsignedDocumentForRepair(tx, 'credit', id))) {
-        throw Object.assign(new Error('Document was signed meanwhile'), {
-          code: 'NOT_EDITABLE',
+    let updated
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        // Lock the invoice first (same order as note creation), then the note.
+        let invoice = null
+        if (
+          note.invoiceId &&
+          (await lockInvoiceRow(tx, note.invoiceId, auth.profileId))
+        ) {
+          invoice = await tx.invoice.findFirst({
+            where: { id: note.invoiceId, businessProfileId: auth.profileId },
+            include: { lines: true },
+          })
+        }
+        if (!(await lockUnsignedDocumentForRepair(tx, 'credit', id))) {
+          throw Object.assign(new Error('Document was signed meanwhile'), {
+            code: 'NOT_EDITABLE',
+          })
+        }
+        if (invoice) {
+          // Cap (before VAT): this note's new amount replaces its old one.
+          const outstanding = await loadInvoiceOutstanding(tx, invoice)
+          const oldLines = await tx.creditNoteLine.findMany({
+            where: { creditNoteId: id },
+          })
+          assertCreditWithinBalance(
+            outstanding,
+            noteTaxableCents(parsed.data.lines.filter((l) => l.quantity > 0)),
+            noteTaxableCents(oldLines),
+          )
+        }
+        await tx.creditNoteLine.deleteMany({ where: { creditNoteId: id } })
+        return tx.creditNote.update({
+          where: { id },
+          data: {
+            reasonAr: parsed.data.reasonAr.trim(),
+            reasonEn: parsed.data.reasonEn?.trim() || null,
+            ...built.totals,
+            ...CLEARED_ZATCA_ARTIFACTS,
+            lines: { create: built.lineCreates },
+          },
+          include: {
+            lines: { orderBy: { sortOrder: 'asc' } },
+            createdByStaff: { select: { id: true, name: true } },
+          },
         })
+      }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
+    } catch (e) {
+      const code = e && typeof e === 'object' && 'code' in e ? String(e.code) : ''
+      if (code === 'CREDIT_EXCEEDS_INVOICE_BALANCE') {
+        return jsonError(409, code, e instanceof Error ? e.message : code)
       }
-      await tx.creditNoteLine.deleteMany({ where: { creditNoteId: id } })
-      return tx.creditNote.update({
-        where: { id },
-        data: {
-          reasonAr: parsed.data.reasonAr.trim(),
-          reasonEn: parsed.data.reasonEn?.trim() || null,
-          ...built.totals,
-          ...CLEARED_ZATCA_ARTIFACTS,
-          lines: { create: built.lineCreates },
-        },
-        include: {
-          lines: { orderBy: { sortOrder: 'asc' } },
-          createdByStaff: { select: { id: true, name: true } },
-        },
-      })
-    }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
+      throw e
+    }
 
     return jsonOk({ note: mapCreditNoteDetailToJson(updated) })
   } catch (err) {

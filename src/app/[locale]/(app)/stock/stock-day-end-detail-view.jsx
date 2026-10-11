@@ -52,6 +52,7 @@ function splitAnalysis(raw) {
  */
 export function StockDayEndDetailView({ report: initial }) {
   const t = useTranslations('Stock')
+  const tErr = useTranslations('AuthErrors')
   const locale = useLocale()
   const ability = useAppAbility()
   const canUpdate = ability.can('update', 'StockItem')
@@ -78,6 +79,22 @@ export function StockDayEndDetailView({ report: initial }) {
     [lines, usedById],
   )
 
+  /** @param {unknown} err */
+  function saveErrorMessage(err) {
+    const code = err instanceof AuthApiError ? err.code : undefined
+    const message = code && tErr.has(code) ? tErr(code) : t('dayEndSaveFailed')
+    const details = err instanceof AuthApiError ? err.details : null
+    if (
+      (code === 'INSUFFICIENT_STOCK' || code === 'STOCK_ITEM_DELETED') &&
+      details &&
+      typeof details === 'object' &&
+      (details.nameAr || details.nameEn)
+    ) {
+      return t('dayEndErrorWithItem', { message, item: itemLabel(details, locale) })
+    }
+    return message
+  }
+
   async function save(submit) {
     if (submit) setSubmitting(true)
     else setSaving(true)
@@ -98,9 +115,7 @@ export function StockDayEndDetailView({ report: initial }) {
       }
       toast.success(submit ? t('dayEndSubmitted') : t('dayEndSaved'))
     } catch (err) {
-      toast.error(
-        err instanceof AuthApiError ? err.message : t('dayEndSaveFailed'),
-      )
+      toast.error(saveErrorMessage(err))
     } finally {
       setSaving(false)
       setSubmitting(false)

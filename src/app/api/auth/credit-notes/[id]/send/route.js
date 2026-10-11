@@ -6,12 +6,15 @@ import {
   requireInvoiceRestaurant,
 } from '@/lib/auth/require-invoice-restaurant'
 import { canReportNoteToZatca } from '@/lib/notes/map-note-json'
+import { voidInvoiceIfFullyCredited } from '@/lib/notes/void-invoice'
 import { prisma } from '@/lib/prisma'
 import { emitZatcaReportFailed } from '@/lib/notifications/emit-zatca-report-failed'
 import { reportDocumentToZatca } from '@/lib/zatca/zatca-document-chain'
 
 /**
- * Manual "Report to ZATCA" for pending/failed credit notes.
+ * Manual "Report to ZATCA" for pending/failed credit notes. Once accepted, the
+ * invoice is voided if nothing is left outstanding (e.g. a cancellation note
+ * that failed at first) — the void runs once only.
  */
 export async function POST(_request, context) {
   try {
@@ -62,7 +65,6 @@ export async function POST(_request, context) {
         id: note.id,
         businessProfileId: auth.profileId,
       })
-      return jsonOk({ reported: true })
     } catch {
       void emitZatcaReportFailed({
         businessProfileId: auth.profileId,
@@ -73,6 +75,15 @@ export async function POST(_request, context) {
       })
       return jsonError(502, 'ZATCA_ERROR', 'Could not report the note to ZATCA')
     }
+
+    if (note.invoiceId) {
+      await voidInvoiceIfFullyCredited({
+        invoiceId: note.invoiceId,
+        businessProfileId: auth.profileId,
+        actorUserId: auth.session?.id ?? null,
+      })
+    }
+    return jsonOk({ reported: true })
   } catch (err) {
     return handleRouteError(err, 'POST /api/auth/credit-notes/[id]/send')
   }

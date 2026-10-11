@@ -17,6 +17,7 @@ import { EWaiterSheetScaffold } from '@/components/e-waiter/e-waiter-sheet-scaff
  */
 export function EWaiterLoyaltyLoginSheet({ slug, qrToken, onSkip, onLoggedIn }) {
   const t = useTranslations('EWaiter')
+  const tErr = useTranslations('AuthErrors')
   const [phone, setPhone] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
@@ -41,7 +42,9 @@ export function EWaiterLoyaltyLoginSheet({ slug, qrToken, onSkip, onLoggedIn }) 
         setError(
           code === 'INVALID_PHONE_FORMAT'
             ? t('loyaltyPhoneInvalid')
-            : t('loyaltyLoginFailed'),
+            : code === 'RATE_LIMITED'
+              ? tErr('RATE_LIMITED')
+              : t('loyaltyLoginFailed'),
         )
         return
       }

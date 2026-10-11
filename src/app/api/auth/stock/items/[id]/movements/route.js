@@ -1,5 +1,6 @@
 import { jsonError, jsonOk } from '@/lib/api/json-response'
 import { handleRouteError } from '@/lib/api/route-error'
+import { PRISMA_INTERACTIVE_TRANSACTION_OPTIONS } from '@/lib/db/prisma-interactive-transaction-options'
 import { authorizeBusinessRequest } from '@/lib/rbac/authorize-api-request'
 import {
   buildPaginationMeta,
@@ -118,7 +119,7 @@ export async function POST(request, context) {
         allowNegative: settings.allowNegativeStock === true,
         unitCost: d.type === 'purchase' ? d.unitCost : null,
       })
-    })
+    }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
 
     if (!result.ok) {
       const status =

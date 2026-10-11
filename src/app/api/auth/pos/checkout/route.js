@@ -5,8 +5,13 @@ import {
   checkoutPosSale,
   posCheckoutBodySchema,
 } from '@/lib/pos/checkout-pos-sale'
-import { primaryKitchenOrder } from '@/lib/orders/primary-kitchen-order'
 import { isOfferErrorCode } from '@/lib/offers/resolve-cart-offers'
+import { primaryKitchenOrderInclude } from '@/lib/orders/primary-kitchen-order'
+import {
+  checkoutInvoiceJson,
+  checkoutReplayResponse,
+} from '@/lib/pos/checkout-replay'
+import { prisma } from '@/lib/prisma'
 
 export async function POST(request) {
   try {
@@ -25,6 +30,14 @@ export async function POST(request) {
       return jsonError(400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.issues)
     }
 
+    const requestKey = parsed.data.requestKey ?? null
+    const staffName = auth.session.name ?? null
+    // Same key as an earlier attempt: answer with that sale, never save twice.
+    if (requestKey) {
+      const replay = await checkoutReplayResponse(auth.profileId, requestKey, staffName)
+      if (replay) return replay
+    }
+
     try {
       const invoice = await checkoutPosSale({
         profileId: auth.profileId,
@@ -32,40 +45,16 @@ export async function POST(request) {
         body: parsed.data,
       })
       return jsonOk({
-        invoice: {
-          id: invoice.id,
-          invoiceNumber: invoice.invoiceNumber,
-          grandTotal: invoice.grandTotal,
-          totalVat: invoice.totalVat,
-          subtotal: invoice.subtotal,
-          paymentMethod: invoice.paymentMethod,
-          amountTendered: invoice.amountTendered,
-          changeGiven: invoice.changeGiven,
-          qrCode: invoice.qrCode,
-          zatcaStatus: invoice.zatcaStatus,
-          orderNumber: primaryKitchenOrder(invoice)?.orderNumber ?? null,
-          invoiceDate: invoice.invoiceDate.toISOString(),
-          sellerCompanyNameAr: invoice.sellerCompanyNameAr,
-          sellerCompanyNameEn: invoice.sellerCompanyNameEn,
-          sellerVatNumber: invoice.sellerVatNumber,
-          sellerCrNumber: invoice.sellerCrNumber,
-          sellerEmail: invoice.sellerEmail ?? null,
-          sellerPhone: invoice.sellerPhone ?? null,
-          staffName: auth.session.name ?? null,
-          lines: invoice.lines.map((l) => ({
-            id: l.id,
-            nameAr: l.nameAr,
-            nameEn: l.nameEn,
-            quantity: l.quantity,
-            unitPrice: l.unitPrice,
-            discount: l.discount,
-            lineTotal: l.lineTotal,
-            vatAmount: l.vatAmount,
-            modifiersSnapshot: l.modifiersSnapshot ?? null,
-          })),
-        },
+        invoice: checkoutInvoiceJson(invoice, staffName),
       })
     } catch (e) {
+      // A request racing another with the same key loses on the unique key
+      // (or on a guard the winner already used) and rolls back completely —
+      // answer with the winner's sale instead of an error.
+      if (requestKey) {
+        const replay = await checkoutReplayResponse(auth.profileId, requestKey, staffName)
+        if (replay) return replay
+      }
       const code =
         e && typeof e === 'object' && 'code' in e ? String(e.code) : ''
       const message = e instanceof Error ? e.message : String(e)
@@ -164,6 +153,28 @@ export async function POST(request) {
       if (code === 'ZATCA_ERROR') {
         const raw = e instanceof Error ? e.message : String(e)
         console.error('[pos/checkout] ZATCA_ERROR:', raw)
+        // The sale is already saved (invoice, kitchen ticket, coupon / loyalty
+        // / offer use) and stays `failed` until reported. Answer like a
+        // completed sale so the POS clears the cart and never posts it again.
+        const invoiceId =
+          e && typeof e === 'object' && 'invoiceId' in e && e.invoiceId
+            ? String(e.invoiceId)
+            : null
+        const saved = invoiceId
+          ? await prisma.invoice.findFirst({
+              where: { id: invoiceId, businessProfileId: auth.profileId },
+              include: {
+                lines: { orderBy: { sortOrder: 'asc' } },
+                kitchenOrders: primaryKitchenOrderInclude(),
+              },
+            })
+          : null
+        if (saved) {
+          return jsonOk({
+            invoice: checkoutInvoiceJson(saved, staffName),
+            zatcaReportFailed: true,
+          })
+        }
         return jsonError(
           502,
           'ZATCA_ERROR',

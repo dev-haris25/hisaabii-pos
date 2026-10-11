@@ -91,6 +91,60 @@ import { scrollAfterFieldValidation } from '@/lib/ui/scroll-first-invalid-field'
 import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
 
+/** sessionStorage key holding the checkout request key while its outcome is unknown. */
+const PENDING_CHECKOUT_KEY = 'hisabi.pos.pendingCheckoutKey'
+/** A checkout with no answer after this long is treated as a lost response. */
+const CHECKOUT_TIMEOUT_MS = 45_000
+/** Automatic "was the sale saved?" lookups before showing a manual Retry. */
+const RECOVERY_ATTEMPTS = 3
+const RECOVERY_DELAY_MS = 2_000
+
+/** Thrown when checkout gets no HTTP answer in time (handled like a network error). */
+class CheckoutNoResponseError extends Error {}
+
+function newCheckoutRequestKey() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  const b = crypto.getRandomValues(new Uint8Array(16))
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
+
+/** @param {string | null} key */
+function writePendingCheckoutKey(key) {
+  try {
+    if (key) window.sessionStorage.setItem(PENDING_CHECKOUT_KEY, key)
+    else window.sessionStorage.removeItem(PENDING_CHECKOUT_KEY)
+  } catch {
+    // storage unavailable (private mode) — the in-memory key still protects this tab
+  }
+}
+
+function readPendingCheckoutKey() {
+  try {
+    return window.sessionStorage.getItem(PENDING_CHECKOUT_KEY)
+  } catch {
+    return null
+  }
+}
+
+/** @template T @param {Promise<T>} promise @param {number} ms @returns {Promise<T>} */
+function withCheckoutTimeout(promise, ms) {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = window.setTimeout(() => reject(new CheckoutNoResponseError('timeout')), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer))
+}
+
+/** @param {number} ms */
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
 const MONEY_RE = /^\d+(\.\d{1,4})?$/
 
 /** Checkout errors after which the POS reloads offers and keeps the cart. */
@@ -269,6 +323,14 @@ export function PosCheckoutView({
     /** @type {Record<string, unknown> | null} */ (null),
   )
   const [receiptLoyaltyAwarded, setReceiptLoyaltyAwarded] = useState(false)
+  /** True when the receipt is a sale found again after a reload. */
+  const [receiptRecovered, setReceiptRecovered] = useState(false)
+  /** Idempotency key of the current checkout attempt (kept for every retry until the sale completes). */
+  const checkoutKeyRef = useRef(/** @type {string | null} */ (null))
+  /** Lost checkout answer: cart locked while we look the sale up by its key. */
+  const [checkoutRecovery, setCheckoutRecovery] = useState(
+    /** @type {{ key: string, status: 'checking' | 'failed' } | null} */ (null),
+  )
   const [givePointsModalOpen, setGivePointsModalOpen] = useState(false)
   /** @type {[{ item: Record<string, unknown> | null, mode: 'add' | 'edit', lineKey: string | null, selection?: Record<string, string>, customizationIds?: string[] }, function]} */
   const [configurator, setConfigurator] = useState({
@@ -896,76 +958,183 @@ export function PosCheckoutView({
         }
         if (tillId) body.tillId = tillId
       }
-      return authPost('/pos/checkout', body)
+      // Same key for every retry of this attempt (incl. the stock-confirm
+      // resubmit) until a definitive answer; kept in sessionStorage so a
+      // reload can still find out whether the sale was saved.
+      if (!checkoutKeyRef.current) checkoutKeyRef.current = newCheckoutRequestKey()
+      body.requestKey = checkoutKeyRef.current
+      writePendingCheckoutKey(checkoutKeyRef.current)
+      return withCheckoutTimeout(authPost('/pos/checkout', body), CHECKOUT_TIMEOUT_MS)
     },
     onSuccess: (data) => {
-      setStockConfirm(null)
-      setAllotmentConfirm(null)
-      setReceipt(data.invoice ?? null)
-      setReceiptLoyaltyAwarded(false)
-      setGivePointsModalOpen(false)
-      setCart([])
-      setDealEntries([])
-      setDealPickerOffer(null)
-      setAmountTendered('')
-      setDiscount('')
-      setPaymentMethod('cash')
-      setFieldErrors({ discount: '', tendered: '' })
-      setNumpadField(null)
-      resetCouponState()
-      resetLoyaltyState()
-      void openTillCashDrawer(boundTill).catch(() => {})
+      completeSale(data, { openDrawer: true })
     },
     onError: (err) => {
-      const code = err instanceof AuthApiError ? err.code : undefined
-      if (code === 'DISCOUNT_EXCEEDS_CAP') {
-        setFieldErrors((prev) => ({
-          ...prev,
-          discount: t('validationDiscountCap'),
-        }))
-        scrollAfterFieldValidation()
+      // No HTTP answer (network error / timeout): the sale may have been
+      // saved. Lock the cart and look it up by the same key.
+      if (!(err instanceof AuthApiError)) {
+        if (checkoutKeyRef.current) {
+          void recoverCheckout(checkoutKeyRef.current)
+          return
+        }
+        toast.error(tErr('generic'))
         return
       }
-      if (
-        code === 'NO_KITCHEN_STOCK_CONFIRM' ||
-        code === 'NO_ALLOTMENT_CONFIRM'
-      ) {
-        const details =
-          err instanceof AuthApiError && Array.isArray(err.details)
-            ? err.details
-            : []
-        setAllotmentConfirm({ shortfalls: details })
+      // An HTTP answer is definitive: nothing was saved. The cart stays
+      // editable; a retry of this attempt may reuse the key.
+      writePendingCheckoutKey(null)
+      handleCheckoutError(err)
+    },
+  })
+
+  /**
+   * Completed sale (fresh checkout, a sale whose ZATCA report failed, or one
+   * found again by its request key): reset the sale state, open the drawer
+   * and show the receipt. The next sale gets a new key.
+   *
+   * @param {Record<string, any>} data
+   * @param {{ openDrawer?: boolean, recovered?: boolean }} [opts]
+   */
+  function completeSale(data, opts = {}) {
+    checkoutKeyRef.current = null
+    writePendingCheckoutKey(null)
+    setCheckoutRecovery(null)
+    // Also covers a sale saved but not reported to ZATCA (`zatcaReportFailed`):
+    // the receipt dialog offers "Report to ZATCA".
+    if (data?.zatcaReportFailed === true) {
+      toast.warning(t('zatcaReportFailedToast'))
+    }
+    setReceiptRecovered(opts.recovered === true)
+    setStockConfirm(null)
+    setAllotmentConfirm(null)
+    setReceipt(data.invoice ?? null)
+    setReceiptLoyaltyAwarded(false)
+    setGivePointsModalOpen(false)
+    setCart([])
+    setDealEntries([])
+    setDealPickerOffer(null)
+    setAmountTendered('')
+    setDiscount('')
+    setPaymentMethod('cash')
+    setFieldErrors({ discount: '', tendered: '' })
+    setNumpadField(null)
+    resetCouponState()
+    resetLoyaltyState()
+    if (opts.openDrawer) void openTillCashDrawer(boundTill).catch(() => {})
+  }
+
+  /**
+   * Look the sale up by its request key after a lost answer: a few automatic
+   * tries, then a manual Retry. Found → completed sale. 404 → nothing saved:
+   * unlock (the same key is reused on the next submit).
+   *
+   * @param {string} key
+   */
+  async function recoverCheckout(key) {
+    setCheckoutRecovery({ key, status: 'checking' })
+    for (let attempt = 0; attempt < RECOVERY_ATTEMPTS; attempt++) {
+      if (attempt > 0) await sleep(RECOVERY_DELAY_MS)
+      try {
+        const data = await authGet(
+          `/pos/checkout/lookup?key=${encodeURIComponent(key)}`,
+        )
+        completeSale(data, { openDrawer: true })
         return
+      } catch (err) {
+        if (err instanceof AuthApiError && err.status === 404) {
+          writePendingCheckoutKey(null)
+          setCheckoutRecovery(null)
+          toast.message(t('checkoutNotSaved'))
+          return
+        }
+        if (err instanceof AuthApiError && err.code === 'CHECKOUT_ALREADY_PROCESSED') {
+          checkoutKeyRef.current = null
+          writePendingCheckoutKey(null)
+          setCheckoutRecovery(null)
+          toast.error(tErr('CHECKOUT_ALREADY_PROCESSED'))
+          return
+        }
+        // Still no answer (or a transient server error): try again.
       }
-      if (code === 'INSUFFICIENT_STOCK_CONFIRM') {
-        const details =
-          err instanceof AuthApiError && Array.isArray(err.details)
-            ? err.details
-            : []
+    }
+    setCheckoutRecovery({ key, status: 'failed' })
+  }
+
+  // A reload while a checkout was pending: find out whether it was saved.
+  useEffect(() => {
+    const key = readPendingCheckoutKey()
+    if (!key) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const data = await authGet(
+          `/pos/checkout/lookup?key=${encodeURIComponent(key)}`,
+        )
+        if (!cancelled) completeSale(data, { recovered: true })
+      } catch (err) {
+        // Not saved (or no longer valid): forget the key silently. A network
+        // error keeps it for the next load.
+        if (err instanceof AuthApiError) writePendingCheckoutKey(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once on mount
+  }, [])
+
+  /** @param {unknown} err */
+  function handleCheckoutError(err) {
+    const code = err instanceof AuthApiError ? err.code : undefined
+    // The sale saved under this key was cancelled since: start a fresh attempt.
+    if (code === 'CHECKOUT_ALREADY_PROCESSED') checkoutKeyRef.current = null
+    if (code === 'DISCOUNT_EXCEEDS_CAP') {
+      setFieldErrors((prev) => ({
+        ...prev,
+        discount: t('validationDiscountCap'),
+      }))
+      scrollAfterFieldValidation()
+      return
+    }
+    if (
+      code === 'NO_KITCHEN_STOCK_CONFIRM' ||
+      code === 'NO_ALLOTMENT_CONFIRM'
+    ) {
+      const details =
+        err instanceof AuthApiError && Array.isArray(err.details)
+          ? err.details
+          : []
+      setAllotmentConfirm({ shortfalls: details })
+      return
+    }
+    if (code === 'INSUFFICIENT_STOCK_CONFIRM') {
+      const details =
+        err instanceof AuthApiError && Array.isArray(err.details)
+          ? err.details
+          : []
+      setStockConfirm({ shortfalls: details })
+      return
+    }
+    if (code === 'INSUFFICIENT_STOCK') {
+      // Hard block (e.g. unexpected); still surface shortfalls if present.
+      const details =
+        err instanceof AuthApiError && Array.isArray(err.details)
+          ? err.details
+          : []
+      if (details.length > 0) {
         setStockConfirm({ shortfalls: details })
         return
       }
-      if (code === 'INSUFFICIENT_STOCK') {
-        // Hard block (e.g. unexpected); still surface shortfalls if present.
-        const details =
-          err instanceof AuthApiError && Array.isArray(err.details)
-            ? err.details
-            : []
-        if (details.length > 0) {
-          setStockConfirm({ shortfalls: details })
-          return
-        }
-        toast.error(tErr('INSUFFICIENT_STOCK'))
-        return
-      }
-      if (code && OFFER_REFRESH_CODES.has(code)) {
-        toastAuthApiError(tErr, err)
-        void refreshOffersKeepCart()
-        return
-      }
-      toast.error(code ? tErr(code) : tErr('generic'))
-    },
-  })
+      toast.error(tErr('INSUFFICIENT_STOCK'))
+      return
+    }
+    if (code && OFFER_REFRESH_CODES.has(code)) {
+      toastAuthApiError(tErr, err)
+      void refreshOffersKeepCart()
+      return
+    }
+    toast.error(code ? tErr(code) : tErr('generic'))
+  }
 
   function itemDisplayName(item) {
     return locale === 'ar'
@@ -1378,15 +1547,54 @@ export function PosCheckoutView({
     },
   })
 
+  // "Report to ZATCA" from the receipt of a saved sale that is not reported
+  // yet. Resends the stored signed invoice; on success the QR arrives and
+  // printing unlocks. The receipt keeps its own fields (order number, staff).
+  const reportReceiptMutation = useMutation({
+    mutationFn: () => {
+      const invoiceId =
+        receipt && typeof receipt.id === 'string' ? receipt.id : ''
+      if (!invoiceId) {
+        throw new AuthApiError(400, 'VALIDATION_ERROR', 'Missing invoice')
+      }
+      return authPost(`/invoices/${invoiceId}/send`)
+    },
+    onSuccess: (data) => {
+      const reported = data?.invoice
+      setReceipt((prev) =>
+        prev
+          ? {
+              ...prev,
+              qrCode:
+                reported && typeof reported.qrCode === 'string'
+                  ? reported.qrCode
+                  : prev.qrCode,
+              zatcaStatus:
+                reported && typeof reported.zatcaStatus === 'string'
+                  ? reported.zatcaStatus
+                  : prev.zatcaStatus,
+            }
+          : prev,
+      )
+      toast.success(t('zatcaReportSuccess'))
+    },
+    onError: (err) => {
+      const code = err instanceof AuthApiError ? err.code : undefined
+      toast.error(code && tErr.has(code) ? tErr(code) : tErr('generic'))
+    },
+  })
+
   function closeReceipt() {
     setGivePointsModalOpen(false)
     setReceipt(null)
+    setReceiptRecovered(false)
   }
 
   const canCheckout =
     (cart.length > 0 || dealEntries.length > 0) &&
     !offerPricingError &&
-    !checkoutMutation.isPending
+    !checkoutMutation.isPending &&
+    !checkoutRecovery
 
   function handleCheckout() {
     if (offerPricingError) {
@@ -2589,6 +2797,14 @@ export function PosCheckoutView({
               >
                 {t('successTitle')} — {t('receiptPreviewHint')}
               </p>
+              {receiptRecovered ? (
+                <p
+                  role="status"
+                  className="type-body-sm mb-hisabi-sm rounded-lg border border-amber-300 bg-amber-50 px-hisabi-md py-hisabi-sm text-center text-amber-900"
+                >
+                  {t('previousSaleSavedNotice')}
+                </p>
+              ) : null}
 
               <PosThermalReceiptPreview
                 invoice={/** @type {any} */ (receipt)}
@@ -2608,9 +2824,23 @@ export function PosCheckoutView({
                   {receiptActionLabel(t, desktop)}
                 </AuthSubmitButton>
               ) : (
-                <p className="type-body-sm text-hisabi-on-surface-variant text-center">
-                  {t('printBlockedNoQr')}
-                </p>
+                <>
+                  <p
+                    role="status"
+                    className="type-body-sm rounded-lg border border-amber-300 bg-amber-50 px-hisabi-md py-hisabi-sm text-center text-amber-900"
+                  >
+                    {t('zatcaNotReportedNotice')}
+                  </p>
+                  {typeof receipt.id === 'string' && receipt.id ? (
+                    <AuthSubmitButton
+                      type="button"
+                      pending={reportReceiptMutation.isPending}
+                      onClick={() => reportReceiptMutation.mutate()}
+                    >
+                      {t('reportToZatca')}
+                    </AuthSubmitButton>
+                  ) : null}
+                </>
               )}
               {loyaltyEnabled &&
               typeof receipt.id === 'string' &&
@@ -2659,6 +2889,31 @@ export function PosCheckoutView({
               ? tInv('givePointsSuccessWithAmount', { points })
               : tInv('givePointsSuccess'),
           )
+        }}
+      />
+
+      {/* Lost checkout answer: blocks the POS (no dismiss) until we know
+          whether the sale was saved. */}
+      <HisabiStatusModal
+        open={Boolean(checkoutRecovery)}
+        onOpenChange={() => {}}
+        variant="warning"
+        title={t('checkoutConnectionLostTitle')}
+        description={
+          checkoutRecovery?.status === 'failed'
+            ? t('checkoutCheckFailed')
+            : t('checkoutCheckingSale')
+        }
+        primaryLabel={
+          checkoutRecovery?.status === 'failed'
+            ? t('checkoutCheckRetry')
+            : t('checkoutChecking')
+        }
+        primaryPending={checkoutRecovery?.status === 'checking'}
+        onPrimary={() => {
+          if (checkoutRecovery?.status === 'failed') {
+            void recoverCheckout(checkoutRecovery.key)
+          }
         }}
       />
 

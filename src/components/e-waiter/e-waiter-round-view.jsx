@@ -286,7 +286,7 @@ export function EWaiterRoundView({
           // Offers changed since the menu loaded → fresh offers, then retry.
           setActionError(tErr(code))
           router.refresh()
-        } else if (code.startsWith('OFFER')) {
+        } else if (code.startsWith('OFFER') || code === 'RATE_LIMITED') {
           setActionError(tErr(code))
         } else {
           setActionError(t('roundEditFailed'))
@@ -323,7 +323,9 @@ export function EWaiterRoundView({
         setActionError(
           code === 'ROUND_NOT_EDITABLE'
             ? t('roundLocked')
-            : t('roundEditFailed'),
+            : code === 'RATE_LIMITED'
+              ? tErr('RATE_LIMITED')
+              : t('roundEditFailed'),
         )
         await roundsQuery.refetch()
         return

@@ -5,7 +5,7 @@ import {
   isKitchenOrQueueDisplayUser,
 } from '@/lib/auth/post-auth-landing-path'
 import { createMongoAbility } from '@casl/ability'
-import { hasFullAccess } from '@/lib/rbac/ability-utils'
+import { abilityManagesBusiness } from '@/lib/rbac/ability-utils'
 import { redirect } from 'next/navigation'
 
 /**
@@ -26,11 +26,9 @@ export async function requireAdminAppUser() {
     redirect(getPostAuthLandingPath(user))
   }
 
-  const ability = createMongoAbility(user.abilityRules ?? [])
-  const managesBusiness =
-    hasFullAccess(ability) ||
-    ability.can('update', 'BusinessProfile') ||
-    ability.can('create', 'BusinessProfile')
+  const managesBusiness = abilityManagesBusiness(
+    createMongoAbility(user.abilityRules ?? []),
+  )
 
   // Restaurant list/create must stay reachable while ZATCA is still pending
   // (add-restaurant flow). First-run ZATCA stays on /zatca-onboarding via
@@ -50,11 +48,9 @@ export async function getAdminAppUserOrNull() {
   if (!user) return null
   if (!user.hasBusinessProfile || !user.active) return null
   if (isKitchenOrQueueDisplayUser(user)) return null
-  const ability = createMongoAbility(user.abilityRules ?? [])
-  const managesBusiness =
-    hasFullAccess(ability) ||
-    ability.can('update', 'BusinessProfile') ||
-    ability.can('create', 'BusinessProfile')
+  const managesBusiness = abilityManagesBusiness(
+    createMongoAbility(user.abilityRules ?? []),
+  )
   if (managesBusiness && user.needsBusinessProfileOnboarding) {
     return null
   }

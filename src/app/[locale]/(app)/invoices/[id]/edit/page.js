@@ -18,6 +18,7 @@ import {
   canEditOrCancelInvoice,
   canRepairFailedInvoice,
 } from '@/lib/notes/can-edit-or-cancel-invoice'
+import { loadInvoiceOutstanding } from '@/lib/notes/load-invoice-outstanding'
 import { primaryKitchenOrderInclude } from '@/lib/orders/primary-kitchen-order'
 import { restaurantLogoPreviewUrl } from '@/lib/print/load-receipt-logo'
 import { prisma } from '@/lib/prisma'
@@ -81,20 +82,31 @@ export default async function InvoiceEditPage({ params }) {
       .filter((item) => item.id && item.imageUrl)
       .map((item) => [item.id, item.imageUrl]),
   )
-  const cartSeed = invoice.lines.map((line) => ({
-    key: line.id,
-    invoiceLineId: line.id,
-    menuItemId: line.menuItemId ?? null,
-    nameAr: line.nameAr,
-    nameEn: line.nameEn,
-    quantity: line.quantity,
-    unitPrice: String(line.unitPrice),
-    vatPreset: line.vatPreset,
-    modifiersSnapshot: line.modifiersSnapshot ?? null,
-    imageUrl: line.menuItemId
-      ? (imageByMenuItemId.get(line.menuItemId) ?? null)
-      : null,
-  }))
+  // Correction: seed from the outstanding state (remaining quantities; fully
+  // credited lines are not shown). Repair: the invoice lines as stored.
+  const outstanding =
+    mode === 'correction' ? await loadInvoiceOutstanding(prisma, invoice) : null
+  const remainingById = new Map(
+    (outstanding?.lines ?? []).map((l) => [l.invoiceLineId, l.remainingQuantity]),
+  )
+  const cartSeed = invoice.lines
+    .map((line) => ({
+      key: line.id,
+      invoiceLineId: line.id,
+      menuItemId: line.menuItemId ?? null,
+      nameAr: line.nameAr,
+      nameEn: line.nameEn,
+      quantity: outstanding
+        ? (remainingById.get(line.id) ?? 0)
+        : line.quantity,
+      unitPrice: String(line.unitPrice),
+      vatPreset: line.vatPreset,
+      modifiersSnapshot: line.modifiersSnapshot ?? null,
+      imageUrl: line.menuItemId
+        ? (imageByMenuItemId.get(line.menuItemId) ?? null)
+        : null,
+    }))
+    .filter((line) => line.quantity > 0)
 
   return (
     <Suspense
@@ -108,6 +120,7 @@ export default async function InvoiceEditPage({ params }) {
         mode={mode}
         invoice={invoiceJson}
         cartSeed={cartSeed}
+        outstanding={outstanding}
         categories={categories.map(mapMenuCategoryToJson)}
         menuItems={menuItemsJson}
         logoUrl={restaurantLogoPreviewUrl(profile)}

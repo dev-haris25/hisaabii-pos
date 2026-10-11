@@ -13,6 +13,7 @@ import { verifyOtpForStaff } from '@/lib/auth/otp'
 import { verifyOtpBodySchema } from '@/lib/auth/schemas'
 import { handleRouteError } from '@/lib/api/route-error'
 import { jsonError } from '@/lib/api/json-response'
+import { rateLimitResponse } from '@/lib/api/rate-limit'
 import { prisma } from '@/lib/prisma'
 
 export async function POST(request) {
@@ -30,6 +31,10 @@ export async function POST(request) {
     }
 
     const emailNorm = parsed.data.email.toLowerCase()
+    const limited = rateLimitResponse([
+      ['verifyRegisterOtpEmail', emailNorm],
+    ])
+    if (limited) return limited
     const staff = await prisma.user.findUnique({
       where: { email: emailNorm },
       select: { id: true, emailVerified: true },

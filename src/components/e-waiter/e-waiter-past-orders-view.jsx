@@ -46,6 +46,7 @@ export function EWaiterPastOrdersView({
   loyaltyBadgeLabel,
 }) {
   const t = useTranslations('EWaiter')
+  const tErr = useTranslations('AuthErrors')
 
   const query = useQuery({
     queryKey: ['e-waiter-past-orders', slug, qrToken, loyaltyAccountId],
@@ -67,6 +68,9 @@ export function EWaiterPastOrdersView({
         ),
       }
     },
+    // A rate-limited request is not retried (retries would only use up more).
+    retry: (failureCount, error) =>
+      error?.message !== 'RATE_LIMITED' && failureCount < 3,
   })
 
   useEffect(() => {
@@ -129,7 +133,9 @@ export function EWaiterPastOrdersView({
           </p>
         ) : query.isError ? (
           <p className="type-body-md text-hisabi-error py-hisabi-xl text-center">
-            {t('pastOrdersFailed')}
+            {query.error?.message === 'RATE_LIMITED'
+              ? tErr('RATE_LIMITED')
+              : t('pastOrdersFailed')}
           </p>
         ) : orders.length === 0 ? (
           <p className="type-body-md e-waiter-text-muted py-hisabi-xl text-center">

@@ -1,4 +1,5 @@
 import { jsonError, jsonOk } from '@/lib/api/json-response'
+import { qrTableKey, rateLimitResponse } from '@/lib/api/rate-limit'
 import { handleRouteError } from '@/lib/api/route-error'
 import {
   eWaiterSubmitBodySchema,
@@ -14,6 +15,10 @@ import { prisma } from '@/lib/prisma'
 export async function POST(request, context) {
   try {
     const { slug, qrToken } = await context.params
+    const limited = rateLimitResponse([
+      ['qrSubmitTable', qrTableKey(slug, qrToken)],
+    ])
+    if (limited) return limited
     const resolved = await resolvePublicOrderTable(slug, qrToken)
     if (!resolved) {
       return jsonError(404, 'NOT_FOUND', 'Order page not found')

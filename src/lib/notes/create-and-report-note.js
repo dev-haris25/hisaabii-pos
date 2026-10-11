@@ -1,16 +1,22 @@
 import { extractInvoiceUuid } from '@talha7k/zatca'
 
 import { PRISMA_INTERACTIVE_TRANSACTION_OPTIONS } from '@/lib/db/prisma-interactive-transaction-options'
+import { WHERE_NOT_DELETED } from '@/lib/db/soft-delete-scope'
 import {
   computeInvoiceTotals,
   parseMoney,
 } from '@/lib/invoices/invoice-compute-totals'
 import { allocateCreditNoteNumber, allocateDebitNoteNumber } from '@/lib/notes/allocate-note-number'
+import {
+  assertCreditWithinBalance,
+  computeInvoiceOutstanding,
+  noteTaxableCents,
+} from '@/lib/notes/invoice-outstanding'
+import { loadInvoiceNotes, lockInvoiceRow } from '@/lib/notes/load-invoice-outstanding'
+import { voidInvoiceIfFullyCredited } from '@/lib/notes/void-invoice'
 import { emitZatcaReportFailed } from '@/lib/notifications/emit-zatca-report-failed'
 import { notifyPosAudience } from '@/lib/notifications/notify-owner-and-actor'
 import { reconcileLoyaltyPointsForInvoice } from '@/lib/loyalty/reconcile-loyalty-points-for-invoice'
-import { cancelKitchenOrderForInvoice } from '@/lib/orders/sync-kitchen-order'
-import { releaseOfferUsages } from '@/lib/offers/offer-usage'
 import { prisma } from '@/lib/prisma'
 import { reportDocumentToZatca } from '@/lib/zatca/zatca-document-chain'
 
@@ -100,135 +106,164 @@ export function resolveOriginalInvoiceUuid(xmlPayload) {
   }
 }
 
+/** @param {string} code @param {string} message */
+function noteError(code, message) {
+  return Object.assign(new Error(message), { code })
+}
+
 /**
- * Persist a note + report to ZATCA immediately. On ZATCA failure the note stays
- * (rules.md #19) with zatcaStatus failed for manual retry.
+ * Create a credit / debit note for an invoice, then report it to ZATCA.
+ *
+ * Inside one transaction holding a row lock on the invoice: re-read the
+ * invoice and its notes, refuse while another note is not yet reported,
+ * compute the outstanding state, let `plan` build the note lines from it,
+ * apply the credit cap and create the note (credit lines keep their invoice
+ * line link + units covered). Reporting runs after the commit; on ZATCA
+ * failure the note stays `failed` (rules.md #19). A credit note accepted by
+ * ZATCA voids the invoice once nothing is left outstanding.
  *
  * @param {{
- *   documentNature: 'credit' | 'debit'
  *   profileId: string
  *   staffId: string
- *   invoice: import('@/generated/prisma/client').Invoice & {
- *     lines: import('@/generated/prisma/client').InvoiceLine[]
- *   }
+ *   invoiceId: string
  *   reasonAr: string
  *   reasonEn?: string | null
- *   noteLines: Array<{
- *     nameAr: string
- *     nameEn?: string | null
- *     quantity: number
- *     unitPrice: string
- *     vatPreset: string
- *   }>
- *   markInvoiceVoided?: boolean
+ *   plan: (outstanding: import('@/lib/notes/invoice-outstanding').InvoiceOutstanding) => {
+ *     documentNature: 'credit' | 'debit'
+ *     noteLines: Array<{
+ *       nameAr: string
+ *       nameEn?: string | null
+ *       quantity: number
+ *       unitPrice: string
+ *       vatPreset: string
+ *       invoiceLineId?: string
+ *       unitsCovered?: number
+ *     }>
+ *   }
  * }} opts
  */
 export async function createAndReportNote(opts) {
-  const {
-    documentNature,
-    profileId,
-    staffId,
-    invoice,
-    reasonAr,
-    reasonEn,
-    noteLines,
-    markInvoiceVoided = false,
-  } = opts
+  const { profileId, staffId, invoiceId, reasonAr, reasonEn, plan } = opts
 
-  const totals = computeInvoiceTotals(
-    noteLines.map((l) => ({
-      quantity: l.quantity,
-      unitPrice: l.unitPrice,
-      discount: '0',
-      vatPreset: l.vatPreset,
-    })),
-  )
-
-  if (parseMoney(totals.grandTotal) <= 0) {
-    throw Object.assign(new Error('Note amount must be greater than zero'), {
-      code: 'NOTE_AMOUNT_INVALID',
-    })
+  if (!String(reasonAr ?? '').trim()) {
+    throw noteError('NOTE_REASON_REQUIRED', 'Arabic reason is required')
   }
 
-  const invoiceUuid = resolveOriginalInvoiceUuid(invoice.xmlPayload)
-  if (!invoiceUuid) {
-    throw Object.assign(
-      new Error('Original invoice has no ZATCA UUID — report it first'),
-      { code: 'INVOICE_NOT_REPORTED' },
+  const created = await prisma.$transaction(async (tx) => {
+    if (!(await lockInvoiceRow(tx, invoiceId, profileId))) {
+      throw noteError('NOT_FOUND', 'Invoice not found')
+    }
+    const invoice = await tx.invoice.findFirst({
+      where: { id: invoiceId, businessProfileId: profileId, ...WHERE_NOT_DELETED },
+      include: { lines: { orderBy: { sortOrder: 'asc' } } },
+    })
+    if (!invoice) throw noteError('NOT_FOUND', 'Invoice not found')
+    if (invoice.status === 'voided') {
+      throw noteError('INVOICE_VOIDED', 'Invoice is already cancelled')
+    }
+    if (invoice.zatcaStatus !== 'reported' && invoice.zatcaStatus !== 'cleared') {
+      throw noteError('INVOICE_NOT_REPORTED', 'Report the invoice to ZATCA first')
+    }
+
+    const { creditNotes, debitNotes } = await loadInvoiceNotes(tx, invoice.id)
+    const outstanding = computeInvoiceOutstanding({
+      invoiceLines: invoice.lines,
+      creditNotes,
+      debitNotes,
+    })
+    if (outstanding.pendingNoteCount > 0) {
+      throw noteError(
+        'NOTE_PENDING_FOR_INVOICE',
+        'A credit or debit note for this invoice is not reported to ZATCA yet',
+      )
+    }
+
+    const { documentNature, noteLines } = plan(outstanding)
+    if (noteLines.length === 0) {
+      throw noteError('NOTE_AMOUNT_INVALID', 'Note amount must be greater than zero')
+    }
+    const totals = computeInvoiceTotals(
+      noteLines.map((l) => ({
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        discount: '0',
+        vatPreset: l.vatPreset,
+      })),
     )
-  }
-
-  const seller = sellerSnapshotFromSource(invoice)
-  const lineCreates = noteLines.map((l, idx) => {
-    const a = totals.perLine[idx]
-    return {
-      nameAr: l.nameAr,
-      nameEn: l.nameEn ?? null,
-      quantity: a.quantity,
-      unitPrice: l.unitPrice,
-      vatPreset: /** @type {import('@/generated/prisma/client').VatPreset} */ (
-        l.vatPreset
-      ),
-      vatAmount: a.vatAmountStr,
-      lineTotal: a.lineTotalStr,
-      sortOrder: idx,
+    if (parseMoney(totals.grandTotal) <= 0) {
+      throw noteError('NOTE_AMOUNT_INVALID', 'Note amount must be greater than zero')
     }
-  })
-
-  const note = await prisma.$transaction(async (tx) => {
     if (documentNature === 'credit') {
-      const creditNoteNumber = await allocateCreditNoteNumber(profileId, tx)
-      return tx.creditNote.create({
-        data: {
-          businessProfileId: profileId,
-          creditNoteNumber,
-          invoiceId: invoice.id,
-          invoiceNumberSnapshot: invoice.invoiceNumber,
-          invoiceUuidSnapshot: invoiceUuid,
-          invoiceIssueDateSnapshot: invoice.invoiceDate,
-          reasonAr: reasonAr.trim(),
-          reasonEn: reasonEn?.trim() || null,
-          createdByStaffId: staffId,
-          ...seller,
-          subtotal: totals.subtotal,
-          totalVat: totals.totalVat,
-          grandTotal: totals.grandTotal,
-          zatcaStatus: 'pending',
-          lines: { create: lineCreates },
-        },
-        include: {
-          lines: { orderBy: { sortOrder: 'asc' } },
-          createdByStaff: { select: { id: true, name: true } },
-        },
-      })
+      assertCreditWithinBalance(outstanding, noteTaxableCents(noteLines))
     }
 
-    const debitNoteNumber = await allocateDebitNoteNumber(profileId, tx)
-    return tx.debitNote.create({
-      data: {
-        businessProfileId: profileId,
-        debitNoteNumber,
-        invoiceId: invoice.id,
-        invoiceNumberSnapshot: invoice.invoiceNumber,
-        invoiceUuidSnapshot: invoiceUuid,
-        invoiceIssueDateSnapshot: invoice.invoiceDate,
-        reasonAr: reasonAr.trim(),
-        reasonEn: reasonEn?.trim() || null,
-        createdByStaffId: staffId,
-        ...seller,
-        subtotal: totals.subtotal,
-        totalVat: totals.totalVat,
-        grandTotal: totals.grandTotal,
-        zatcaStatus: 'pending',
-        lines: { create: lineCreates },
-      },
-      include: {
-        lines: { orderBy: { sortOrder: 'asc' } },
-        createdByStaff: { select: { id: true, name: true } },
-      },
+    const invoiceUuid = resolveOriginalInvoiceUuid(invoice.xmlPayload)
+    if (!invoiceUuid) {
+      throw noteError(
+        'INVOICE_NOT_REPORTED',
+        'Original invoice has no ZATCA UUID — report it first',
+      )
+    }
+
+    const seller = sellerSnapshotFromSource(invoice)
+    const lineCreates = noteLines.map((l, idx) => {
+      const a = totals.perLine[idx]
+      /** @type {Record<string, unknown>} */
+      const row = {
+        nameAr: l.nameAr,
+        nameEn: l.nameEn ?? null,
+        quantity: a.quantity,
+        unitPrice: l.unitPrice,
+        vatPreset: /** @type {import('@/generated/prisma/client').VatPreset} */ (
+          l.vatPreset
+        ),
+        vatAmount: a.vatAmountStr,
+        lineTotal: a.lineTotalStr,
+        sortOrder: idx,
+      }
+      if (documentNature === 'credit' && l.invoiceLineId) {
+        row.invoiceLineId = l.invoiceLineId
+        row.unitsCovered = l.unitsCovered ?? null
+      }
+      return row
     })
+    const header = {
+      businessProfileId: profileId,
+      invoiceId: invoice.id,
+      invoiceNumberSnapshot: invoice.invoiceNumber,
+      invoiceUuidSnapshot: invoiceUuid,
+      invoiceIssueDateSnapshot: invoice.invoiceDate,
+      reasonAr: reasonAr.trim(),
+      reasonEn: reasonEn?.trim() || null,
+      createdByStaffId: staffId,
+      ...seller,
+      subtotal: totals.subtotal,
+      totalVat: totals.totalVat,
+      grandTotal: totals.grandTotal,
+      zatcaStatus: /** @type {const} */ ('pending'),
+      lines: { create: lineCreates },
+    }
+
+    const note =
+      documentNature === 'credit'
+        ? await tx.creditNote.create({
+            data: {
+              ...header,
+              creditNoteNumber: await allocateCreditNoteNumber(profileId, tx),
+            },
+            include: NOTE_INCLUDE,
+          })
+        : await tx.debitNote.create({
+            data: {
+              ...header,
+              debitNoteNumber: await allocateDebitNoteNumber(profileId, tx),
+            },
+            include: NOTE_INCLUDE,
+          })
+    return { note, documentNature, invoice }
   }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
 
+  const { note, documentNature, invoice } = created
   const noteNumber =
     documentNature === 'credit' ? note.creditNoteNumber : note.debitNoteNumber
   void notifyPosAudience({
@@ -261,74 +296,46 @@ export async function createAndReportNote(opts) {
       documentId: note.id,
       documentNumber: noteNumber,
     })
-    // Cancel still voids only after successful report — leave invoice completed on failure.
+    // The invoice is voided only after ZATCA accepts the note (also through
+    // the credit note's own Report action) — leave it as is on failure.
     throw Object.assign(
       new Error(err instanceof Error ? err.message : String(err)),
       { code: 'ZATCA_ERROR', noteId: note.id, documentNature },
     )
   }
 
-  if (markInvoiceVoided) {
-    await prisma.invoice.update({
-      where: { id: invoice.id },
-      data: { status: 'voided' },
-    })
-    // Offers & Deals: a voided sale gives its offer uses back.
-    await releaseOfferUsages(prisma, { invoiceId: invoice.id })
-    await cancelKitchenOrderForInvoice(prisma, invoice.id)
-    void notifyPosAudience({
-      businessProfileId: profileId,
-      audience: 'salesOps',
-      type: 'invoice_voided',
-      kind: 'salesOps',
-      vars: { detail: `Invoice ${invoice.invoiceNumber} was voided` },
-      link: `/invoices/${invoice.id}`,
-      dedupeKey: `invoice-voided:${invoice.id}`,
-      actorUserId: staffId,
-    })
-  }
+  const voided =
+    documentNature === 'credit'
+      ? await voidInvoiceIfFullyCredited({
+          invoiceId: invoice.id,
+          businessProfileId: profileId,
+          actorUserId: staffId,
+        })
+      : false
 
-  // Loyalty is a post-success side-effect. Never remap failures to ZATCA_ERROR —
-  // the note (and void, when applicable) already committed.
-  try {
-    if (markInvoiceVoided) {
-      await reconcileLoyaltyPointsForInvoice({
-        invoice: { ...invoice, status: 'voided' },
-        cashierUserId: staffId,
-      })
-    } else {
+  // Loyalty is a post-success side-effect (a void reconciles on its own).
+  // Never remap failures to ZATCA_ERROR — the note already committed.
+  if (!voided) {
+    try {
       await reconcileLoyaltyPointsForInvoice({
         invoice,
         cashierUserId: staffId,
       })
+    } catch (loyaltyErr) {
+      console.error(
+        '[loyalty] reconcile after note failed (document already finalized):',
+        loyaltyErr instanceof Error ? loyaltyErr.message : loyaltyErr,
+        { invoiceId: invoice.id, noteId: note.id, documentNature },
+      )
     }
-  } catch (loyaltyErr) {
-    console.error(
-      '[loyalty] reconcile after note/cancel failed (document already finalized):',
-      loyaltyErr instanceof Error ? loyaltyErr.message : loyaltyErr,
-      {
-        invoiceId: invoice.id,
-        noteId: note.id,
-        documentNature,
-        markInvoiceVoided: Boolean(markInvoiceVoided),
-      },
-    )
   }
 
-  if (documentNature === 'credit') {
-    return prisma.creditNote.findUnique({
-      where: { id: note.id },
-      include: {
-        lines: { orderBy: { sortOrder: 'asc' } },
-        createdByStaff: { select: { id: true, name: true } },
-      },
-    })
-  }
-  return prisma.debitNote.findUnique({
-    where: { id: note.id },
-    include: {
-      lines: { orderBy: { sortOrder: 'asc' } },
-      createdByStaff: { select: { id: true, name: true } },
-    },
-  })
+  return documentNature === 'credit'
+    ? prisma.creditNote.findUnique({ where: { id: note.id }, include: NOTE_INCLUDE })
+    : prisma.debitNote.findUnique({ where: { id: note.id }, include: NOTE_INCLUDE })
+}
+
+const NOTE_INCLUDE = {
+  lines: { orderBy: { sortOrder: /** @type {const} */ ('asc') } },
+  createdByStaff: { select: { id: true, name: true } },
 }

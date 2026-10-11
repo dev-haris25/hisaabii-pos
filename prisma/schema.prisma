@@ -897,6 +897,10 @@ model Invoice {
   /// Ex-VAT discount from loyalty redemption, if any (decimal string).
   loyaltyDiscountAmount String?
 
+  /// POS checkout idempotency key (UUID sent by the till). A retried request
+  /// with the same key returns this invoice instead of saving the sale again.
+  checkoutRequestKey String?
+
   // ZATCA artifacts — field names match Hisabi's Invoice model exactly.
   xmlPayload             String?
   /// Base64 TLV QR — must always be the full 9-tag Phase-2 QR before printing,
@@ -931,6 +935,7 @@ model Invoice {
   loyaltyTransactions LoyaltyTransaction[]
 
   @@unique([businessProfileId, invoiceNumber])
+  @@unique([businessProfileId, checkoutRequestKey])
   @@index([businessProfileId, zatcaStatus])
   @@index([businessProfileId, invoiceDate])
   @@index([businessProfileId, deletedAt])
@@ -1156,6 +1161,9 @@ model InvoiceLine {
   /// Groups the component lines of one combo deal added to the cart.
   offerGroupKey     String?
 
+  /// Credit-note lines that credit this line (outstanding-state tracking).
+  creditNoteLines CreditNoteLine[]
+
   @@index([invoiceId])
   @@index([menuItemId])
   @@index([offerId])
@@ -1272,7 +1280,15 @@ model CreditNoteLine {
   lineTotal String
   sortOrder Int       @default(0)
 
+  /// Invoice line this note line credits (null on notes created before line links).
+  invoiceLineId String?
+  invoiceLine   InvoiceLine? @relation(fields: [invoiceLineId], references: [id], onDelete: SetNull)
+  /// Units of that invoice line this note line covers (may differ from `quantity`
+  /// when the amount is carried on a quantity-1 line).
+  unitsCovered  Int?
+
   @@index([creditNoteId])
+  @@index([invoiceLineId])
   @@map("credit_note_lines")
 }
 

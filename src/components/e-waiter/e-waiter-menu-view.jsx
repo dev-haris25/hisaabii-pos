@@ -822,7 +822,7 @@ export function EWaiterMenuView({
           // Offers changed: show why, pull fresh offers, keep the cart.
           setOrderError(tErr(code))
           router.refresh()
-        } else if (code.startsWith('OFFER')) {
+        } else if (code.startsWith('OFFER') || code === 'RATE_LIMITED') {
           setOrderError(tErr(code))
         } else {
           setOrderError(t('orderFailed'))
@@ -883,7 +883,9 @@ export function EWaiterMenuView({
             ? t('offers.redeemBlocked')
             : code === 'INVALID_REDEEM_AMOUNT' || code === 'LOYALTY_NOT_ELIGIBLE'
               ? t('redeemFailed')
-              : t('askBillFailed'),
+              : code === 'RATE_LIMITED'
+                ? tErr('RATE_LIMITED')
+                : t('askBillFailed'),
         )
         if (code === 'OFFERS_EXCLUSIVE_DISCOUNT') setRedeemOpen(false)
         return
@@ -1047,7 +1049,11 @@ export function EWaiterMenuView({
       )
       const data = await res.json().catch(() => ({}))
       if (!res.ok || data.ok === false) {
-        setActionMessage(t('callWaiterFailed'))
+        setActionMessage(
+          data.code === 'RATE_LIMITED'
+            ? tErr('RATE_LIMITED')
+            : t('callWaiterFailed'),
+        )
         return
       }
       setWaiterCalled(true)

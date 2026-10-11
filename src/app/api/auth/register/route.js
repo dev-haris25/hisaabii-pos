@@ -5,6 +5,7 @@ import { registerBodySchema } from '@/lib/auth/schemas'
 import { sendOtpEmail } from '@/lib/email/send-otp-email'
 import { handleRouteError } from '@/lib/api/route-error'
 import { jsonError, jsonOk } from '@/lib/api/json-response'
+import { getClientIp, rateLimitResponse } from '@/lib/api/rate-limit'
 import { seedPredefinedRolesForRestaurant } from '@/lib/rbac/seed-predefined-roles'
 import { prisma } from '@/lib/prisma'
 
@@ -41,6 +42,10 @@ export async function POST(request) {
 
     const { name, email, password } = parsed.data
     const emailNorm = email.toLowerCase()
+    const limited = rateLimitResponse([
+      ['registerIp', getClientIp(request)],
+    ])
+    if (limited) return limited
 
     const existing = await prisma.user.findUnique({
       where: { email: emailNorm },

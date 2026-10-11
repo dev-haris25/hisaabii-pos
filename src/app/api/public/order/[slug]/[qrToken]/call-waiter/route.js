@@ -1,6 +1,10 @@
 import { jsonError, jsonOk } from '@/lib/api/json-response'
+import { qrTableKey, rateLimitResponse } from '@/lib/api/rate-limit'
 import { handleRouteError } from '@/lib/api/route-error'
-import { mapTableWaiterCallJson } from '@/lib/e-waiter/map-table-session-flags'
+import {
+  isWaiterCallActive,
+  mapTableWaiterCallJson,
+} from '@/lib/e-waiter/map-table-session-flags'
 import { resolvePublicOrderTable } from '@/lib/e-waiter/resolve-public-order-table'
 import { prisma } from '@/lib/prisma'
 
@@ -8,13 +12,25 @@ import { prisma } from '@/lib/prisma'
  * Customer Call Waiter — lightweight, session-independent.
  * Does NOT create or touch TableSession. Does NOT lock ordering.
  * Repeat calls after resolve refresh waiterCallRequestedAt on the Table.
+ * While a call is still active, a repeat press returns the current state and
+ * leaves waiterCallRequestedAt alone, so staff are not alerted again.
  */
 export async function POST(_request, context) {
   try {
     const { slug, qrToken } = await context.params
+    const limited = rateLimitResponse([
+      ['qrCallWaiterTable', qrTableKey(slug, qrToken)],
+    ])
+    if (limited) return limited
     const resolved = await resolvePublicOrderTable(slug, qrToken)
     if (!resolved) {
       return jsonError(404, 'NOT_FOUND', 'Order page not found')
+    }
+
+    if (isWaiterCallActive(resolved.table)) {
+      return jsonOk({
+        waiterCall: mapTableWaiterCallJson(resolved.table),
+      })
     }
 
     const now = new Date()

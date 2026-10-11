@@ -2,7 +2,6 @@ import {
   AUTH_USER_SELECT,
   buildAuthUserFromRowAsync,
 } from '@/lib/auth/auth-user-json'
-import { userCanAccessBusinessProfile } from '@/lib/auth/accessible-business-profiles'
 import { getSessionUser } from '@/lib/auth/get-session-user'
 import { saveBusinessLogoLocally } from '@/lib/auth/save-business-logo'
 import { businessProfileBodySchema } from '@/lib/auth/schemas'
@@ -10,8 +9,7 @@ import { defaultVatPercentFromPreset } from '@/lib/auth/vat-preset'
 import { jsonError, jsonOk } from '@/lib/api/json-response'
 import { handleRouteError } from '@/lib/api/route-error'
 import { taxIdDigitsEqual } from '@/lib/business-registration-ids'
-import { createMongoAbility } from '@casl/ability'
-import { hasFullAccess } from '@/lib/rbac/ability-utils'
+import { getBusinessProfileAccess } from '@/lib/rbac/business-profile-access'
 import { getZatcaEnvironment } from '@/lib/zatca/env'
 import { invalidateZatcaOnboardingForProfile } from '@/lib/zatca/invalidate-zatca-onboarding'
 import { prisma } from '@/lib/prisma'
@@ -74,23 +72,18 @@ export async function GET(_request, ctx) {
     if (!session) {
       return jsonError(401, 'UNAUTHORIZED', 'Not signed in')
     }
-    const ability = createMongoAbility(session.abilityRules ?? [])
-    if (
-      !hasFullAccess(ability) &&
-      !ability.can('read', 'BusinessProfile') &&
-      !ability.can('update', 'BusinessProfile')
-    ) {
-      return jsonError(403, 'FORBIDDEN', 'Not allowed')
-    }
-
     const { id } = await ctx.params
     if (!id || typeof id !== 'string') {
       return jsonError(400, 'VALIDATION_ERROR', 'Invalid id')
     }
 
-    const canAccess = await userCanAccessBusinessProfile(session.id, id)
-    if (!canAccess) {
+    // Judge by the TARGET restaurant's ability, not the active one's.
+    const access = await getBusinessProfileAccess(session.id, id)
+    if (!access.member) {
       return jsonError(404, 'NOT_FOUND', 'Profile not found')
+    }
+    if (!access.canRead) {
+      return jsonError(403, 'FORBIDDEN', 'Not allowed')
     }
 
     const row = await prisma.businessProfile.findUnique({
@@ -119,19 +112,18 @@ export async function PATCH(request, ctx) {
     if (!session) {
       return jsonError(401, 'UNAUTHORIZED', 'Not signed in')
     }
-    const ability = createMongoAbility(session.abilityRules ?? [])
-    if (!hasFullAccess(ability) && !ability.can('update', 'BusinessProfile')) {
-      return jsonError(403, 'FORBIDDEN', 'Not allowed')
-    }
-
     const { id } = await ctx.params
     if (!id || typeof id !== 'string') {
       return jsonError(400, 'VALIDATION_ERROR', 'Invalid id')
     }
 
-    const canAccess = await userCanAccessBusinessProfile(session.id, id)
-    if (!canAccess) {
+    // Judge by the TARGET restaurant's ability, not the active one's.
+    const access = await getBusinessProfileAccess(session.id, id)
+    if (!access.member) {
       return jsonError(404, 'NOT_FOUND', 'Profile not found')
+    }
+    if (!access.canManage) {
+      return jsonError(403, 'FORBIDDEN', 'Not allowed')
     }
 
     const existing = await prisma.businessProfile.findUnique({
@@ -275,18 +267,27 @@ export async function DELETE(_request, ctx) {
     if (!session) {
       return jsonError(401, 'UNAUTHORIZED', 'Not signed in')
     }
-    const ability = createMongoAbility(session.abilityRules ?? [])
-    if (!hasFullAccess(ability) && !ability.can('delete', 'BusinessProfile')) {
-      return jsonError(403, 'FORBIDDEN', 'Not allowed')
-    }
-
     const { id } = await ctx.params
     if (!id || typeof id !== 'string') {
       return jsonError(400, 'VALIDATION_ERROR', 'Invalid id')
     }
 
-    const canAccess = await userCanAccessBusinessProfile(session.id, id)
-    if (!canAccess) {
+    // Judge by the TARGET restaurant's ability, not the active one's.
+    const access = await getBusinessProfileAccess(session.id, id)
+    if (!access.member || !access.canDelete) {
+      return jsonError(403, 'FORBIDDEN', 'Not allowed')
+    }
+
+    // Only the owner deletes; checked before LAST_RESTAURANT so a non-owner
+    // always gets 403.
+    const existing = await prisma.businessProfile.findUnique({
+      where: { id },
+      select: { id: true, ownerUserId: true },
+    })
+    if (!existing) {
+      return jsonError(404, 'NOT_FOUND', 'Profile not found')
+    }
+    if (existing.ownerUserId !== session.id) {
       return jsonError(403, 'FORBIDDEN', 'Not allowed')
     }
 
@@ -313,17 +314,6 @@ export async function DELETE(_request, ctx) {
         'LAST_RESTAURANT',
         'Cannot delete your only restaurant',
       )
-    }
-
-    const existing = await prisma.businessProfile.findUnique({
-      where: { id },
-      select: { id: true, ownerUserId: true },
-    })
-    if (!existing) {
-      return jsonError(404, 'NOT_FOUND', 'Profile not found')
-    }
-    if (existing.ownerUserId !== session.id) {
-      return jsonError(403, 'FORBIDDEN', 'Not allowed')
     }
 
     await prisma.$transaction(async (tx) => {

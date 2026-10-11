@@ -39,14 +39,9 @@ export function InvoiceCancelConfirmModal({
       onOpenChange(false)
     },
     onError: (err) => {
+      // Translated message for the code (rules.md §5), never the raw server text.
       const code = err instanceof AuthApiError ? err.code : undefined
-      const serverMessage =
-        err instanceof AuthApiError && err.message?.trim()
-          ? err.message.trim()
-          : null
-      toast.error(
-        serverMessage || (code ? tErr(code) : tErr('generic')),
-      )
+      toast.error(code && tErr.has(code) ? tErr(code) : tErr('generic'))
       // Note may still have been created as failed — refresh so it appears in lists.
       router.refresh()
     },

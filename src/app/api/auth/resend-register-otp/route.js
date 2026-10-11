@@ -3,6 +3,7 @@ import { forgotPasswordBodySchema } from '@/lib/auth/schemas'
 import { sendOtpEmail } from '@/lib/email/send-otp-email'
 import { handleRouteError } from '@/lib/api/route-error'
 import { jsonError, jsonOk } from '@/lib/api/json-response'
+import { rateLimitResponse } from '@/lib/api/rate-limit'
 import { prisma } from '@/lib/prisma'
 
 /** Resend registration OTP. */
@@ -21,6 +22,10 @@ export async function POST(request) {
     }
 
     const emailNorm = parsed.data.email.toLowerCase()
+    const limited = rateLimitResponse([
+      ['resendRegisterOtpEmail', emailNorm],
+    ])
+    if (limited) return limited
     const staff = await prisma.user.findUnique({
       where: { email: emailNorm },
     })

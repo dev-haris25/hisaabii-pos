@@ -10,6 +10,7 @@ import { hasNumberOrSpecial } from '@/lib/auth/password-rules'
 import { getSessionUser } from '@/lib/auth/get-session-user'
 import { verifySignedToken } from '@/lib/auth/token'
 import { jsonError, jsonOk } from '@/lib/api/json-response'
+import { getClientIp, rateLimitResponse } from '@/lib/api/rate-limit'
 import { companyDisplayNameForLocale } from '@/lib/business-profile/company-display-name'
 import { hashInvitationToken } from '@/lib/hr/invitation-token'
 import { notifyPosAudience } from '@/lib/notifications/notify-owner-and-actor'
@@ -144,6 +145,10 @@ export async function GET(request) {
 
 /** @param {import('next/server').NextRequest} request */
 export async function POST(request) {
+  const limited = rateLimitResponse([
+    ['invitationAcceptIp', getClientIp(request)],
+  ])
+  if (limited) return limited
   let body
   try {
     body = await request.json()

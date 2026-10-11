@@ -21,6 +21,37 @@ export function decimalStringFromNumber(n) {
 }
 
 /**
+ * Money as whole halalas (integer) — exact sums for note / outstanding tracking.
+ * @param {string | number | undefined | null} s
+ */
+export function moneyToCents(s) {
+  return Math.round(parseMoney(s) * 100)
+}
+
+/**
+ * @param {number} cents whole halalas
+ * @returns {string} 2-decimal money string
+ */
+export function centsToMoney(cents) {
+  const c = Math.round(Number(cents) || 0)
+  const sign = c < 0 ? '-' : ''
+  const abs = Math.abs(c)
+  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`
+}
+
+/**
+ * `cents × numerator / denominator`, rounded to whole halalas (e.g. a line's
+ * taxable amount for some of its units).
+ * @param {number} cents
+ * @param {number} numerator
+ * @param {number} denominator
+ */
+export function scaleCents(cents, numerator, denominator) {
+  if (!denominator) return 0
+  return Math.round((cents * numerator) / denominator)
+}
+
+/**
  * KSA standard VAT rate in percent — the only non-zero rate this app issues.
  * Single source for invoice math, notes, coupons and the ZATCA tax mapping.
  */
@@ -67,6 +98,16 @@ export function computeLineAmounts(line) {
     vatAmount,
     lineTotal,
   }
+}
+
+/**
+ * Taxable (before-VAT) amount of a line in halalas: qty × unit price − discount.
+ * @param {{ quantity: number, unitPrice: string, discount?: string | null, vatPreset: string }} line
+ */
+export function lineTaxableCents(line) {
+  return moneyToCents(
+    computeLineAmounts({ ...line, discount: line.discount ?? '0' }).taxable,
+  )
 }
 
 /**

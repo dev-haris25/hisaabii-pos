@@ -1,4 +1,5 @@
 import { jsonError, jsonOk } from '@/lib/api/json-response'
+import { qrTableKey, rateLimitResponse } from '@/lib/api/rate-limit'
 import { handleRouteError } from '@/lib/api/route-error'
 import { WHERE_NOT_DELETED } from '@/lib/db/soft-delete-scope'
 import { isLoyaltyEnabledForProfile } from '@/lib/e-waiter/loyalty-enabled'
@@ -87,6 +88,10 @@ function resolveReorderModifiers(menuItem, modifiersSnapshot) {
 export async function GET(request, context) {
   try {
     const { slug, qrToken } = await context.params
+    const limited = rateLimitResponse([
+      ['qrPastOrdersTable', qrTableKey(slug, qrToken)],
+    ])
+    if (limited) return limited
     const resolved = await resolvePublicOrderTable(slug, qrToken)
     if (!resolved) {
       return jsonError(404, 'NOT_FOUND', 'Order page not found')

@@ -10,7 +10,8 @@ import { mapCreditNoteDetailToJson } from '@/lib/notes/map-note-json'
 import { prisma } from '@/lib/prisma'
 
 /**
- * Cancel a reported invoice via a full-reversal credit note (reason prefilled server-side).
+ * Cancel a reported invoice: one credit note for everything still outstanding
+ * (reason prefilled server-side). The invoice is voided once ZATCA accepts it.
  */
 export async function POST(_request, context) {
   try {
@@ -52,9 +53,8 @@ export async function POST(_request, context) {
 
     try {
       const { note, documentNature } = await createCancellationNote({
-        profile,
-        device,
-        invoice,
+        profileId: auth.profileId,
+        invoiceId: invoice.id,
         staffId: auth.session.id,
       })
       return jsonOk({
@@ -70,9 +70,14 @@ export async function POST(_request, context) {
         code === 'INVOICE_VOIDED' ||
         code === 'INVOICE_NOT_REPORTED' ||
         code === 'VALIDATION_ERROR' ||
-        code === 'NOTE_AMOUNT_INVALID'
+        code === 'NOTE_AMOUNT_INVALID' ||
+        code === 'NOTE_PENDING_FOR_INVOICE' ||
+        code === 'CREDIT_EXCEEDS_INVOICE_BALANCE'
       ) {
         return jsonError(409, code, err instanceof Error ? err.message : code)
+      }
+      if (code === 'NOT_FOUND') {
+        return jsonError(404, 'NOT_FOUND', 'Invoice not found')
       }
       if (code === 'ZATCA_ERROR') {
         const noteId =

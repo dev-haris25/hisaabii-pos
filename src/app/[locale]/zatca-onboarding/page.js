@@ -3,7 +3,10 @@ import { getTranslations, setRequestLocale } from 'next-intl/server'
 import { redirect } from 'next/navigation'
 
 import { AppLoader } from '@/components/app-loader'
-import { getPostAuthLandingPath } from '@/lib/auth/post-auth-landing-path'
+import {
+  getPostAuthLandingPath,
+  userManagesBusiness,
+} from '@/lib/auth/post-auth-landing-path'
 import { parseSafeNextPath } from '@/lib/auth/safe-next-path'
 import { getSessionUser } from '@/lib/auth/get-session-user'
 
@@ -43,6 +46,19 @@ export default async function ZatcaOnboardingPage({ params, searchParams }) {
   // Same as Hisabi: restaurant profile required before ZATCA OTP.
   if (!user.hasBusinessProfile) {
     redirect(getPostAuthLandingPath(user, nextPath))
+  }
+
+  // Only people who can manage the restaurant onboard / skip ZATCA. Everyone
+  // else goes to their landing page; a `next` pointing back here is dropped so
+  // the redirect can never loop (without `next`, a non-manager's landing page
+  // is never /zatca-onboarding).
+  if (!userManagesBusiness(user)) {
+    const landing = getPostAuthLandingPath(user, nextPath)
+    redirect(
+      landing.startsWith('/zatca-onboarding')
+        ? getPostAuthLandingPath(user)
+        : landing,
+    )
   }
 
   return (

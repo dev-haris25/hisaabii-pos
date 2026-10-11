@@ -93,8 +93,11 @@ export function TableSessionReceiptModal({
               {receiptActionLabel(tPos, desktop)}
             </AuthSubmitButton>
           ) : (
-            <p className="type-body-sm text-hisabi-on-surface-variant text-center">
-              {tPos('printBlockedNoQr')}
+            <p
+              role="status"
+              className="type-body-sm rounded-lg border border-amber-300 bg-amber-50 px-hisabi-md py-hisabi-sm text-center text-amber-900"
+            >
+              {tPos('zatcaNotReportedNotice')}
             </p>
           )}
           <AuthSubmitButton type="button" variant="secondary" onClick={onClose}>

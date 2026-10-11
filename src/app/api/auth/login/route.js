@@ -16,6 +16,7 @@ import { verifyPassword } from '@/lib/auth/password'
 import { loginBodySchema } from '@/lib/auth/schemas'
 import { handleRouteError } from '@/lib/api/route-error'
 import { jsonError } from '@/lib/api/json-response'
+import { getClientIp, rateLimitResponse } from '@/lib/api/rate-limit'
 import { prisma } from '@/lib/prisma'
 
 export async function POST(request) {
@@ -34,6 +35,12 @@ export async function POST(request) {
 
     const { email, password, remember } = parsed.data
     const emailNorm = email.toLowerCase()
+    const ip = getClientIp(request)
+    const limited = rateLimitResponse([
+      ['loginIpEmail', `${ip}|${emailNorm}`],
+      ['loginIp', ip],
+    ])
+    if (limited) return limited
 
     const creds = await prisma.user.findUnique({
       where: { email: emailNorm },

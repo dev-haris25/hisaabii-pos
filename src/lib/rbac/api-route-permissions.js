@@ -124,11 +124,19 @@ const ROUTE_PERMISSIONS = [
     },
   },
   {
-    pattern: /^\/stock\/days/,
+    pattern: /^\/stock\/day-end(\/|$)/,
     methods: {
       GET: { action: 'read', subject: 'StockItem' },
       POST: { action: 'update', subject: 'StockItem' },
       PATCH: { action: 'update', subject: 'StockItem' },
+    },
+  },
+  {
+    // Kitchen stock: list, issue to kitchen, mark consumed.
+    pattern: /^\/stock\/kitchen(\/|$)/,
+    methods: {
+      GET: { action: 'read', subject: 'StockItem' },
+      POST: { action: 'update', subject: 'StockItem' },
     },
   },
   {
@@ -369,6 +377,10 @@ const ROUTE_PERMISSIONS = [
 ]
 
 /**
+ * First matching pattern wins; a matched pattern without the method resolves
+ * to null. `authorizeBusinessRequest` fails closed (403) on null, so every
+ * route/method that relies on this map must be listed here.
+ *
  * @param {string} apiPath path after `/api/auth`
  * @param {string} method HTTP method
  * @returns {{ action: string, subject: string } | null}

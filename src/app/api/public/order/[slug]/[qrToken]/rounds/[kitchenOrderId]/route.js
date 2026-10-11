@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { jsonError, jsonOk } from '@/lib/api/json-response'
+import { qrTableKey, rateLimitResponse } from '@/lib/api/rate-limit'
 import { handleRouteError } from '@/lib/api/route-error'
 import { PRISMA_INTERACTIVE_TRANSACTION_OPTIONS } from '@/lib/db/prisma-interactive-transaction-options'
 import {
@@ -67,6 +68,10 @@ export async function GET(_request, context) {
 export async function PATCH(request, context) {
   try {
     const { slug, qrToken, kitchenOrderId } = await context.params
+    const limited = rateLimitResponse([
+      ['qrRoundEditTable', qrTableKey(slug, qrToken)],
+    ])
+    if (limited) return limited
     const resolved = await resolvePublicOrderTable(slug, qrToken)
     if (!resolved) {
       return jsonError(404, 'NOT_FOUND', 'Order page not found')
@@ -171,6 +176,10 @@ export async function PATCH(request, context) {
 export async function DELETE(_request, context) {
   try {
     const { slug, qrToken, kitchenOrderId } = await context.params
+    const limited = rateLimitResponse([
+      ['qrRoundEditTable', qrTableKey(slug, qrToken)],
+    ])
+    if (limited) return limited
     const resolved = await resolvePublicOrderTable(slug, qrToken)
     if (!resolved) {
       return jsonError(404, 'NOT_FOUND', 'Order page not found')

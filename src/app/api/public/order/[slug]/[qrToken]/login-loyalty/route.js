@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { jsonError, jsonOk } from '@/lib/api/json-response'
+import { getClientIp, qrTableKey, rateLimitResponse } from '@/lib/api/rate-limit'
 import { handleRouteError } from '@/lib/api/route-error'
 import { isLoyaltyEnabledForProfile } from '@/lib/e-waiter/loyalty-enabled'
 import { resolvePublicOrderTable } from '@/lib/e-waiter/resolve-public-order-table'
@@ -17,6 +18,11 @@ const bodySchema = z.object({
 export async function POST(request, context) {
   try {
     const { slug, qrToken } = await context.params
+    const limited = rateLimitResponse([
+      ['qrLoginLoyaltyTable', qrTableKey(slug, qrToken)],
+      ['qrLoginLoyaltyIp', getClientIp(request)],
+    ])
+    if (limited) return limited
     const resolved = await resolvePublicOrderTable(slug, qrToken)
     if (!resolved) {
       return jsonError(404, 'NOT_FOUND', 'Order page not found')

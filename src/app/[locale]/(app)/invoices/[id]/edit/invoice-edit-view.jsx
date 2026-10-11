@@ -24,10 +24,18 @@ import { receiptActionLabel } from '@/lib/print/receipt-action-label'
 import { toastPrintError } from '@/lib/print/toast-print-error'
 import { toastPrintResult } from '@/lib/print/toast-print-result'
 import {
+  centsToMoney,
   computeInvoiceTotals,
+  computeLineAmounts,
   decimalStringFromNumber,
+  moneyToCents,
   parseMoney,
 } from '@/lib/invoices/invoice-compute-totals'
+import {
+  correctionLineTotal,
+  planInvoiceCorrection,
+} from '@/lib/notes/invoice-outstanding'
+import { resolveInvoiceRepairLines } from '@/lib/notes/repair-failed-document'
 import {
   shouldEnableBilingualTranslate,
   useBilingualFieldOrigin,
@@ -75,6 +83,7 @@ const fieldClass =
  *     lines: Array<{ id: string, quantity: number, unitPrice: string, vatPreset: string, discount: string }>
  *   }
  *   cartSeed: EditCartLine[]
+ *   outstanding?: import('@/lib/notes/invoice-outstanding').InvoiceOutstanding | null
  *   categories: Array<{ id: string, nameAr: string, nameEn: string | null }>
  *   menuItems: Array<{
  *     id: string
@@ -92,6 +101,7 @@ export function InvoiceEditView({
   mode = 'correction',
   invoice,
   cartSeed,
+  outstanding = null,
   categories,
   menuItems,
   logoUrl = null,
@@ -156,50 +166,98 @@ export function InvoiceEditView({
     return menuItems.filter((item) => item.categoryId === categoryId)
   }, [menuItems, categoryId])
 
-  const originalTotals = useMemo(
+  // Lines as they are sent to the server.
+  const requestedLines = useMemo(
     () =>
-      computeInvoiceTotals(
-        invoice.lines.map((l) => ({
-          quantity: l.quantity,
-          unitPrice: l.unitPrice,
-          discount: l.discount ?? '0',
-          vatPreset: l.vatPreset,
-        })),
-      ),
-    [invoice.lines],
-  )
-
-  const cartTotals = useMemo(() => {
-    if (cart.length === 0) {
-      return {
-        subtotal: '0.00',
-        totalDiscount: '0.00',
-        totalVat: '0.00',
-        grandTotal: '0.00',
-        perLine: [],
-      }
-    }
-    return computeInvoiceTotals(
-      cart.map((line) => ({
-        quantity: line.quantity,
-        unitPrice: line.unitPrice,
-        discount: '0',
-        vatPreset: line.vatPreset,
-      })),
-    )
-  }, [cart])
-
-  const editMutation = useMutation({
-    mutationFn: () => {
-      const lines = cart.map((l) => ({
-        invoiceLineId: l.invoiceLineId ?? undefined,
-        menuItemId: l.menuItemId ?? undefined,
+      cart.map((l) => ({
+        invoiceLineId: l.invoiceLineId ?? null,
+        menuItemId: l.menuItemId ?? null,
         nameAr: l.nameAr,
-        nameEn: l.nameEn ?? undefined,
+        nameEn: l.nameEn ?? null,
         quantity: l.quantity,
         unitPrice: l.unitPrice,
         vatPreset: l.vatPreset,
         modifiersSnapshot: l.modifiersSnapshot ?? null,
+      })),
+    [cart],
+  )
+
+  // Repair: rebuilt invoice (stored prices / VAT, discount scaled per line).
+  const repairPreview = useMemo(() => {
+    if (!isRepair) return null
+    try {
+      const lines = resolveInvoiceRepairLines(invoice.lines, requestedLines)
+      return { totals: lines.length > 0 ? computeInvoiceTotals(lines) : null }
+    } catch {
+      return { totals: null }
+    }
+  }, [isRepair, invoice.lines, requestedLines])
+
+  // Correction: the exact note the server will issue for this cart.
+  const correctionPreview = useMemo(() => {
+    if (isRepair || !outstanding) return null
+    try {
+      const plan = planInvoiceCorrection(outstanding, requestedLines)
+      const totals = computeInvoiceTotals(
+        plan.noteLines.map((l) => ({ ...l, discount: '0' })),
+      )
+      const noteCents = moneyToCents(totals.grandTotal)
+      return {
+        documentNature: plan.documentNature,
+        totals,
+        balanceAfter: centsToMoney(
+          outstanding.outstandingTotalCents +
+            (plan.documentNature === 'credit' ? -noteCents : noteCents),
+        ),
+        errorCode: null,
+      }
+    } catch (e) {
+      return {
+        documentNature: null,
+        totals: null,
+        balanceAfter: null,
+        errorCode:
+          e && typeof e === 'object' && 'code' in e ? String(e.code) : 'generic',
+      }
+    }
+  }, [isRepair, outstanding, requestedLines])
+
+  const outstandingLineById = useMemo(
+    () => new Map((outstanding?.lines ?? []).map((l) => [l.invoiceLineId, l])),
+    [outstanding],
+  )
+
+  /** @param {EditCartLine} line @param {number} idx */
+  function cartLineTotal(line, idx) {
+    if (isRepair) {
+      return (
+        repairPreview?.totals?.perLine[idx]?.lineTotalStr ??
+        decimalStringFromNumber(parseMoney(line.unitPrice) * line.quantity)
+      )
+    }
+    const existing = line.invoiceLineId
+      ? outstandingLineById.get(line.invoiceLineId)
+      : null
+    const total = existing
+      ? correctionLineTotal(existing, line.quantity)
+      : computeLineAmounts({
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          discount: '0',
+          vatPreset: line.vatPreset,
+        }).lineTotal
+    return decimalStringFromNumber(total)
+  }
+
+  const editMutation = useMutation({
+    mutationFn: () => {
+      // invoiceLineId is sent in both modes: existing lines are priced from
+      // the stored invoice on the server.
+      const lines = requestedLines.map((l) => ({
+        ...l,
+        invoiceLineId: l.invoiceLineId ?? undefined,
+        menuItemId: l.menuItemId ?? undefined,
+        nameEn: l.nameEn ?? undefined,
       }))
       if (isRepair) {
         return authPatch(`/invoices/${invoice.id}`, { lines })
@@ -233,7 +291,9 @@ export function InvoiceEditView({
         setFormError(t('editNoChange'))
         return
       }
-      setFormError(code ? tErr(code) : tErr('generic'))
+      setFormError(code && tErr.has(code) ? tErr(code) : tErr('generic'))
+      // The invoice changed on the server (another note): show its new state.
+      if (code === 'INVOICE_CHANGED') router.refresh()
     },
   })
 
@@ -392,16 +452,14 @@ export function InvoiceEditView({
         ? t('noteTypeDebit')
         : null
 
+  // No change (or a change the server would refuse) keeps Submit disabled.
   const canSubmit = isRepair
     ? cart.length > 0 &&
       !editMutation.isPending &&
-      parseMoney(cartTotals.grandTotal) > 0
+      parseMoney(repairPreview?.totals?.grandTotal) > 0
     : cart.length > 0 &&
       !editMutation.isPending &&
-      Math.abs(
-        parseMoney(cartTotals.grandTotal) -
-          parseMoney(originalTotals.grandTotal),
-      ) >= 0.01
+      Boolean(correctionPreview?.totals)
 
   return (
     <div className="mx-auto max-w-hisabi-container">
@@ -525,11 +583,7 @@ export function InvoiceEditView({
                 </p>
               ) : (
                 cart.map((line, idx) => {
-                  const lineTotal =
-                    cartTotals.perLine[idx]?.lineTotalStr ??
-                    decimalStringFromNumber(
-                      parseMoney(line.unitPrice) * line.quantity,
-                    )
+                  const lineTotal = cartLineTotal(line, idx)
                   return (
                     <div
                       key={line.key}
@@ -606,6 +660,40 @@ export function InvoiceEditView({
                   )
                 })
               )}
+
+              {!isRepair && (outstanding?.addedItems?.length ?? 0) > 0 ? (
+                <div className="space-y-hisabi-xs pt-hisabi-sm">
+                  <p className="type-label-md text-hisabi-on-surface-variant">
+                    {t('editAddedItemsTitle')}
+                  </p>
+                  {outstanding.addedItems.map((item, idx) => (
+                    <div
+                      key={`${item.debitNoteId}-${idx}`}
+                      className="flex items-center justify-between gap-hisabi-sm rounded-lg border border-hisabi-outline-variant/30 px-hisabi-sm py-hisabi-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="type-label-md truncate text-hisabi-on-surface">
+                          {lineDisplayName(item)}
+                        </p>
+                        <p className="type-body-sm text-hisabi-on-surface-variant">
+                          {t('editAddedFromDebitNote', {
+                            number: item.debitNoteNumber ?? '—',
+                          })}
+                        </p>
+                      </div>
+                      <span
+                        dir="ltr"
+                        className="type-body-sm shrink-0 text-hisabi-on-surface-variant"
+                      >
+                        {item.unitPrice} × {item.quantity}
+                      </span>
+                    </div>
+                  ))}
+                  <p className="type-body-sm text-hisabi-on-surface-variant">
+                    {t('editAddedItemsHint')}
+                  </p>
+                </div>
+              ) : null}
 
               {!isRepair ? (
                 <>
@@ -697,26 +785,75 @@ export function InvoiceEditView({
             </div>
 
             <div className="space-y-hisabi-md border-t border-hisabi-outline-variant/20 px-hisabi-lg py-hisabi-md">
-              <div className="space-y-1">
-                <div className="type-body-sm flex justify-between text-hisabi-on-surface-variant">
-                  <span>{t('subtotal')}</span>
-                  <span dir="ltr">{cartTotals.subtotal}</span>
-                </div>
-                <div className="type-body-sm flex justify-between text-hisabi-on-surface-variant">
-                  <span>{t('vat')}</span>
-                  <span dir="ltr">{cartTotals.totalVat}</span>
-                </div>
-                <div className="type-label-md flex justify-between font-bold text-hisabi-on-surface">
-                  <span>{t('grandTotal')}</span>
-                  <span dir="ltr">{cartTotals.grandTotal}</span>
-                </div>
-                {!isRepair ? (
+              {isRepair ? (
+                <div className="space-y-1">
                   <div className="type-body-sm flex justify-between text-hisabi-on-surface-variant">
-                    <span>{t('editOriginalTotal')}</span>
-                    <span dir="ltr">{originalTotals.grandTotal}</span>
+                    <span>{t('subtotal')}</span>
+                    <span dir="ltr">{repairPreview?.totals?.subtotal ?? '0.00'}</span>
                   </div>
-                ) : null}
-              </div>
+                  {parseMoney(repairPreview?.totals?.totalDiscount) > 0 ? (
+                    <div className="type-body-sm flex justify-between text-hisabi-on-surface-variant">
+                      <span>{t('discount')}</span>
+                      <span dir="ltr">-{repairPreview.totals.totalDiscount}</span>
+                    </div>
+                  ) : null}
+                  <div className="type-body-sm flex justify-between text-hisabi-on-surface-variant">
+                    <span>{t('vat')}</span>
+                    <span dir="ltr">{repairPreview?.totals?.totalVat ?? '0.00'}</span>
+                  </div>
+                  <div className="type-label-md flex justify-between font-bold text-hisabi-on-surface">
+                    <span>{t('grandTotal')}</span>
+                    <span dir="ltr">{repairPreview?.totals?.grandTotal ?? '0.00'}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="type-body-sm flex justify-between text-hisabi-on-surface-variant">
+                    <span>{t('editOutstandingBalance')}</span>
+                    <span dir="ltr">
+                      {centsToMoney(outstanding?.outstandingTotalCents ?? 0)}
+                    </span>
+                  </div>
+                  {correctionPreview?.totals ? (
+                    <>
+                      <div className="type-body-sm flex justify-between text-hisabi-on-surface-variant">
+                        <span>
+                          {correctionPreview.documentNature === 'credit'
+                            ? t('editCreditNoteVat')
+                            : t('editDebitNoteVat')}
+                        </span>
+                        <span dir="ltr">{correctionPreview.totals.totalVat}</span>
+                      </div>
+                      <div className="type-label-md flex justify-between font-bold text-hisabi-on-surface">
+                        <span>
+                          {correctionPreview.documentNature === 'credit'
+                            ? t('editCreditNoteAmount')
+                            : t('editDebitNoteAmount')}
+                        </span>
+                        <span dir="ltr">
+                          {correctionPreview.documentNature === 'credit' ? '-' : '+'}
+                          {correctionPreview.totals.grandTotal}
+                        </span>
+                      </div>
+                      <div className="type-body-sm flex justify-between text-hisabi-on-surface-variant">
+                        <span>{t('editBalanceAfter')}</span>
+                        <span dir="ltr">{correctionPreview.balanceAfter}</span>
+                      </div>
+                    </>
+                  ) : correctionPreview?.errorCode &&
+                    correctionPreview.errorCode !== 'EDIT_NO_CHANGE' ? (
+                    <p className="type-body-sm text-hisabi-error" role="status">
+                      {tErr.has(correctionPreview.errorCode)
+                        ? tErr(correctionPreview.errorCode)
+                        : tErr('generic')}
+                    </p>
+                  ) : (
+                    <p className="type-body-sm text-hisabi-on-surface-variant">
+                      {t('editNoChange')}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <AuthSubmitButton
                 type="submit"

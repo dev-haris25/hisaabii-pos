@@ -6,9 +6,14 @@ import { hashPassword } from '@/lib/auth/password'
 import { verifySignedToken } from '@/lib/auth/token'
 import { resetPasswordBodySchema } from '@/lib/auth/schemas'
 import { jsonError } from '@/lib/api/json-response'
+import { getClientIp, rateLimitResponse } from '@/lib/api/rate-limit'
 import { prisma } from '@/lib/prisma'
 
 export async function POST(request) {
+  const limited = rateLimitResponse([
+    ['resetPasswordIp', getClientIp(request)],
+  ])
+  if (limited) return limited
   let body
   try {
     body = await request.json()

@@ -14,6 +14,7 @@ import { jsonError, jsonOk } from '@/lib/api/json-response'
 import { handleRouteError } from '@/lib/api/route-error'
 import { createMongoAbility } from '@casl/ability'
 import { hasFullAccess } from '@/lib/rbac/ability-utils'
+import { getBusinessProfileAccess } from '@/lib/rbac/business-profile-access'
 import { getZatcaEnvironment } from '@/lib/zatca/env'
 import { prisma } from '@/lib/prisma'
 
@@ -147,8 +148,19 @@ export async function GET() {
       },
     })
 
+    // Per-restaurant rights from THAT restaurant's ability (not the active one).
+    const accessById = new Map(
+      await Promise.all(
+        profiles.map(async (p) => [
+          p.id,
+          await getBusinessProfileAccess(session.id, p.id),
+        ]),
+      ),
+    )
+
     return jsonOk({
       profiles: profiles.map((p) => {
+        const access = accessById.get(p.id)
         const hasProductionCsid = Boolean(p.zatcaDevice?.productionCsid)
         const zatcaOnboardingSkipped = p.zatcaOnboardingSkipped === true
         return {
@@ -165,6 +177,10 @@ export async function GET() {
           updatedAt: p.updatedAt.toISOString(),
           isActive: p.id === activeId,
           isOwner: p.ownerUserId === session.id,
+          /** May edit the profile and run / skip ZATCA onboarding. */
+          canManage: access?.canManage === true,
+          /** May open the profile detail. */
+          canView: access?.canRead === true,
         }
       }),
     })

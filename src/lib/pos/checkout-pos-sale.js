@@ -102,6 +102,11 @@ export const posCheckoutBodySchema = z.object({
   allowMainStockIfNoAllotment: z.boolean().optional(),
   /** Desktop till id for hardware binding / audit. */
   tillId: z.string().trim().min(1).max(64).optional().nullable(),
+  /**
+   * Idempotency key (UUID) for this checkout attempt; the till reuses it for
+   * every retry. Optional — without it checkout behaves as before.
+   */
+  requestKey: z.string().trim().uuid().optional().nullable(),
 })
 
 /**
@@ -988,6 +993,9 @@ export async function checkoutPosSale({
       data: {
         businessProfileId: profileId,
         invoiceNumber,
+        // Unique per restaurant: a second request with the same key fails
+        // here and its whole transaction rolls back.
+        checkoutRequestKey: isSettlementMode ? null : (body.requestKey ?? null),
         status: 'completed',
         type: 'simplified',
         createdByStaffId: staffId,

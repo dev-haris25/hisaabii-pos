@@ -8,7 +8,11 @@ import { excludeBulkStockNeeds } from '@/lib/stock/exclude-bulk-stock-needs'
 /**
  * Deduct recipe stock from main warehouse when a ticket is first marked ready.
  * Bulk items (fryer oil) are skipped — they are entered on the day-end report.
- * Idempotent via kitchenOrder.stockDeductedAt.
+ *
+ * Does not stamp `kitchenOrder.stockDeductedAt`: the caller claims the ticket
+ * first (guarded write on `stockDeductedAt: null`) inside the same transaction
+ * and only calls this when the claim succeeded, so a ticket deducts once. On
+ * failure the caller must roll back, which also undoes the claim.
  *
  * @param {import('@/generated/prisma/client').Prisma.TransactionClient} tx
  * @param {{
@@ -28,10 +32,6 @@ export async function deductRecipeStockForKitchenReady(tx, opts) {
     .filter(Boolean)
 
   if (menuItemIds.length === 0) {
-    await tx.kitchenOrder.update({
-      where: { id: opts.kitchenOrderId },
-      data: { stockDeductedAt: new Date() },
-    })
     return { ok: true, deducted: false, shortfalls: [] }
   }
 
@@ -51,7 +51,12 @@ export async function deductRecipeStockForKitchenReady(tx, opts) {
     ? `Kitchen order #${opts.orderNumber}`
     : 'Kitchen ready'
 
-  for (const need of fromMain) {
+  // Ascending stockItemId: two tickets sharing ingredients lock them in the
+  // same order, so they wait for each other instead of deadlocking.
+  const ordered = [...fromMain].sort((a, b) =>
+    a.stockItemId < b.stockItemId ? -1 : a.stockItemId > b.stockItemId ? 1 : 0,
+  )
+  for (const need of ordered) {
     const result = await applyStockMovement(tx, {
       businessProfileId: opts.businessProfileId,
       stockItemId: need.stockItemId,
@@ -75,11 +80,6 @@ export async function deductRecipeStockForKitchenReady(tx, opts) {
       }
     }
   }
-
-  await tx.kitchenOrder.update({
-    where: { id: opts.kitchenOrderId },
-    data: { stockDeductedAt: new Date() },
-  })
 
   return { ok: true, deducted: fromMain.length > 0, shortfalls: [] }
 }

@@ -75,6 +75,7 @@ export function RestaurantsListView() {
     /** @type {string | null} */ (null),
   )
   const [viewIsActive, setViewIsActive] = useState(false)
+  const [viewCanEdit, setViewCanEdit] = useState(false)
 
   const [editOpen, setEditOpen] = useState(false)
   const [editProfileId, setEditProfileId] = useState(
@@ -452,7 +453,7 @@ export function RestaurantsListView() {
                             <span className="type-label-sm inline-flex shrink-0 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-bold whitespace-nowrap text-green-800">
                               {t('zatcaStatusCompleted')}
                             </span>
-                          ) : (
+                          ) : row.canManage ? (
                             <button
                               type="button"
                               onClick={() => openZatcaForRow(row)}
@@ -460,32 +461,41 @@ export function RestaurantsListView() {
                             >
                               {t('completeZatcaSetup')}
                             </button>
+                          ) : (
+                            <span className="type-label-sm inline-flex shrink-0 rounded-full bg-hisabi-surface-container px-2.5 py-0.5 text-xs font-bold whitespace-nowrap text-hisabi-on-surface-variant">
+                              {t('zatcaStatusPending')}
+                            </span>
                           )}
                         </div>
                       </td>
                       <td className={listTableActionsTdClass()}>
                         <div className={LIST_TABLE_ACTIONS_INNER}>
-                          <ActionIconButton
-                            label={t('actionView')}
-                            onClick={() => {
-                              setViewProfileId(row.id)
-                              setViewIsActive(row.isActive)
-                              setViewOpen(true)
-                            }}
-                            className="hover:text-hisabi-primary"
-                          >
-                            <Eye className="size-5" />
-                          </ActionIconButton>
-                          <ActionIconButton
-                            label={t('actionEdit')}
-                            onClick={() => {
-                              setEditProfileId(row.id)
-                              setEditOpen(true)
-                            }}
-                            className="hover:text-hisabi-secondary"
-                          >
-                            <Pencil className="size-5" />
-                          </ActionIconButton>
+                          {row.canView ? (
+                            <ActionIconButton
+                              label={t('actionView')}
+                              onClick={() => {
+                                setViewProfileId(row.id)
+                                setViewIsActive(row.isActive)
+                                setViewCanEdit(row.canManage === true)
+                                setViewOpen(true)
+                              }}
+                              className="hover:text-hisabi-primary"
+                            >
+                              <Eye className="size-5" />
+                            </ActionIconButton>
+                          ) : null}
+                          {row.canManage ? (
+                            <ActionIconButton
+                              label={t('actionEdit')}
+                              onClick={() => {
+                                setEditProfileId(row.id)
+                                setEditOpen(true)
+                              }}
+                              className="hover:text-hisabi-secondary"
+                            >
+                              <Pencil className="size-5" />
+                            </ActionIconButton>
+                          ) : null}
                           <ActionIconButton
                             label={t('actionDelete')}
                             onClick={() => {
@@ -517,12 +527,16 @@ export function RestaurantsListView() {
             window.setTimeout(() => setViewProfileId(null), 380)
           }
         }}
-        onRequestEdit={() => {
-          if (!viewProfileId) return
-          setEditProfileId(viewProfileId)
-          setEditOpen(true)
-          setViewOpen(false)
-        }}
+        onRequestEdit={
+          viewCanEdit
+            ? () => {
+                if (!viewProfileId) return
+                setEditProfileId(viewProfileId)
+                setEditOpen(true)
+                setViewOpen(false)
+              }
+            : undefined
+        }
       />
 
       <EditRestaurantSheet

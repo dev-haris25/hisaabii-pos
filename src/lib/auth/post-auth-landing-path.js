@@ -1,5 +1,6 @@
 import { parseSafeNextPath } from '@/lib/auth/safe-next-path'
 import { createMongoAbility } from '@casl/ability'
+import { abilityManagesBusiness } from '@/lib/rbac/ability-utils'
 import {
   CASHIER_ROLE_NAME,
   KITCHEN_BOARD_MANAGER_ROLE_NAME,
@@ -41,6 +42,18 @@ export function isKitchenOrQueueDisplayUser(user) {
 export const NO_MODULE_ACCESS_PATH = '/'
 
 /**
+ * Same "manages business" test as the app-shell gate (require-admin-app-user),
+ * evaluated on the user's active-restaurant ability.
+ * @param {{ abilityRules?: unknown[] } | null | undefined} user
+ * @param {import('@casl/ability').MongoAbility} [ability]
+ */
+export function userManagesBusiness(user, ability) {
+  return abilityManagesBusiness(
+    ability ?? createMongoAbility(user?.abilityRules ?? []),
+  )
+}
+
+/**
  * @param {{
  *   abilityRules?: unknown[]
  *   needsBusinessProfileOnboarding?: boolean
@@ -61,7 +74,11 @@ export function getPostAuthLandingPath(user, nextRaw) {
       : '/business-profile'
   }
 
-  if (user.needsZatcaOnboarding === true) {
+  const ability = createMongoAbility(user.abilityRules ?? [])
+
+  // Only people who can manage the restaurant can onboard or skip ZATCA;
+  // everyone else goes straight to their normal landing page.
+  if (user.needsZatcaOnboarding === true && userManagesBusiness(user, ability)) {
     return next
       ? `/zatca-onboarding?next=${encodeURIComponent(next)}`
       : '/zatca-onboarding'
@@ -73,7 +90,6 @@ export function getPostAuthLandingPath(user, nextRaw) {
 
   if (isCashierOnlyUser(user)) return '/pos'
 
-  const ability = createMongoAbility(user.abilityRules ?? [])
   return getFirstAccessibleRouteFromAbility(ability, {
     isRestaurantOwner: user.isRestaurantOwner === true,
   })

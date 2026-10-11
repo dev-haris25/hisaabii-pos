@@ -18,6 +18,10 @@ import { assertCan } from '@/lib/rbac/require-permission'
  * Authorize an authenticated API request with optional explicit permission
  * or automatic resolution from the route permission map.
  *
+ * Fails closed: unless `skipPermissionCheck` is set (the caller does its own
+ * check), a request with no explicit action+subject that resolves to nothing
+ * in the route map gets 403 — a missing mapping never lets every member in.
+ *
  * @param {import('next/server').NextRequest | AuthorizeOptions} [requestOrOptions]
  * @param {AuthorizeOptions} [legacyOptions]
  */
@@ -62,11 +66,22 @@ export async function authorizeBusinessRequest(requestOrOptions, legacyOptions =
       }
     }
 
-    if (action && subject) {
-      const denied = assertCan(ability, action, subject)
-      if (denied) {
-        return { error: denied }
+    if (!action || !subject) {
+      const method = options.request?.method ?? '(no request)'
+      const path = options.request
+        ? new URL(options.request.url).pathname
+        : '(no request)'
+      console.error(
+        `[rbac] no permission mapping for ${method} ${path} — denied (add it to api-route-permissions.js or pass action/subject)`,
+      )
+      return {
+        error: jsonError(403, 'FORBIDDEN', 'You do not have permission to perform this action'),
       }
+    }
+
+    const denied = assertCan(ability, action, subject)
+    if (denied) {
+      return { error: denied }
     }
   }
 

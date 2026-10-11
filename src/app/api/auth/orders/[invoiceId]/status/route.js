@@ -75,10 +75,13 @@ export async function PATCH(request, context) {
     }
 
     const nextStatus = parsed.data.status
-    const shouldDeduct =
+    // Fast path only: a stamped ticket never goes back to null, so this read
+    // can skip work but never cause a second deduction. The real decision is
+    // the claim inside the transaction below.
+    const mayDeduct =
       nextStatus === 'ready' && ticket.stockDeductedAt == null
 
-    if (!shouldDeduct) {
+    if (!mayDeduct) {
       const updated = await prisma.kitchenOrder.update({
         where: { id: ticket.id },
         data: kitchenStatusUpdateData(nextStatus),
@@ -94,32 +97,43 @@ export async function PATCH(request, context) {
     const settings = await getOrCreateBusinessSettings(auth.profileId)
 
     try {
-      const updated = await prisma.$transaction(async (tx) => {
-        const deduct = await deductRecipeStockForKitchenReady(tx, {
-          businessProfileId: auth.profileId,
-          kitchenOrderId: ticket.id,
-          linesSnapshot: ticket.linesSnapshot,
-          createdByUserId: auth.session.id,
-          allowNegative: settings.allowNegativeStock === true,
-          allowMainStockIfNoKitchenStock:
-            settings.allowMainStockIfNoKitchenStock === true,
-          orderNumber: ticket.orderNumber,
+      const { updated, claimed } = await prisma.$transaction(async (tx) => {
+        // Claim the ticket: only one request can move stockDeductedAt off
+        // null. A simultaneous "ready" waits on this row, then finds it
+        // stamped (count 0) and only applies the status change. A failed
+        // deduction throws, so the rollback also undoes the claim.
+        const claim = await tx.kitchenOrder.updateMany({
+          where: { id: ticket.id, stockDeductedAt: null },
+          data: { stockDeductedAt: new Date() },
         })
-        if (!deduct.ok) {
-          const err = /** @type {Error & { code?: string, shortfalls?: unknown, missingKitchenStock?: unknown, missingAllotment?: unknown }} */ (
-            new Error(deduct.message || 'Insufficient stock')
-          )
-          err.code = deduct.code || 'INSUFFICIENT_STOCK'
-          err.shortfalls = deduct.shortfalls
-          err.missingKitchenStock = deduct.missingKitchenStock
-          err.missingAllotment = deduct.missingAllotment
-          throw err
+        if (claim.count === 1) {
+          const deduct = await deductRecipeStockForKitchenReady(tx, {
+            businessProfileId: auth.profileId,
+            kitchenOrderId: ticket.id,
+            linesSnapshot: ticket.linesSnapshot,
+            createdByUserId: auth.session.id,
+            allowNegative: settings.allowNegativeStock === true,
+            allowMainStockIfNoKitchenStock:
+              settings.allowMainStockIfNoKitchenStock === true,
+            orderNumber: ticket.orderNumber,
+          })
+          if (!deduct.ok) {
+            const err = /** @type {Error & { code?: string, shortfalls?: unknown, missingKitchenStock?: unknown, missingAllotment?: unknown }} */ (
+              new Error(deduct.message || 'Insufficient stock')
+            )
+            err.code = deduct.code || 'INSUFFICIENT_STOCK'
+            err.shortfalls = deduct.shortfalls
+            err.missingKitchenStock = deduct.missingKitchenStock
+            err.missingAllotment = deduct.missingAllotment
+            throw err
+          }
         }
 
-        return tx.kitchenOrder.update({
+        const row = await tx.kitchenOrder.update({
           where: { id: ticket.id },
           data: kitchenStatusUpdateData(nextStatus),
         })
+        return { updated: row, claimed: claim.count === 1 }
       }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
 
       const lines = Array.isArray(ticket.linesSnapshot)
@@ -128,7 +142,7 @@ export async function PATCH(request, context) {
       const menuItemIds = lines
         .map((l) => (l && typeof l === 'object' ? l.menuItemId : null))
         .filter(Boolean)
-      if (menuItemIds.length > 0) {
+      if (claimed && menuItemIds.length > 0) {
         const recipes = await prisma.menuItemRecipe.findMany({
           where: { menuItemId: { in: menuItemIds } },
           include: {

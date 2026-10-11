@@ -99,14 +99,15 @@ export async function POST(request, context) {
     }
 
     try {
+      // All requested lines go to the planner: quantity 0 (or a line left
+      // out) removes it; existing lines are priced from the stored invoice.
       const { note, documentNature } = await createNoteFromInvoiceEdit({
-        profile,
-        device,
-        invoice,
+        profileId: auth.profileId,
+        invoiceId: invoice.id,
         staffId: auth.session.id,
         reasonAr: parsed.data.reasonAr,
         reasonEn: parsed.data.reasonEn,
-        editedLines,
+        editedLines: parsed.data.lines,
       })
       await refreshKitchenOrderAfterEdit(prisma, invoice.id, editedLines)
 
@@ -131,9 +132,15 @@ export async function POST(request, context) {
         code === 'INVOICE_NOT_REPORTED' ||
         code === 'NOTE_REASON_REQUIRED' ||
         code === 'NOTE_AMOUNT_INVALID' ||
-        code === 'VALIDATION_ERROR'
+        code === 'VALIDATION_ERROR' ||
+        code === 'NOTE_PENDING_FOR_INVOICE' ||
+        code === 'INVOICE_CHANGED' ||
+        code === 'CREDIT_EXCEEDS_INVOICE_BALANCE'
       ) {
         return jsonError(409, code, err instanceof Error ? err.message : code)
+      }
+      if (code === 'NOT_FOUND') {
+        return jsonError(404, 'NOT_FOUND', 'Invoice not found')
       }
       if (code === 'ZATCA_ERROR') {
         const noteId =
