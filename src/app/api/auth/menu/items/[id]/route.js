@@ -1,7 +1,8 @@
 import { jsonError, jsonOk } from '@/lib/api/json-response'
 import { handleRouteError } from '@/lib/api/route-error'
 import { PRISMA_INTERACTIVE_TRANSACTION_OPTIONS } from '@/lib/db/prisma-interactive-transaction-options'
-import { mapMenuItemToJson, menuItemInclude } from '@/lib/menu/map-menu-json'
+import { mapMenuItemToJson, menuItemManageInclude } from '@/lib/menu/map-menu-json'
+import { recipeIngredientErrorResponse } from '@/lib/menu/recipe-ingredient-error'
 import { menuItemImageUploadErrorResponse } from '@/lib/menu/menu-item-image-errors'
 import { resolveMenuItemImageAfterUpsert } from '@/lib/menu/menu-item-image-storage'
 import { replaceMenuItemModifiers } from '@/lib/menu/replace-menu-item-modifiers'
@@ -13,7 +14,7 @@ import { prisma } from '@/lib/prisma'
 async function loadOwnedItem(profileId, id) {
   return prisma.menuItem.findFirst({
     where: { id, businessProfileId: profileId },
-    include: menuItemInclude,
+    include: menuItemManageInclude,
   })
 }
 
@@ -90,13 +91,14 @@ export async function PATCH(request, context) {
         id,
         d.variantGroups,
         d.customizations,
+        auth.profileId,
       )
       if (d.recipe !== undefined) {
         await replaceMenuItemRecipe(tx, auth.profileId, id, d.recipe)
       }
       return tx.menuItem.findFirstOrThrow({
         where: { id },
-        include: menuItemInclude,
+        include: menuItemManageInclude,
       })
     }, PRISMA_INTERACTIVE_TRANSACTION_OPTIONS)
 
@@ -114,7 +116,7 @@ export async function PATCH(request, context) {
           updated = await prisma.menuItem.update({
             where: { id },
             data: { imageUrl: assets.imageUrl },
-            include: menuItemInclude,
+            include: menuItemManageInclude,
           })
         }
       } catch (imgErr) {
@@ -130,6 +132,8 @@ export async function PATCH(request, context) {
   } catch (err) {
     const code =
       err && typeof err === 'object' && 'code' in err ? String(err.code) : ''
+    const ingredientError = recipeIngredientErrorResponse(err)
+    if (ingredientError) return ingredientError
     if (code === 'VARIANT_OPTION_IN_USE') {
       return jsonError(
         409,
@@ -156,7 +160,7 @@ export async function DELETE(_request, context) {
     const updated = await prisma.menuItem.update({
       where: { id },
       data: { active: false },
-      include: menuItemInclude,
+      include: menuItemManageInclude,
     })
 
     return jsonOk({ item: mapMenuItemToJson(updated) })

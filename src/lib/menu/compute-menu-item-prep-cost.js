@@ -47,42 +47,21 @@ export async function averagePurchaseUnitCost(db, stockItemId) {
 }
 
 /**
- * Cost to prepare one menu item from its recipe (ingredient qty × avg purchase cost).
+ * Cost of ingredient rows (qty × avg purchase cost, in each stock item's unit).
  *
  * @param {import('@/generated/prisma/client').Prisma.TransactionClient | typeof import('@/lib/prisma').prisma} db
- * @param {string} businessProfileId
- * @param {string} menuItemId
- * @returns {Promise<{ prepCost: string | null, incomplete: boolean }>}
+ * @param {Array<{
+ *   quantity: string
+ *   unit: import('@/lib/stock/units').StockUnit
+ *   stockItem: { id: string, unit: import('@/lib/stock/units').StockUnit, active: boolean } | null
+ * }>} ingredients
+ * @returns {Promise<{ cost: string | null, incomplete: boolean }>}
  */
-export async function computeMenuItemPrepCost(
-  db,
-  businessProfileId,
-  menuItemId,
-) {
-  const recipe = await db.menuItemRecipe.findFirst({
-    where: {
-      menuItemId,
-      menuItem: { businessProfileId },
-    },
-    include: {
-      ingredients: {
-        include: {
-          stockItem: {
-            select: { id: true, unit: true, active: true },
-          },
-        },
-      },
-    },
-  })
-
-  if (!recipe?.ingredients?.length) {
-    return { prepCost: null, incomplete: false }
-  }
-
+async function computeIngredientsCost(db, ingredients) {
   let total = 0
   let incomplete = false
 
-  for (const ing of recipe.ingredients) {
+  for (const ing of ingredients) {
     const stock = ing.stockItem
     if (!stock?.id || stock.active === false) {
       incomplete = true
@@ -115,12 +94,97 @@ export async function computeMenuItemPrepCost(
     total += qtyInStockUnit * unitCost
   }
 
-  if (total <= 0 && incomplete) {
-    return { prepCost: null, incomplete: true }
-  }
-  if (total <= 0) {
+  if (total <= 0 && incomplete) return { cost: null, incomplete: true }
+  if (total <= 0) return { cost: null, incomplete: false }
+  return { cost: toMoneyStr(total), incomplete }
+}
+
+const costIngredientsInclude = {
+  include: {
+    stockItem: {
+      select: { id: true, unit: true, active: true },
+    },
+  },
+}
+
+/**
+ * Cost to prepare one menu item from its default recipe (ingredient qty × avg
+ * purchase cost). Option / customization extras are not included — see
+ * `computeMenuItemExtraCosts`.
+ *
+ * @param {import('@/generated/prisma/client').Prisma.TransactionClient | typeof import('@/lib/prisma').prisma} db
+ * @param {string} businessProfileId
+ * @param {string} menuItemId
+ * @returns {Promise<{ prepCost: string | null, incomplete: boolean }>}
+ */
+export async function computeMenuItemPrepCost(
+  db,
+  businessProfileId,
+  menuItemId,
+) {
+  const recipe = await db.menuItemRecipe.findFirst({
+    where: {
+      menuItemId,
+      menuItem: { businessProfileId },
+    },
+    include: { ingredients: costIngredientsInclude },
+  })
+
+  if (!recipe?.ingredients?.length) {
     return { prepCost: null, incomplete: false }
   }
 
-  return { prepCost: toMoneyStr(total), incomplete }
+  const { cost, incomplete } = await computeIngredientsCost(
+    db,
+    recipe.ingredients,
+  )
+  return { prepCost: cost, incomplete }
+}
+
+/**
+ * Extra cost of each variant option / customization that has extra
+ * ingredients (same average purchase cost logic as the prep cost).
+ *
+ * @param {import('@/generated/prisma/client').Prisma.TransactionClient | typeof import('@/lib/prisma').prisma} db
+ * @param {string} businessProfileId
+ * @param {string} menuItemId
+ * @returns {Promise<{
+ *   options: Record<string, { extraCost: string | null, incomplete: boolean }>
+ *   customizations: Record<string, { extraCost: string | null, incomplete: boolean }>
+ * }>}
+ */
+export async function computeMenuItemExtraCosts(
+  db,
+  businessProfileId,
+  menuItemId,
+) {
+  const options = await db.menuItemVariantOption.findMany({
+    where: {
+      group: { menuItemId, menuItem: { businessProfileId } },
+      ingredients: { some: {} },
+    },
+    select: { id: true, ingredients: costIngredientsInclude },
+  })
+  const customizations = await db.menuItemCustomization.findMany({
+    where: {
+      menuItemId,
+      menuItem: { businessProfileId },
+      ingredients: { some: {} },
+    },
+    select: { id: true, ingredients: costIngredientsInclude },
+  })
+
+  /** @type {Record<string, { extraCost: string | null, incomplete: boolean }>} */
+  const optionCosts = {}
+  for (const o of options) {
+    const { cost, incomplete } = await computeIngredientsCost(db, o.ingredients)
+    optionCosts[o.id] = { extraCost: cost, incomplete }
+  }
+  /** @type {Record<string, { extraCost: string | null, incomplete: boolean }>} */
+  const customizationCosts = {}
+  for (const c of customizations) {
+    const { cost, incomplete } = await computeIngredientsCost(db, c.ingredients)
+    customizationCosts[c.id] = { extraCost: cost, incomplete }
+  }
+  return { options: optionCosts, customizations: customizationCosts }
 }

@@ -13,7 +13,11 @@ import { authGet } from '@/lib/api/auth-client'
 import { shouldEnableBilingualTranslate } from '@/lib/i18n/use-bilingual-field-origin'
 import {
   STOCK_UNITS,
+  canConvertUnits,
   compatibleUnits,
+  convertStockQty,
+  formatQtyString,
+  parseQty,
   stockUnitLabel,
   unitFamily,
 } from '@/lib/stock/units'
@@ -80,7 +84,6 @@ export function MenuItemRecipeEditor({
 }) {
   const t = useTranslations('Menu')
   const tBi = useTranslations('BilingualInvoiceCompany')
-  const locale = useLocale()
   const stepsEnId = useId()
   const stepsArId = useId()
 
@@ -116,29 +119,6 @@ export function MenuItemRecipeEditor({
       debounceMs: 700,
     },
   )
-
-  const stockQuery = useQuery({
-    queryKey: ['stock', 'items', 'active-for-recipe'],
-    queryFn: async () => {
-      const d = await authGet('/stock/items?active=true')
-      return d.items ?? []
-    },
-  })
-
-  const stockItems = stockQuery.data ?? []
-  const stockById = useMemo(() => {
-    /** @type {Map<string, any>} */
-    const m = new Map()
-    for (const s of stockItems) m.set(s.id, s)
-    return m
-  }, [stockItems])
-
-  function stockLabel(item) {
-    if (!item) return ''
-    const name =
-      locale === 'en' && item.nameEn ? item.nameEn : item.nameAr
-    return `${name} (${item.unitLabel || stockUnitLabel(item.unit)})`
-  }
 
   return (
     <div className="flex flex-col gap-hisabi-md">
@@ -200,8 +180,295 @@ export function MenuItemRecipeEditor({
         <span className="type-label-md text-hisabi-on-surface">
           {t('fieldRecipeIngredients')}
         </span>
+        <RecipeIngredientRows
+          ingredients={ingredients}
+          setIngredients={setIngredients}
+          fieldErrors={fieldErrors}
+          clearFieldError={clearFieldError}
+        />
+      </div>
+    </div>
+  )
+}
 
-        {ingredients.length === 0 ? (
+/** Active stock items for ingredient pickers (shared query cache). */
+function useRecipeStockItems() {
+  const locale = useLocale()
+  const stockQuery = useQuery({
+    queryKey: ['stock', 'items', 'active-for-recipe'],
+    queryFn: async () => {
+      const d = await authGet('/stock/items?active=true')
+      return d.items ?? []
+    },
+  })
+
+  const stockItems = useMemo(() => stockQuery.data ?? [], [stockQuery.data])
+  const stockById = useMemo(() => {
+    /** @type {Map<string, any>} */
+    const m = new Map()
+    for (const s of stockItems) m.set(s.id, s)
+    return m
+  }, [stockItems])
+
+  function stockLabel(item) {
+    if (!item) return ''
+    const name =
+      locale === 'en' && item.nameEn ? item.nameEn : item.nameAr
+    return `${name} (${item.unitLabel || stockUnitLabel(item.unit)})`
+  }
+
+  return { stockItems, stockById, stockLabel }
+}
+
+/**
+ * @typedef {{
+ *   clientId: string
+ *   stockItemId: string
+ *   quantity: string
+ *   unit: import('@/lib/stock/units').StockUnit
+ * }} IngredientRow
+ */
+
+/** Positive quantity typed in a row, else null (empty / invalid / zero). */
+function rowQty(row) {
+  const raw = String(row?.quantity ?? '').trim()
+  if (!/^\d+(\.\d+)?$/.test(raw)) return null
+  const n = parseQty(raw)
+  return n != null && n > 0 ? n : null
+}
+
+/**
+ * What one serving uses for an extras row: the default recipe amount of the
+ * same stock item (from the current form state) plus the extra, in the stock
+ * item's unit. Null while the row is empty or invalid.
+ *
+ * @param {IngredientRow} extra
+ * @param {IngredientRow[]} defaultRows
+ * @param {{ unit: import('@/lib/stock/units').StockUnit } | undefined} stock
+ */
+function extraRowTotal(extra, defaultRows, stock) {
+  const extraN = rowQty(extra)
+  if (!extra.stockItemId || extraN == null) return null
+  const unit = stock?.unit ?? extra.unit
+  if (!canConvertUnits(extra.unit, unit)) return null
+  const toUnit = (n, from) =>
+    parseQty(convertStockQty(formatQtyString(n), from, unit)) ?? 0
+  let base = 0
+  let inRecipe = false
+  for (const row of defaultRows) {
+    const n = rowQty(row)
+    if (row.stockItemId !== extra.stockItemId || n == null) continue
+    if (!canConvertUnits(row.unit, unit)) continue
+    base += toUnit(n, row.unit)
+    inRecipe = true
+  }
+  const added = toUnit(extraN, extra.unit)
+  return { inRecipe, base, added, total: base + added, unit }
+}
+
+/**
+ * Editable ingredient rows (stock item, qty per 1 menu item, unit) — used for
+ * the default recipe and for variant option / customization extras.
+ * Pass `defaultIngredients` for extras rows: the quantity is then labelled as
+ * an extra amount and each row shows default + extra = total per serving.
+ *
+ * @param {{
+ *   ingredients: IngredientRow[]
+ *   setIngredients: (updater: any) => void
+ *   fieldErrors: Record<string, string>
+ *   clearFieldError: (key: string) => void
+ *   defaultIngredients?: IngredientRow[]
+ * }} props
+ */
+export function RecipeIngredientRows({
+  ingredients,
+  setIngredients,
+  fieldErrors,
+  clearFieldError,
+  defaultIngredients,
+}) {
+  const t = useTranslations('Menu')
+  const { stockItems, stockById, stockLabel } = useRecipeStockItems()
+  const isExtra = Array.isArray(defaultIngredients)
+
+  /** @param {number} n @param {import('@/lib/stock/units').StockUnit} unit */
+  function amount(n, unit) {
+    return `${formatQtyString(n)} ${stockUnitLabel(unit)}`
+  }
+
+  /** @param {string} chunks */
+  const qtyTag = (chunks) => <bdi dir="ltr">{chunks}</bdi>
+
+  /** @param {IngredientRow} ing */
+  function extraTotalLine(ing) {
+    const r = extraRowTotal(ing, defaultIngredients ?? [], stockById.get(ing.stockItemId))
+    if (!r) return null
+    return (
+      <p className="type-body-sm text-hisabi-on-surface-variant sm:col-span-4">
+        {r.inRecipe
+          ? t.rich('extraTotalWithDefault', {
+              base: amount(r.base, r.unit),
+              extra: amount(r.added, r.unit),
+              total: amount(r.total, r.unit),
+              q: qtyTag,
+            })
+          : t.rich('extraTotalNotInDefault', {
+              total: amount(r.total, r.unit),
+              q: qtyTag,
+            })}
+      </p>
+    )
+  }
+
+  return (
+    <>
+      {ingredients.length === 0 ? (
+        <button
+          type="button"
+          onClick={() =>
+            setIngredients((prev) => [...prev, emptyRecipeIngredient()])
+          }
+          className="type-label-sm inline-flex cursor-pointer items-center gap-1 self-start font-semibold text-hisabi-secondary hover:underline"
+        >
+          <Plus className="size-4 shrink-0" aria-hidden />
+          {t('addRecipeIngredient')}
+        </button>
+      ) : (
+        <div className="flex flex-col gap-hisabi-md">
+          {ingredients.map((ing) => {
+            const stock = stockById.get(ing.stockItemId)
+            const units = stock
+              ? compatibleUnits(stock.unit)
+              : STOCK_UNITS.filter((u) => unitFamily(u) !== 'piece').concat([
+                  'piece',
+                ])
+            return (
+              <div
+                key={ing.clientId}
+                className={cn(
+                  'grid gap-hisabi-sm rounded-lg border border-hisabi-outline-variant/50 p-hisabi-md',
+                  // Extras: longer qty label, so the stock picker gives up width;
+                  // fields align at the bottom when that label wraps.
+                  isExtra
+                    ? 'sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_6rem_auto] sm:items-end'
+                    : 'sm:grid-cols-[1fr_7rem_6rem_auto]',
+                )}
+              >
+                <label className="flex flex-col gap-1">
+                  <span className="type-body-sm text-hisabi-on-surface-variant">
+                    {t('fieldStockItem')}
+                    <RequiredMark />
+                  </span>
+                  <select
+                    className={cn(
+                      fieldClass,
+                      fieldErrors[`ri-${ing.clientId}`] &&
+                        'border-hisabi-error',
+                    )}
+                    value={ing.stockItemId}
+                    onChange={(e) => {
+                      clearFieldError(`ri-${ing.clientId}`)
+                      const nextId = e.target.value
+                      const nextStock = stockById.get(nextId)
+                      setIngredients((prev) =>
+                        prev.map((row) =>
+                          row.clientId === ing.clientId
+                            ? {
+                                ...row,
+                                stockItemId: nextId,
+                                unit: nextStock
+                                  ? nextStock.unit
+                                  : row.unit,
+                              }
+                            : row,
+                        ),
+                      )
+                    }}
+                  >
+                    <option value="">{t('selectStockItem')}</option>
+                    {stockItems.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {stockLabel(s)}
+                        {s.isBulk ? ` · ${t('stockBulkTag')}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="type-body-sm text-hisabi-on-surface-variant">
+                    {isExtra ? t('fieldExtraQty') : t('fieldRecipeQty')}
+                    <RequiredMark />
+                  </span>
+                  <input
+                    className={cn(
+                      fieldClass,
+                      fieldErrors[`ri-qty-${ing.clientId}`] &&
+                        'border-hisabi-error',
+                    )}
+                    inputMode="decimal"
+                    value={ing.quantity}
+                    placeholder={t('fieldRecipeQtyPlaceholder')}
+                    onChange={(e) => {
+                      clearFieldError(`ri-qty-${ing.clientId}`)
+                      setIngredients((prev) =>
+                        prev.map((row) =>
+                          row.clientId === ing.clientId
+                            ? { ...row, quantity: e.target.value }
+                            : row,
+                        ),
+                      )
+                    }}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="type-body-sm text-hisabi-on-surface-variant">
+                    {t('fieldRecipeUnit')}
+                  </span>
+                  <select
+                    className={fieldClass}
+                    value={ing.unit}
+                    onChange={(e) =>
+                      setIngredients((prev) =>
+                        prev.map((row) =>
+                          row.clientId === ing.clientId
+                            ? {
+                                ...row,
+                                unit: /** @type {any} */ (e.target.value),
+                              }
+                            : row,
+                        ),
+                      )
+                    }
+                  >
+                    {units.map((u) => (
+                      <option key={u} value={u}>
+                        {stockUnitLabel(u)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="flex items-end justify-end pb-1">
+                  <button
+                    type="button"
+                    aria-label={t('removeRecipeIngredient')}
+                    className="rounded-md p-2 text-hisabi-on-surface-variant hover:bg-hisabi-surface-container hover:text-hisabi-error"
+                    onClick={() =>
+                      setIngredients((prev) =>
+                        prev.filter((row) => row.clientId !== ing.clientId),
+                      )
+                    }
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                  </button>
+                </div>
+                {isExtra ? extraTotalLine(ing) : null}
+              </div>
+            )
+          })}
+
           <button
             type="button"
             onClick={() =>
@@ -212,147 +479,8 @@ export function MenuItemRecipeEditor({
             <Plus className="size-4 shrink-0" aria-hidden />
             {t('addRecipeIngredient')}
           </button>
-        ) : (
-          <div className="flex flex-col gap-hisabi-md">
-            {ingredients.map((ing) => {
-              const stock = stockById.get(ing.stockItemId)
-              const units = stock
-                ? compatibleUnits(stock.unit)
-                : STOCK_UNITS.filter((u) => unitFamily(u) !== 'piece').concat([
-                    'piece',
-                  ])
-              return (
-                <div
-                  key={ing.clientId}
-                  className="grid gap-hisabi-sm rounded-lg border border-hisabi-outline-variant/50 p-hisabi-md sm:grid-cols-[1fr_7rem_6rem_auto]"
-                >
-                  <label className="flex flex-col gap-1">
-                    <span className="type-body-sm text-hisabi-on-surface-variant">
-                      {t('fieldStockItem')}
-                      <RequiredMark />
-                    </span>
-                    <select
-                      className={cn(
-                        fieldClass,
-                        fieldErrors[`ri-${ing.clientId}`] &&
-                          'border-hisabi-error',
-                      )}
-                      value={ing.stockItemId}
-                      onChange={(e) => {
-                        clearFieldError(`ri-${ing.clientId}`)
-                        const nextId = e.target.value
-                        const nextStock = stockById.get(nextId)
-                        setIngredients((prev) =>
-                          prev.map((row) =>
-                            row.clientId === ing.clientId
-                              ? {
-                                  ...row,
-                                  stockItemId: nextId,
-                                  unit: nextStock
-                                    ? nextStock.unit
-                                    : row.unit,
-                                }
-                              : row,
-                          ),
-                        )
-                      }}
-                    >
-                      <option value="">{t('selectStockItem')}</option>
-                      {stockItems.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {stockLabel(s)}
-                          {s.isBulk ? ` · ${t('stockBulkTag')}` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="flex flex-col gap-1">
-                    <span className="type-body-sm text-hisabi-on-surface-variant">
-                      {t('fieldRecipeQty')}
-                      <RequiredMark />
-                    </span>
-                    <input
-                      className={cn(
-                        fieldClass,
-                        fieldErrors[`ri-qty-${ing.clientId}`] &&
-                          'border-hisabi-error',
-                      )}
-                      inputMode="decimal"
-                      value={ing.quantity}
-                      placeholder={t('fieldRecipeQtyPlaceholder')}
-                      onChange={(e) => {
-                        clearFieldError(`ri-qty-${ing.clientId}`)
-                        setIngredients((prev) =>
-                          prev.map((row) =>
-                            row.clientId === ing.clientId
-                              ? { ...row, quantity: e.target.value }
-                              : row,
-                          ),
-                        )
-                      }}
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1">
-                    <span className="type-body-sm text-hisabi-on-surface-variant">
-                      {t('fieldRecipeUnit')}
-                    </span>
-                    <select
-                      className={fieldClass}
-                      value={ing.unit}
-                      onChange={(e) =>
-                        setIngredients((prev) =>
-                          prev.map((row) =>
-                            row.clientId === ing.clientId
-                              ? {
-                                  ...row,
-                                  unit: /** @type {any} */ (e.target.value),
-                                }
-                              : row,
-                          ),
-                        )
-                      }
-                    >
-                      {units.map((u) => (
-                        <option key={u} value={u}>
-                          {stockUnitLabel(u)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <div className="flex items-end justify-end pb-1">
-                    <button
-                      type="button"
-                      aria-label={t('removeRecipeIngredient')}
-                      className="rounded-md p-2 text-hisabi-on-surface-variant hover:bg-hisabi-surface-container hover:text-hisabi-error"
-                      onClick={() =>
-                        setIngredients((prev) =>
-                          prev.filter((row) => row.clientId !== ing.clientId),
-                        )
-                      }
-                    >
-                      <Trash2 className="size-4" aria-hidden />
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-
-            <button
-              type="button"
-              onClick={() =>
-                setIngredients((prev) => [...prev, emptyRecipeIngredient()])
-              }
-              className="type-label-sm inline-flex cursor-pointer items-center gap-1 self-start font-semibold text-hisabi-secondary hover:underline"
-            >
-              <Plus className="size-4 shrink-0" aria-hidden />
-              {t('addRecipeIngredient')}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </>
   )
 }

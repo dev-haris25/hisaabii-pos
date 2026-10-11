@@ -45,7 +45,7 @@ import { getOrCreateBusinessSettings } from '@/lib/settings/get-or-create-busine
 import { excludeBulkStockNeeds } from '@/lib/stock/exclude-bulk-stock-needs'
 import {
   aggregateRecipeStockNeeds,
-  loadRecipesByMenuItemIds,
+  loadStockNeedSources,
 } from '@/lib/stock/recipe-stock-needs'
 import {
   offerDealsInputSchema,
@@ -440,14 +440,22 @@ export async function checkoutPosSale({
   }
 
   const bizSettings = await getOrCreateBusinessSettings(profileId)
-  const recipesByMenuItemId = await loadRecipesByMenuItemIds(
+  // Same lines the kitchen ticket gets: modifiersSnapshot carries the chosen
+  // option / customization ids, so their extra ingredients are counted too.
+  const stockLines = saleLines.map((l) => ({
+    menuItemId: l.menuItemId,
+    quantity: l.quantity,
+    modifiersSnapshot: l.modifiersSnapshot,
+  }))
+  const { recipesByMenuItemId, extras } = await loadStockNeedSources(
     prisma,
     profileId,
-    [...new Set(saleLines.map((l) => l.menuItemId))],
+    stockLines,
   )
   const { needs } = aggregateRecipeStockNeeds(
-    saleLines.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity })),
+    stockLines,
     recipesByMenuItemId,
+    extras,
   )
 
   // Settlement: rounds may already have deducted stock at kitchen ready —

@@ -149,8 +149,20 @@ export function StockItemDetailView({ itemId }) {
   const unitLabel = item.unitLabel || stockUnitLabel(item.unit)
 
   function recipeMenuName(row) {
-    if (locale === 'en' && row.nameEn) return row.nameEn
-    return row.nameAr
+    const item = locale === 'en' && row.nameEn ? row.nameEn : row.nameAr
+    if (row.kind !== 'variant' && row.kind !== 'customization') return item
+    const modifier =
+      locale === 'en' && row.modifierNameEn
+        ? row.modifierNameEn
+        : row.modifierNameAr
+    return modifier ? `${item} / ${modifier}` : item
+  }
+
+  /** @param {{ kind?: string }} row */
+  function recipeUseLabel(row) {
+    if (row.kind === 'variant') return t('recipeUseVariant')
+    if (row.kind === 'customization') return t('recipeUseCustomization')
+    return t('recipeUseRecipe')
   }
 
   return (
@@ -297,6 +309,9 @@ export function StockItemDetailView({ itemId }) {
                                 {name}
                               </span>
                             )}
+                            <span className="type-label-sm rounded-md bg-hisabi-surface-container px-2 py-0.5 text-hisabi-on-surface-variant">
+                              {recipeUseLabel(row)}
+                            </span>
                             {!row.menuItemActive ? (
                               <span className="type-label-sm rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">
                                 {t('statusInactive')}

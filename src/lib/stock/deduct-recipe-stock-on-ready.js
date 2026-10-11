@@ -1,12 +1,13 @@
 import { applyStockMovement } from '@/lib/stock/apply-stock-movement'
 import {
   aggregateRecipeStockNeeds,
-  loadRecipesByMenuItemIds,
+  loadStockNeedSources,
 } from '@/lib/stock/recipe-stock-needs'
 import { excludeBulkStockNeeds } from '@/lib/stock/exclude-bulk-stock-needs'
 
 /**
- * Deduct recipe stock from main warehouse when a ticket is first marked ready.
+ * Deduct recipe stock from main warehouse when a ticket is first marked ready:
+ * default recipe + extras of the chosen variant options / customizations.
  * Bulk items (fryer oil) are skipped — they are entered on the day-end report.
  *
  * Does not stamp `kitchenOrder.stockDeductedAt`: the caller claims the ticket
@@ -35,12 +36,16 @@ export async function deductRecipeStockForKitchenReady(tx, opts) {
     return { ok: true, deducted: false, shortfalls: [] }
   }
 
-  const recipesByMenuItemId = await loadRecipesByMenuItemIds(
+  const { recipesByMenuItemId, extras } = await loadStockNeedSources(
     tx,
     opts.businessProfileId,
-    menuItemIds,
+    lines,
   )
-  const { needs } = aggregateRecipeStockNeeds(lines, recipesByMenuItemId)
+  const { needs } = aggregateRecipeStockNeeds(
+    lines,
+    recipesByMenuItemId,
+    extras,
+  )
   const fromMain = await excludeBulkStockNeeds(
     tx,
     opts.businessProfileId,

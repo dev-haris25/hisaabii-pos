@@ -5,7 +5,8 @@ import { kitchenLinesSnapshot } from '@/lib/orders/kitchen-lines-snapshot'
  *
  * @param {import('@/generated/prisma/client').Prisma.TransactionClient | import('@/generated/prisma/client').PrismaClient} db
  * @param {string} invoiceId
- * @param {Array<{ nameAr?: string | null, nameEn?: string | null, quantity?: number }>} lines
+ * @param {Array<{ menuItemId?: string | null, nameAr?: string | null, nameEn?: string | null, quantity?: number, lineNote?: string | null, modifiersSnapshot?: unknown }>} lines
+ *   Must carry menuItemId + modifiersSnapshot: ready-time stock deduction reads them.
  */
 export async function refreshKitchenOrderAfterEdit(db, invoiceId, lines) {
   // invoiceId is indexed, not unique (E-Waiter can have multiple rounds).

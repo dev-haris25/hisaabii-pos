@@ -48,19 +48,77 @@ export async function GET(_request, context) {
       },
     })
 
-    const recipesUsed = recipeIngredients.map((ing) => {
-      const menuItem = ing.recipe.menuItem
-      return {
-        ingredientId: ing.id,
-        menuItemId: menuItem.id,
-        nameAr: menuItem.nameAr,
-        nameEn: menuItem.nameEn,
-        menuItemActive: menuItem.active,
-        quantity: ing.quantity,
-        unit: ing.unit,
-        unitLabel: stockUnitLabel(ing.unit),
-      }
+    const menuItemSelect = {
+      select: { id: true, nameAr: true, nameEn: true, active: true },
+    }
+    const optionIngredients =
+      await prisma.menuItemVariantOptionIngredient.findMany({
+        where: {
+          stockItemId: id,
+          option: { group: { menuItem: { businessProfileId: auth.profile.id } } },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        select: {
+          id: true,
+          quantity: true,
+          unit: true,
+          option: {
+            select: {
+              nameAr: true,
+              nameEn: true,
+              group: { select: { menuItem: menuItemSelect } },
+            },
+          },
+        },
+      })
+    const customizationIngredients =
+      await prisma.menuItemCustomizationIngredient.findMany({
+        where: {
+          stockItemId: id,
+          customization: { menuItem: { businessProfileId: auth.profile.id } },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        select: {
+          id: true,
+          quantity: true,
+          unit: true,
+          customization: {
+            select: { nameAr: true, nameEn: true, menuItem: menuItemSelect },
+          },
+        },
+      })
+
+    /**
+     * @param {{ id: string, quantity: string, unit: any }} ing
+     * @param {{ id: string, nameAr: string, nameEn: string | null, active: boolean }} menuItem
+     * @param {'recipe' | 'variant' | 'customization'} kind
+     * @param {{ nameAr: string, nameEn: string | null } | null} modifier
+     */
+    const usedRow = (ing, menuItem, kind, modifier) => ({
+      ingredientId: ing.id,
+      kind,
+      menuItemId: menuItem.id,
+      nameAr: menuItem.nameAr,
+      nameEn: menuItem.nameEn,
+      menuItemActive: menuItem.active,
+      modifierNameAr: modifier?.nameAr ?? null,
+      modifierNameEn: modifier?.nameEn ?? null,
+      quantity: ing.quantity,
+      unit: ing.unit,
+      unitLabel: stockUnitLabel(ing.unit),
     })
+
+    const recipesUsed = [
+      ...recipeIngredients.map((ing) =>
+        usedRow(ing, ing.recipe.menuItem, 'recipe', null),
+      ),
+      ...optionIngredients.map((ing) =>
+        usedRow(ing, ing.option.group.menuItem, 'variant', ing.option),
+      ),
+      ...customizationIngredients.map((ing) =>
+        usedRow(ing, ing.customization.menuItem, 'customization', ing.customization),
+      ),
+    ]
 
     return jsonOk({
       item: mapStockItemToJson(row),
@@ -185,8 +243,9 @@ export async function PATCH(request, context) {
 }
 
 /**
- * Soft-delete stock item: hide from lists, unlink from recipes,
- * keep StockMovement history (never hard-delete the row).
+ * Soft-delete stock item: hide from lists, unlink from recipes and from
+ * variant option / customization extras, keep StockMovement history (never
+ * hard-delete the row).
  */
 export async function DELETE(request, context) {
   try {
@@ -202,6 +261,12 @@ export async function DELETE(request, context) {
 
     const updated = await prisma.$transaction(async (tx) => {
       await tx.menuItemRecipeIngredient.deleteMany({
+        where: { stockItemId: id },
+      })
+      await tx.menuItemVariantOptionIngredient.deleteMany({
+        where: { stockItemId: id },
+      })
+      await tx.menuItemCustomizationIngredient.deleteMany({
         where: { stockItemId: id },
       })
       return tx.stockItem.update({

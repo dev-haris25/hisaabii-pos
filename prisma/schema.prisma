@@ -420,10 +420,12 @@ model StockItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  movements               StockMovement[]
-  recipeIngredients       MenuItemRecipeIngredient[]
-  kitchenStockAllocations KitchenStockAllocation[]
-  dayEndLines             StockDayEndLine[]
+  movements                StockMovement[]
+  recipeIngredients        MenuItemRecipeIngredient[]
+  variantOptionIngredients MenuItemVariantOptionIngredient[]
+  customizationIngredients MenuItemCustomizationIngredient[]
+  kitchenStockAllocations  KitchenStockAllocation[]
+  dayEndLines              StockDayEndLine[]
 
   @@index([businessProfileId, active])
   @@index([businessProfileId, nameAr])
@@ -766,9 +768,33 @@ model MenuItemVariantOption {
 
   couponItemRuleLinks CouponItemRuleVariantOption[]
   offerItemLinks      OfferItemVariantOption[]
+  /// Extra stock used when this option is chosen (added on top of the recipe).
+  ingredients         MenuItemVariantOptionIngredient[]
 
   @@index([groupId, sortOrder])
   @@map("menu_item_variant_options")
+}
+
+/// Extra stock per chosen variant option — added to the default recipe, never replaces it.
+model MenuItemVariantOptionIngredient {
+  id       String                @id @default(cuid())
+  optionId String
+  option   MenuItemVariantOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  stockItemId String
+  stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+
+  /// Qty per 1 menu item, in `unit` (same family as stock item).
+  quantity  String
+  unit      StockUnit
+  sortOrder Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([optionId, sortOrder])
+  @@index([stockItemId])
+  @@map("menu_item_variant_option_ingredients")
 }
 
 model MenuItemCustomization {
@@ -784,8 +810,33 @@ model MenuItemCustomization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Extra stock used when this customization is chosen (added on top of the recipe).
+  ingredients MenuItemCustomizationIngredient[]
+
   @@index([menuItemId, sortOrder])
   @@map("menu_item_customizations")
+}
+
+/// Extra stock per chosen customization — added to the default recipe, never replaces it.
+model MenuItemCustomizationIngredient {
+  id              String                @id @default(cuid())
+  customizationId String
+  customization   MenuItemCustomization @relation(fields: [customizationId], references: [id], onDelete: Cascade)
+
+  stockItemId String
+  stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+
+  /// Qty per 1 menu item, in `unit` (same family as stock item).
+  quantity  String
+  unit      StockUnit
+  sortOrder Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customizationId, sortOrder])
+  @@index([stockItemId])
+  @@map("menu_item_customization_ingredients")
 }
 
 // ---------------------------------------------------------------------------

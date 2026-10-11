@@ -17,6 +17,8 @@ import { prisma } from '@/lib/prisma'
 
 const editLineSchema = z.object({
   invoiceLineId: z.string().trim().min(1).optional().nullable(),
+  /** Added lines only (kitchen ticket stock); existing lines use the stored one. */
+  menuItemId: z.string().trim().min(1).max(64).optional().nullable(),
   nameAr: z.string().trim().min(1).max(200),
   nameEn: z.string().trim().max(200).optional().nullable(),
   quantity: z.number().int().min(0).max(999),
@@ -34,6 +36,49 @@ const editBodySchema = z.object({
   reasonEn: z.string().trim().max(500).optional().nullable(),
   lines: z.array(editLineSchema).min(1).max(100),
 })
+
+/**
+ * Lines for the refreshed kitchen ticket. Existing lines keep the stored
+ * menuItemId and modifiersSnapshot (with the chosen option / customization
+ * ids), so marking the ticket ready still deducts recipe + extras. Added lines
+ * use the sent menu item only when it belongs to this restaurant.
+ *
+ * @param {string} profileId
+ * @param {Array<{ id: string, menuItemId: string | null, modifiersSnapshot: unknown }>} storedLines
+ * @param {Array<z.infer<typeof editLineSchema>>} editedLines
+ */
+async function kitchenLinesAfterEdit(profileId, storedLines, editedLines) {
+  const storedById = new Map(storedLines.map((l) => [l.id, l]))
+  const sentIds = [
+    ...new Set(
+      editedLines
+        .filter((l) => !(l.invoiceLineId && storedById.has(l.invoiceLineId)))
+        .map((l) => l.menuItemId)
+        .filter(Boolean),
+    ),
+  ]
+  const owned = sentIds.length
+    ? await prisma.menuItem.findMany({
+        where: { id: { in: sentIds }, businessProfileId: profileId },
+        select: { id: true },
+      })
+    : []
+  const ownedIds = new Set(owned.map((m) => m.id))
+  return editedLines.map((l) => {
+    const stored = l.invoiceLineId ? storedById.get(l.invoiceLineId) : null
+    if (stored) {
+      return {
+        ...l,
+        menuItemId: stored.menuItemId,
+        modifiersSnapshot: stored.modifiersSnapshot,
+      }
+    }
+    return {
+      ...l,
+      menuItemId: l.menuItemId && ownedIds.has(l.menuItemId) ? l.menuItemId : null,
+    }
+  })
+}
 
 /**
  * Edit a reported invoice by creating a credit or debit note (never mutates Invoice).
@@ -109,7 +154,11 @@ export async function POST(request, context) {
         reasonEn: parsed.data.reasonEn,
         editedLines: parsed.data.lines,
       })
-      await refreshKitchenOrderAfterEdit(prisma, invoice.id, editedLines)
+      await refreshKitchenOrderAfterEdit(
+        prisma,
+        invoice.id,
+        await kitchenLinesAfterEdit(auth.profileId, invoice.lines, editedLines),
+      )
 
       const mapped =
         documentNature === 'credit'

@@ -22,6 +22,7 @@ import {
   MenuItemRecipeEditor,
   emptyRecipeIngredient,
 } from './menu-item-recipe-editor'
+import { MenuItemExtraIngredientsEditor } from './menu-item-extra-ingredients-editor'
 import { HisabiSpinner } from '@/components/hisabi-spinner'
 import { AppLoader } from '@/components/app-loader'
 import { AuthSubmitButton } from '@/components/auth/auth-submit-button'
@@ -83,6 +84,8 @@ function emptyOption(isDefault = false) {
     priceChange: '0',
     calories: '',
     isDefault,
+    /** Extra stock on top of the default recipe when this option is chosen. */
+    ingredients: /** @type {ReturnType<typeof emptyRecipeIngredient>[]} */ ([]),
   }
 }
 
@@ -101,7 +104,28 @@ function emptyCustomization() {
     nameAr: '',
     nameEn: '',
     priceChange: '0',
+    /** Extra stock on top of the default recipe when this is chosen. */
+    ingredients: /** @type {ReturnType<typeof emptyRecipeIngredient>[]} */ ([]),
   }
+}
+
+/** @param {Array<{ id: string, stockItemId?: string, quantity?: string, unit?: string }> | undefined} rows */
+function ingredientRowsFromJson(rows) {
+  return (rows ?? []).map((ing) => ({
+    clientId: ing.id,
+    stockItemId: ing.stockItemId ?? '',
+    quantity: String(ing.quantity ?? ''),
+    unit: /** @type {import('@/lib/stock/units').StockUnit} */ (ing.unit ?? 'g'),
+  }))
+}
+
+/** @param {ReturnType<typeof emptyRecipeIngredient>[]} rows */
+function ingredientRowsToPayload(rows) {
+  return rows.map((ing) => ({
+    stockItemId: ing.stockItemId,
+    quantity: ing.quantity.trim(),
+    unit: ing.unit,
+  }))
 }
 
 /**
@@ -488,31 +512,28 @@ export function MenuItemFormView({ mode, itemId }) {
               ? String(option.calories)
               : '',
           isDefault: Boolean(option.isDefault),
+          ingredients: ingredientRowsFromJson(option.ingredients),
         })),
       })),
     )
     setCustomizations(
       (item.customizations ?? []).map((row) => ({
         clientId: row.id,
+        /** Persisted DB id — sent on save so the API can update in place. */
+        id: row.id,
         nameAr: row.nameAr ?? '',
         nameEn: row.nameEn ?? '',
         nameArBaseline: row.nameAr ?? '',
         nameEnBaseline: row.nameEn ?? '',
         priceChange: String(row.priceChange ?? '0'),
+        ingredients: ingredientRowsFromJson(row.ingredients),
       })),
     )
     setRecipeSteps(item.recipe?.steps ?? '')
     setRecipeStepsAr(item.recipe?.stepsAr ?? '')
     setRecipeStepsBaseline(item.recipe?.steps ?? '')
     setRecipeStepsArBaseline(item.recipe?.stepsAr ?? '')
-    setRecipeIngredients(
-      (item.recipe?.ingredients ?? []).map((ing) => ({
-        clientId: ing.id,
-        stockItemId: ing.stockItemId ?? '',
-        quantity: String(ing.quantity ?? ''),
-        unit: ing.unit ?? 'g',
-      })),
-    )
+    setRecipeIngredients(ingredientRowsFromJson(item.recipe?.ingredients))
     setHydrated(true)
   }, [itemQuery.data, hydrated])
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -549,13 +570,16 @@ export function MenuItemFormView({ mode, itemId }) {
               priceChange: option.priceChange.trim() || '0',
               calories: Number.isFinite(calN) ? calN : null,
               isDefault: Boolean(option.isDefault),
+              ingredients: ingredientRowsToPayload(option.ingredients ?? []),
             }
           }),
         })),
         customizations: customizations.map((row) => ({
+          ...(row.id ? { id: row.id } : {}),
           nameAr: row.nameAr.trim(),
           nameEn: row.nameEn.trim() || null,
           priceChange: row.priceChange.trim() || '0',
+          ingredients: ingredientRowsToPayload(row.ingredients ?? []),
         })),
         recipe:
           recipeSteps.trim() ||
@@ -564,11 +588,7 @@ export function MenuItemFormView({ mode, itemId }) {
             ? {
                 steps: recipeSteps.trim() || null,
                 stepsAr: recipeStepsAr.trim() || null,
-                ingredients: recipeIngredients.map((ing) => ({
-                  stockItemId: ing.stockItemId,
-                  quantity: ing.quantity.trim(),
-                  unit: ing.unit,
-                })),
+                ingredients: ingredientRowsToPayload(recipeIngredients),
               }
             : null,
       }
@@ -652,7 +672,14 @@ export function MenuItemFormView({ mode, itemId }) {
         errors[`cz-price-${row.clientId}`] = t('validationPrice')
       }
     }
-    for (const ing of recipeIngredients) {
+    const allIngredientRows = [
+      ...recipeIngredients,
+      ...variantGroups.flatMap((g) =>
+        g.options.flatMap((o) => o.ingredients ?? []),
+      ),
+      ...customizations.flatMap((c) => c.ingredients ?? []),
+    ]
+    for (const ing of allIngredientRows) {
       if (!ing.stockItemId) {
         errors[`ri-${ing.clientId}`] = t('validationRecipeStock')
       }
@@ -1669,6 +1696,15 @@ export function MenuItemFormView({ mode, itemId }) {
               setIngredients={setRecipeIngredients}
               fieldErrors={fieldErrors}
               clearFieldError={clearFieldError}
+            />
+            <MenuItemExtraIngredientsEditor
+              variantGroups={variantGroups}
+              setVariantGroups={setVariantGroups}
+              customizations={customizations}
+              setCustomizations={setCustomizations}
+              fieldErrors={fieldErrors}
+              clearFieldError={clearFieldError}
+              defaultIngredients={recipeIngredients}
             />
           </MenuItemFormSection>
         </div>

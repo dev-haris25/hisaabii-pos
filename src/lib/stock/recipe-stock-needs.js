@@ -1,3 +1,4 @@
+import { normalizeModifiersSnapshot } from '@/lib/menu/item-modifiers'
 import {
   canConvertUnits,
   convertStockQty,
@@ -7,9 +8,53 @@ import {
 } from '@/lib/stock/units'
 
 /**
- * Aggregate stock needs from sold/kitchen lines × recipes.
+ * @typedef {{
+ *   byOptionId: Map<string, { menuItemId: string, ingredients: any[] }>
+ *   byCustomizationId: Map<string, { menuItemId: string, ingredients: any[] }>
+ * }} ExtraIngredientsByModifier
+ */
+
+/** @type {ExtraIngredientsByModifier} */
+const NO_EXTRAS = { byOptionId: new Map(), byCustomizationId: new Map() }
+
+/**
+ * Ingredient rows one serving of this line uses: the default recipe, plus the
+ * extras of every chosen variant option and customization stored on the
+ * line's modifiersSnapshot. An option / customization counts only when it
+ * belongs to the line's menu item; one that is missing (older line without
+ * ids, or deleted since) adds nothing.
  *
- * @param {Array<{ menuItemId?: string | null, quantity?: number }>} lines
+ * @param {{ menuItemId?: string | null, modifiersSnapshot?: unknown }} line
+ * @param {Map<string, { ingredients: any[] }>} recipesByMenuItemId
+ * @param {ExtraIngredientsByModifier} extras
+ */
+function lineIngredients(line, recipesByMenuItemId, extras) {
+  const menuItemId = String(line.menuItemId)
+  const rows = [...(recipesByMenuItemId.get(menuItemId)?.ingredients ?? [])]
+  const snap = normalizeModifiersSnapshot(line.modifiersSnapshot)
+  const optionIds = new Set(
+    snap.variantOptions.map((o) => o.optionId).filter(Boolean),
+  )
+  for (const id of optionIds) {
+    const extra = extras.byOptionId.get(id)
+    if (extra && extra.menuItemId === menuItemId) rows.push(...extra.ingredients)
+  }
+  const customizationIds = new Set(
+    snap.customizations.map((c) => c.customizationId).filter(Boolean),
+  )
+  for (const id of customizationIds) {
+    const extra = extras.byCustomizationId.get(id)
+    if (extra && extra.menuItemId === menuItemId) rows.push(...extra.ingredients)
+  }
+  return rows
+}
+
+/**
+ * Aggregate stock needs from sold/kitchen lines. Per line: (default recipe +
+ * extras of each chosen option and customization) × quantity, summed per
+ * stock item in its own unit.
+ *
+ * @param {Array<{ menuItemId?: string | null, quantity?: number, modifiersSnapshot?: unknown }>} lines
  * @param {Map<string, {
  *   ingredients: Array<{
  *     stockItemId: string
@@ -25,6 +70,7 @@ import {
  *     }
  *   }>
  * }>} recipesByMenuItemId
+ * @param {ExtraIngredientsByModifier} [extras] From `loadExtraIngredients`.
  * @returns {{
  *   needs: Array<{
  *     stockItemId: string
@@ -46,7 +92,11 @@ import {
  *   }>
  * }}
  */
-export function aggregateRecipeStockNeeds(lines, recipesByMenuItemId) {
+export function aggregateRecipeStockNeeds(
+  lines,
+  recipesByMenuItemId,
+  extras = NO_EXTRAS,
+) {
   /** @type {Map<string, { stockItem: any, requiredInItemUnit: number }>} */
   const byStock = new Map()
 
@@ -55,10 +105,10 @@ export function aggregateRecipeStockNeeds(lines, recipesByMenuItemId) {
     if (!menuItemId) continue
     const qty = Number.parseInt(String(line.quantity ?? 0), 10) || 0
     if (qty <= 0) continue
-    const recipe = recipesByMenuItemId.get(menuItemId)
-    if (!recipe?.ingredients?.length) continue
+    const ingredients = lineIngredients(line, recipesByMenuItemId, extras)
+    if (ingredients.length === 0) continue
 
-    for (const ing of recipe.ingredients) {
+    for (const ing of ingredients) {
       const stock = ing.stockItem
       if (!stock?.id) continue
       // Soft-deleted stock items are unlinked on delete; skip as a safety net.
@@ -207,6 +257,113 @@ export function expandRecipeUsageByMenuItem(lines, recipesByMenuItemId) {
   }))
 }
 
+const recipeStockItemSelect = {
+  id: true,
+  nameAr: true,
+  nameEn: true,
+  unit: true,
+  quantityOnHand: true,
+  active: true,
+  unitCost: true,
+}
+
+/**
+ * Load the extra ingredients of every variant option and customization named
+ * on the lines' modifiersSnapshot, for this business only.
+ *
+ * @param {import('@/generated/prisma/client').Prisma.TransactionClient | typeof import('@/lib/prisma').prisma} db
+ * @param {string} businessProfileId
+ * @param {Array<{ modifiersSnapshot?: unknown }>} lines
+ * @returns {Promise<ExtraIngredientsByModifier>}
+ */
+export async function loadExtraIngredients(db, businessProfileId, lines) {
+  /** @type {Set<string>} */
+  const optionIds = new Set()
+  /** @type {Set<string>} */
+  const customizationIds = new Set()
+  for (const line of lines) {
+    if (!line || typeof line !== 'object') continue
+    const snap = normalizeModifiersSnapshot(line.modifiersSnapshot)
+    for (const o of snap.variantOptions) if (o.optionId) optionIds.add(o.optionId)
+    for (const c of snap.customizations) {
+      if (c.customizationId) customizationIds.add(c.customizationId)
+    }
+  }
+
+  /** @type {ExtraIngredientsByModifier} */
+  const out = { byOptionId: new Map(), byCustomizationId: new Map() }
+  const ingredientsInclude = {
+    orderBy: { sortOrder: 'asc' },
+    include: { stockItem: { select: recipeStockItemSelect } },
+  }
+
+  if (optionIds.size > 0) {
+    const options = await db.menuItemVariantOption.findMany({
+      where: {
+        id: { in: [...optionIds] },
+        group: { menuItem: { businessProfileId } },
+      },
+      select: {
+        id: true,
+        group: { select: { menuItemId: true } },
+        ingredients: ingredientsInclude,
+      },
+    })
+    for (const o of options) {
+      if (o.ingredients.length === 0) continue
+      out.byOptionId.set(o.id, {
+        menuItemId: o.group.menuItemId,
+        ingredients: o.ingredients,
+      })
+    }
+  }
+
+  if (customizationIds.size > 0) {
+    const customs = await db.menuItemCustomization.findMany({
+      where: {
+        id: { in: [...customizationIds] },
+        menuItem: { businessProfileId },
+      },
+      select: {
+        id: true,
+        menuItemId: true,
+        ingredients: ingredientsInclude,
+      },
+    })
+    for (const c of customs) {
+      if (c.ingredients.length === 0) continue
+      out.byCustomizationId.set(c.id, {
+        menuItemId: c.menuItemId,
+        ingredients: c.ingredients,
+      })
+    }
+  }
+
+  return out
+}
+
+/**
+ * Recipes + option / customization extras for these lines — everything
+ * `aggregateRecipeStockNeeds` needs.
+ *
+ * @param {import('@/generated/prisma/client').Prisma.TransactionClient | typeof import('@/lib/prisma').prisma} db
+ * @param {string} businessProfileId
+ * @param {Array<{ menuItemId?: string | null, modifiersSnapshot?: unknown }>} lines
+ */
+export async function loadStockNeedSources(db, businessProfileId, lines) {
+  const menuItemIds = lines
+    .map((l) => (l && typeof l === 'object' ? l.menuItemId : null))
+    .filter(Boolean)
+  // Sequential: `db` may be an interactive transaction (one connection).
+  const recipesByMenuItemId = await loadRecipesByMenuItemIds(
+    db,
+    businessProfileId,
+    menuItemIds,
+  )
+  const extras = await loadExtraIngredients(db, businessProfileId, lines)
+  return { recipesByMenuItemId, extras }
+}
+
 /**
  * Load recipes for menu item ids (with stock items).
  *
@@ -229,17 +386,7 @@ export async function loadRecipesByMenuItemIds(db, businessProfileId, menuItemId
       ingredients: {
         orderBy: { sortOrder: 'asc' },
         include: {
-          stockItem: {
-            select: {
-              id: true,
-              nameAr: true,
-              nameEn: true,
-              unit: true,
-              quantityOnHand: true,
-              active: true,
-              unitCost: true,
-            },
-          },
+          stockItem: { select: recipeStockItemSelect },
         },
       },
     },

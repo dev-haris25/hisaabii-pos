@@ -1235,7 +1235,22 @@
     "noCategories": "No categories yet.",
     "colItems": "Items",
     "validationNameAr": "Enter the Arabic name.",
-    "validationPrice": "Enter a valid price (e.g. 12 or 12.50)."
+    "validationPrice": "Enter a valid price (e.g. 12 or 12.50).",
+    "extrasVariantTitle": "Extra ingredients per variant option",
+    "extrasCustomizationTitle": "Extra ingredients per customization",
+    "extrasNoVariants": "Add variant options above to give them extra ingredients.",
+    "extrasNoCustomizations": "Add customizations above to give them extra ingredients.",
+    "extrasUnnamed": "Unnamed",
+    "recipeExtrasTitle": "Extra ingredients",
+    "recipeExtrasHint": "Added on top of the default recipe when this option or customization is chosen. Prep cost above is the default recipe only.",
+    "extraCostLabel": "Extra cost: {amount}",
+    "extraCostMissing": "Extra cost: not available",
+    "fieldExtraQty": "Extra qty (added to default recipe)",
+    "extrasVariantHint": "Enter only the extra amount this option adds. The default recipe is always deducted as well. Example: the default recipe has 200 g chicken and Large uses 350 g, so enter 150 g.",
+    "extrasCustomizationHint": "Enter only the extra amount this customization adds. The default recipe is always deducted as well. Example: the default recipe has 1 piece of cheese and Extra cheese uses 2 pieces, so enter 1 piece.",
+    "extraTotalWithDefault": "Default <q>{base}</q> + extra <q>{extra}</q> = <q>{total}</q> per serving",
+    "extraTotalNotInDefault": "Not in the default recipe. This is the full amount: <q>{total}</q> per serving.",
+    "recipeColExtraQty": "Added to default"
   },
   "Loyalty": {
     "settingsMetaTitle": "Loyalty settings | Hisabi POS",
@@ -2117,7 +2132,10 @@
     "colRecipeQtyPerServing": "Qty per serving",
     "itemNotFound": "Stock item not found.",
     "fieldQtyOpeningHint": "Recorded as an opening balance in the ledger.",
-    "fieldQtyEditHint": "Quantity changes only via movements —"
+    "fieldQtyEditHint": "Quantity changes only via movements —",
+    "recipeUseRecipe": "Recipe",
+    "recipeUseVariant": "Variant extra",
+    "recipeUseCustomization": "Customization extra"
   },
   "Cashiers": {
     "metaTitle": "Cashiers | Hisabi POS",

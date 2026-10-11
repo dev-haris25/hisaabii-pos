@@ -1235,7 +1235,22 @@
     "noCategories": "لا توجد تصنيفات بعد.",
     "colItems": "الأصناف",
     "validationNameAr": "أدخل الاسم بالعربية.",
-    "validationPrice": "أدخل سعرًا صالحًا (مثال: 12 أو 12.50)."
+    "validationPrice": "أدخل سعرًا صالحًا (مثال: 12 أو 12.50).",
+    "extrasVariantTitle": "مكونات إضافية لكل خيار",
+    "extrasCustomizationTitle": "مكونات إضافية لكل تخصيص",
+    "extrasNoVariants": "أضف خيارات أعلاه لتحديد مكونات إضافية لها.",
+    "extrasNoCustomizations": "أضف تخصيصات أعلاه لتحديد مكونات إضافية لها.",
+    "extrasUnnamed": "بدون اسم",
+    "recipeExtrasTitle": "مكونات إضافية",
+    "recipeExtrasHint": "تُضاف فوق الوصفة الأساسية عند اختيار هذا الخيار أو التخصيص. تكلفة التحضير أعلاه للوصفة الأساسية فقط.",
+    "extraCostLabel": "التكلفة الإضافية: {amount}",
+    "extraCostMissing": "التكلفة الإضافية: غير متاحة",
+    "fieldExtraQty": "كمية إضافية (تُضاف إلى الوصفة الأساسية)",
+    "extrasVariantHint": "أدخل فقط الكمية الإضافية التي يضيفها هذا الخيار. تُخصم الوصفة الأساسية دائمًا أيضًا. مثال: الوصفة الأساسية فيها 200 g دجاج والحجم الكبير يستخدم 350 g، لذا أدخل 150 g.",
+    "extrasCustomizationHint": "أدخل فقط الكمية الإضافية التي يضيفها هذا التخصيص. تُخصم الوصفة الأساسية دائمًا أيضًا. مثال: الوصفة الأساسية فيها قطعة جبن واحدة و«جبن إضافي» يستخدم قطعتين، لذا أدخل قطعة واحدة.",
+    "extraTotalWithDefault": "الأساسية <q>{base}</q> + الإضافة <q>{extra}</q> = <q>{total}</q> لكل حصة",
+    "extraTotalNotInDefault": "غير موجود في الوصفة الأساسية. هذه هي الكمية الكاملة: <q>{total}</q> لكل حصة.",
+    "recipeColExtraQty": "تُضاف إلى الأساسية"
   },
   "Loyalty": {
     "settingsMetaTitle": "إعدادات الولاء | حسابي POS",
@@ -2110,7 +2125,10 @@
     "wastageStatPeriod": "فترة الفتح",
     "wastageStatDaysOpen": "{days} أيام",
     "wastageStatUsePercent": "{percent}% من المُصدر",
-    "wastageStatWastePercent": "{percent}% هدر"
+    "wastageStatWastePercent": "{percent}% هدر",
+    "recipeUseRecipe": "وصفة",
+    "recipeUseVariant": "إضافة خيار",
+    "recipeUseCustomization": "إضافة تخصيص"
   },
   "Cashiers": {
     "metaTitle": "الكاشير | حسابي POS",

@@ -204,6 +204,89 @@ export function MenuItemDetailView({ itemId }) {
     return stock.nameEn?.trim() || stock.nameAr
   }
 
+  /**
+   * @param {Array<any>} ingredients
+   * @param {{ extra?: boolean }} [opts] Extras: amount shown as "+150 g"
+   *   (added on top of the default recipe, never a full amount).
+   */
+  function renderIngredientsTable(ingredients, opts = {}) {
+    const extra = opts.extra === true
+    return (
+      <div className={LIST_TABLE_SCROLL_WRAP}>
+        <table className={cn(LIST_TABLE_BASE, 'min-w-[480px]')}>
+          <thead>
+            <tr className={LIST_TABLE_HEAD_ROW}>
+              <th className={listTableThClass(undefined, true)}>
+                {t('recipeColStock')}
+              </th>
+              <th className={listTableThClass()}>
+                {extra ? t('recipeColExtraQty') : t('recipeColQty')}
+              </th>
+              {extra ? null : (
+                <th className={listTableThClass()}>
+                  {t('recipeColUnit')}
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody className={LIST_TABLE_BODY}>
+            {ingredients.map((ing) => (
+              <tr key={ing.id} className={LIST_TABLE_ROW}>
+                <td className={listTableTdClass(undefined, true)}>
+                  {canUpdate && ing.stockItemId ? (
+                    <Link
+                      href={`/stock/items/${ing.stockItemId}`}
+                      className="text-hisabi-primary hover:underline"
+                    >
+                      {stockName(ing.stockItem)}
+                    </Link>
+                  ) : (
+                    stockName(ing.stockItem)
+                  )}
+                </td>
+                <td
+                  className={cn(listTableTdClass(), 'tabular-nums')}
+                >
+                  {extra ? (
+                    <bdi dir="ltr">
+                      +{ing.quantity} {stockUnitLabel(ing.unit)}
+                    </bdi>
+                  ) : (
+                    ing.quantity
+                  )}
+                </td>
+                {extra ? null : (
+                  <td className={listTableTdClass()}>
+                    {stockUnitLabel(
+                      /** @type {import('@/lib/stock/units').StockUnit} */ (
+                        ing.unit
+                      ),
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  /** @param {{ nameAr: string, nameEn: string | null }} row */
+  function modifierName(row) {
+    if (isAr) return row.nameAr
+    return row.nameEn?.trim() || row.nameAr
+  }
+
+  /** @param {{ extraCost: string | null, incomplete: boolean } | undefined} cost */
+  function extraCostText(cost) {
+    if (statsQuery.isPending) return t('extraCostLabel', { amount: '…' })
+    if (cost?.extraCost == null) return t('extraCostMissing')
+    return t('extraCostLabel', {
+      amount: formatSarAmount(cost.extraCost, locale),
+    })
+  }
+
   const prepCostDisplay = useMemo(() => {
     if (statsQuery.isPending) return '…'
     if (stats?.prepCost == null) return '—'
@@ -245,10 +328,33 @@ export function MenuItemDetailView({ itemId }) {
   const customizations = Array.isArray(item.customizations)
     ? item.customizations
     : []
+  // Extra ingredients added on top of the default recipe per chosen option /
+  // customization, with their extra cost (prep cost stays the default recipe).
+  const extras = [
+    ...variantGroups.flatMap((group) =>
+      (group.options ?? [])
+        .filter((o) => Array.isArray(o.ingredients) && o.ingredients.length > 0)
+        .map((o) => ({
+          key: o.id,
+          label: `${modifierName(group)} · ${modifierName(o)}`,
+          ingredients: o.ingredients,
+          cost: stats?.extraCosts?.options?.[o.id],
+        })),
+    ),
+    ...customizations
+      .filter((c) => Array.isArray(c.ingredients) && c.ingredients.length > 0)
+      .map((c) => ({
+        key: c.id,
+        label: modifierName(c),
+        ingredients: c.ingredients,
+        cost: stats?.extraCosts?.customizations?.[c.id],
+      })),
+  ]
   const hasRecipe =
     Boolean(recipe?.steps?.trim()) ||
     Boolean(recipe?.stepsAr?.trim()) ||
-    (Array.isArray(recipe?.ingredients) && recipe.ingredients.length > 0)
+    (Array.isArray(recipe?.ingredients) && recipe.ingredients.length > 0) ||
+    extras.length > 0
 
   return (
     <div className="bg-hisabi-background min-h-[calc(100vh-4rem)] pb-hisabi-xxl">
@@ -555,52 +661,33 @@ export function MenuItemDetailView({ itemId }) {
                     icon={Package}
                     bodyClassName="p-0 sm:p-0"
                   >
-                    <div className={LIST_TABLE_SCROLL_WRAP}>
-                      <table className={cn(LIST_TABLE_BASE, 'min-w-[480px]')}>
-                        <thead>
-                          <tr className={LIST_TABLE_HEAD_ROW}>
-                            <th className={listTableThClass(undefined, true)}>
-                              {t('recipeColStock')}
-                            </th>
-                            <th className={listTableThClass()}>
-                              {t('recipeColQty')}
-                            </th>
-                            <th className={listTableThClass()}>
-                              {t('recipeColUnit')}
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className={LIST_TABLE_BODY}>
-                          {recipe.ingredients.map((ing) => (
-                            <tr key={ing.id} className={LIST_TABLE_ROW}>
-                              <td className={listTableTdClass(undefined, true)}>
-                                {canUpdate && ing.stockItemId ? (
-                                  <Link
-                                    href={`/stock/items/${ing.stockItemId}`}
-                                    className="text-hisabi-primary hover:underline"
-                                  >
-                                    {stockName(ing.stockItem)}
-                                  </Link>
-                                ) : (
-                                  stockName(ing.stockItem)
-                                )}
-                              </td>
-                              <td
-                                className={cn(listTableTdClass(), 'tabular-nums')}
-                              >
-                                {ing.quantity}
-                              </td>
-                              <td className={listTableTdClass()}>
-                                {stockUnitLabel(
-                                  /** @type {import('@/lib/stock/units').StockUnit} */ (
-                                    ing.unit
-                                  ),
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    {renderIngredientsTable(recipe.ingredients)}
+                  </DetailSection>
+                ) : null}
+                {extras.length > 0 ? (
+                  <DetailSection
+                    title={t('recipeExtrasTitle')}
+                    icon={SlidersHorizontal}
+                  >
+                    <div className="space-y-hisabi-lg">
+                      <p className="type-body-sm text-hisabi-on-surface-variant">
+                        {t('recipeExtrasHint')}
+                      </p>
+                      {extras.map((extra) => (
+                        <div key={extra.key} className="space-y-hisabi-sm">
+                          <div className="flex flex-wrap items-baseline justify-between gap-hisabi-sm">
+                            <p className="type-label-md text-hisabi-on-surface">
+                              {extra.label}
+                            </p>
+                            <p className="type-body-sm tabular-nums text-hisabi-on-surface-variant">
+                              {extraCostText(extra.cost)}
+                            </p>
+                          </div>
+                          {renderIngredientsTable(extra.ingredients, {
+                            extra: true,
+                          })}
+                        </div>
+                      ))}
                     </div>
                   </DetailSection>
                 ) : null}

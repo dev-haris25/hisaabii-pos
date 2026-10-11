@@ -2,7 +2,11 @@ import { jsonError, jsonOk } from '@/lib/api/json-response'
 import { handleRouteError } from '@/lib/api/route-error'
 import { requirePosRestaurant } from '@/lib/auth/require-pos-app-user'
 import { businessHasAvailableCoupons } from '@/lib/coupons/has-available-coupons'
-import { mapMenuCategoryToJson, mapMenuItemToJson, menuItemInclude } from '@/lib/menu/map-menu-json'
+import {
+  mapMenuCategoryToJson,
+  mapPosMenuItemToJson,
+  posMenuItemInclude,
+} from '@/lib/menu/map-menu-json'
 import { loadActiveOffers } from '@/lib/offers/load-active-offers'
 import { mapOfferForClient } from '@/lib/offers/map-offer-json'
 import { prisma } from '@/lib/prisma'
@@ -23,7 +27,7 @@ export async function GET() {
         prisma.menuItem.findMany({
           where: { businessProfileId: profileId, active: true },
           orderBy: [{ sortOrder: 'asc' }, { nameAr: 'asc' }],
-          include: menuItemInclude,
+          include: posMenuItemInclude,
         }),
         prisma.businessSettings.findUnique({
           where: { businessProfileId: profileId },
@@ -39,7 +43,7 @@ export async function GET() {
 
     return jsonOk({
       categories: categories.map((c) => mapMenuCategoryToJson(c)),
-      items: items.map(mapMenuItemToJson),
+      items: items.map(mapPosMenuItemToJson),
       discountCap: settings?.discountCap ?? null,
       posOnScreenKeypad: settings?.posOnScreenKeypad === true,
       loyaltyEnabled: loyaltySettings?.enabled === true,

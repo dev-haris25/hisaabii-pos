@@ -122,12 +122,15 @@ export function buildModifiersSnapshotFromItem(
 ) {
   const wantedOptions = new Set(optionIds)
   const wantedCustoms = new Set(customizationIds)
-  /** @type {Array<{ groupNameAr: string, groupNameEn: string | null, optionNameAr: string, optionNameEn: string | null, priceChange: string }>} */
+  // Ids are kept so stock can add each option's / customization's extra
+  // ingredients when the ticket is marked ready.
+  /** @type {Array<{ optionId: string, groupNameAr: string, groupNameEn: string | null, optionNameAr: string, optionNameEn: string | null, priceChange: string }>} */
   const variantOptions = []
   for (const group of item?.variantGroups ?? []) {
     for (const option of group.options ?? []) {
       if (!option.id || !wantedOptions.has(option.id)) continue
       variantOptions.push({
+        optionId: option.id,
         groupNameAr: group.nameAr,
         groupNameEn: group.nameEn ?? null,
         optionNameAr: option.nameAr,
@@ -136,11 +139,12 @@ export function buildModifiersSnapshotFromItem(
       })
     }
   }
-  /** @type {Array<{ nameAr: string, nameEn: string | null, priceChange: string }>} */
+  /** @type {Array<{ customizationId: string, nameAr: string, nameEn: string | null, priceChange: string }>} */
   const customizations = []
   for (const custom of item?.customizations ?? []) {
     if (!custom.id || !wantedCustoms.has(custom.id)) continue
     customizations.push({
+      customizationId: custom.id,
       nameAr: custom.nameAr,
       nameEn: custom.nameEn ?? null,
       priceChange: String(custom.priceChange ?? '0'),
@@ -151,8 +155,11 @@ export function buildModifiersSnapshotFromItem(
 
 /**
  * @param {unknown} raw
+ * Lines saved before ids were stored get `optionId` / `customizationId` null.
+ *
  * @returns {{
  *   variantOptions: Array<{
+ *     optionId: string | null
  *     groupNameAr: string
  *     groupNameEn: string | null
  *     optionNameAr: string
@@ -160,6 +167,7 @@ export function buildModifiersSnapshotFromItem(
  *     priceChange: string
  *   }>
  *   customizations: Array<{
+ *     customizationId: string | null
  *     nameAr: string
  *     nameEn: string | null
  *     priceChange: string
@@ -170,6 +178,7 @@ export function normalizeModifiersSnapshot(raw) {
   const obj = raw && typeof raw === 'object' ? raw : {}
   const variantOptions = Array.isArray(obj.variantOptions)
     ? obj.variantOptions.map((row) => ({
+        optionId: snapshotId(row?.optionId),
         groupNameAr: String(row?.groupNameAr ?? ''),
         groupNameEn:
           row?.groupNameEn != null ? String(row.groupNameEn) : null,
@@ -181,12 +190,18 @@ export function normalizeModifiersSnapshot(raw) {
     : []
   const customizations = Array.isArray(obj.customizations)
     ? obj.customizations.map((row) => ({
+        customizationId: snapshotId(row?.customizationId),
         nameAr: String(row?.nameAr ?? ''),
         nameEn: row?.nameEn != null ? String(row.nameEn) : null,
         priceChange: String(row?.priceChange ?? '0'),
       }))
     : []
   return { variantOptions, customizations }
+}
+
+/** @param {unknown} v */
+function snapshotId(v) {
+  return typeof v === 'string' && v.trim() ? v.trim() : null
 }
 
 /**

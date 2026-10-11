@@ -3,7 +3,7 @@ import { riyadhDayBounds, riyadhOrderDate } from '@/lib/orders/riyadh-order-date
 import { applyStockMovement } from '@/lib/stock/apply-stock-movement'
 import {
   aggregateRecipeStockNeeds,
-  loadRecipesByMenuItemIds,
+  loadStockNeedSources,
 } from '@/lib/stock/recipe-stock-needs'
 import { formatQtyString, parseQty } from '@/lib/stock/units'
 
@@ -36,8 +36,9 @@ export function computeDayEndLineWaste(recipeUsed, userUsed, isBulk) {
 }
 
 /**
- * Recipe qty for the day from ready tickets — includes bulk ingredients
- * (those are not deducted on ready).
+ * Recipe qty for the day from ready tickets (default recipe + option /
+ * customization extras) — includes bulk ingredients (those are not deducted
+ * on ready).
  *
  * @param {import('@/generated/prisma/client').PrismaClient | import('@/generated/prisma/client').Prisma.TransactionClient} db
  * @param {string} businessProfileId
@@ -65,15 +66,16 @@ export async function sumRecipeNeedsForDay(db, businessProfileId, reportDate) {
     }
   }
 
-  const menuItemIds = [
-    ...new Set(lines.map((l) => l.menuItemId).filter(Boolean)),
-  ]
-  const recipes = await loadRecipesByMenuItemIds(
+  const { recipesByMenuItemId, extras } = await loadStockNeedSources(
     db,
     businessProfileId,
-    menuItemIds,
+    lines,
   )
-  const { needs } = aggregateRecipeStockNeeds(lines, recipes)
+  const { needs } = aggregateRecipeStockNeeds(
+    lines,
+    recipesByMenuItemId,
+    extras,
+  )
   /** @type {Map<string, number>} */
   const byItem = new Map()
   for (const need of needs) {

@@ -145,6 +145,7 @@ export function mapMenuItemToJson(row) {
               : null,
           isDefault: option.isDefault,
           sortOrder: option.sortOrder,
+          ...extraIngredientsJson(option),
         })),
     })),
     customizations: customizations.map((rowC) => ({
@@ -153,6 +154,7 @@ export function mapMenuItemToJson(row) {
       nameEn: rowC.nameEn,
       priceChange: rowC.priceChange,
       sortOrder: rowC.sortOrder,
+      ...extraIngredientsJson(rowC),
     })),
     recipe: mapRecipeToJson(row.recipe),
     createdAt: row.createdAt.toISOString(),
@@ -184,13 +186,47 @@ export function mapMenuItemToJson(row) {
  */
 function mapRecipeToJson(recipe) {
   if (!recipe) return null
-  const ingredients = [...(recipe.ingredients ?? [])].sort(
-    (a, b) => a.sortOrder - b.sortOrder,
-  )
   return {
     steps: recipe.steps,
     stepsAr: recipe.stepsAr ?? null,
-    ingredients: ingredients.map((ing) => ({
+    ingredients: mapIngredientsToJson(recipe.ingredients),
+  }
+}
+
+/**
+ * Extra ingredients of a variant option / customization — only when they were
+ * loaded (`menuItemManageInclude`); POS and public payloads never carry them.
+ *
+ * @param {{ ingredients?: Array<any> }} row
+ */
+function extraIngredientsJson(row) {
+  if (!Array.isArray(row.ingredients)) return {}
+  return { ingredients: mapIngredientsToJson(row.ingredients) }
+}
+
+/**
+ * @param {Array<{
+ *   id: string
+ *   stockItemId: string
+ *   quantity: string
+ *   unit: string
+ *   sortOrder: number
+ *   stockItem?: {
+ *     id: string
+ *     nameAr: string
+ *     nameEn: string | null
+ *     unit: string
+ *     unitCost: string | null
+ *     quantityOnHand?: string
+ *     active?: boolean
+ *   } | null
+ * }> | undefined} rows
+ */
+function mapIngredientsToJson(rows) {
+  const ingredients = [...(rows ?? [])].sort(
+    (a, b) => a.sortOrder - b.sortOrder,
+  )
+  return ingredients.map((ing) => ({
       id: ing.id,
       stockItemId: ing.stockItemId,
       quantity: ing.quantity,
@@ -207,8 +243,22 @@ function mapRecipeToJson(recipe) {
             active: ing.stockItem.active,
           }
         : null,
-    })),
-  }
+    }))
+}
+
+const ingredientStockSelect = {
+  id: true,
+  nameAr: true,
+  nameEn: true,
+  unit: true,
+  unitCost: true,
+  quantityOnHand: true,
+  active: true,
+}
+
+const extraIngredientsInclude = {
+  orderBy: { sortOrder: 'asc' },
+  include: { stockItem: { select: ingredientStockSelect } },
 }
 
 export const menuItemInclude = {
@@ -243,6 +293,47 @@ export const menuItemInclude = {
         },
       },
     },
+  },
+}
+
+/**
+ * POS screen catalog: no recipe (ingredients, stock names, unit costs and
+ * on-hand qty stay server-side; checkout loads them itself).
+ */
+export const posMenuItemInclude = {
+  category: menuItemInclude.category,
+  variantGroups: menuItemInclude.variantGroups,
+  customizations: menuItemInclude.customizations,
+}
+
+/**
+ * POS menu item JSON — `mapMenuItemToJson` without the `recipe` field.
+ *
+ * @param {Parameters<typeof mapMenuItemToJson>[0]} row
+ */
+export function mapPosMenuItemToJson(row) {
+  const { recipe: _recipe, ...json } = mapMenuItemToJson(row)
+  return json
+}
+
+/**
+ * Menu management only (item list / detail / form): also loads the extra
+ * ingredients of every variant option and customization.
+ */
+export const menuItemManageInclude = {
+  ...menuItemInclude,
+  variantGroups: {
+    orderBy: { sortOrder: 'asc' },
+    include: {
+      options: {
+        orderBy: { sortOrder: 'asc' },
+        include: { ingredients: extraIngredientsInclude },
+      },
+    },
+  },
+  customizations: {
+    orderBy: { sortOrder: 'asc' },
+    include: { ingredients: extraIngredientsInclude },
   },
 }
 

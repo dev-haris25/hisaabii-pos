@@ -36,6 +36,28 @@ const optionalCalories = z.preprocess((v) => {
 
 const optionalPersistedId = z.string().trim().min(1).max(64).optional()
 
+/** One stock ingredient (qty per 1 menu item) — default recipe and extras. */
+const recipeIngredientSchema = z.object({
+  stockItemId: z.string().trim().min(1),
+  quantity: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d+)?$/)
+    .refine((v) => Number(v) > 0, 'Quantity must be > 0'),
+  unit: z.enum(['piece', 'g', 'kg', 'ml', 'l']),
+})
+
+const RECIPE_INGREDIENTS_MAX = 40
+
+/**
+ * Extra stock for one variant option / customization, added on top of the
+ * default recipe. Array = replace the list; omitted = leave unchanged.
+ */
+const extraIngredientsSchema = z
+  .array(recipeIngredientSchema)
+  .max(RECIPE_INGREDIENTS_MAX)
+  .optional()
+
 const variantOptionBodySchema = z.object({
   /** Existing option id — omit for new options (reconcile update-in-place). */
   id: optionalPersistedId,
@@ -44,6 +66,7 @@ const variantOptionBodySchema = z.object({
   priceChange: moneyString,
   calories: optionalCalories,
   isDefault: z.boolean().optional().default(false),
+  ingredients: extraIngredientsSchema,
 })
 
 const variantGroupBodySchema = z.object({
@@ -55,9 +78,12 @@ const variantGroupBodySchema = z.object({
 })
 
 const customizationBodySchema = z.object({
+  /** Existing customization id — omit for new ones (reconcile update-in-place). */
+  id: optionalPersistedId,
   nameAr: z.string().trim().min(1).max(200),
   nameEn: z.string().trim().max(200).optional().nullable(),
   priceChange: moneyString,
+  ingredients: extraIngredientsSchema,
 })
 
 export const menuItemBodySchema = z.object({
@@ -82,18 +108,8 @@ export const menuItemBodySchema = z.object({
         steps: z.string().trim().max(8000).nullable().optional(),
         stepsAr: z.string().trim().max(8000).nullable().optional(),
         ingredients: z
-          .array(
-            z.object({
-              stockItemId: z.string().trim().min(1),
-              quantity: z
-                .string()
-                .trim()
-                .regex(/^\d+(\.\d+)?$/)
-                .refine((v) => Number(v) > 0, 'Quantity must be > 0'),
-              unit: z.enum(['piece', 'g', 'kg', 'ml', 'l']),
-            }),
-          )
-          .max(40),
+          .array(recipeIngredientSchema)
+          .max(RECIPE_INGREDIENTS_MAX),
       }),
     ])
     .optional(),

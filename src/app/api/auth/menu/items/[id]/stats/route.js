@@ -1,6 +1,9 @@
 import { jsonError, jsonOk } from '@/lib/api/json-response'
 import { handleRouteError } from '@/lib/api/route-error'
-import { computeMenuItemPrepCost } from '@/lib/menu/compute-menu-item-prep-cost'
+import {
+  computeMenuItemExtraCosts,
+  computeMenuItemPrepCost,
+} from '@/lib/menu/compute-menu-item-prep-cost'
 import { requireAdminRestaurant } from '@/lib/menu/require-admin-restaurant'
 import { parseMoney, toMoneyStr } from '@/lib/reports/money'
 import { prisma } from '@/lib/prisma'
@@ -47,6 +50,11 @@ export async function GET(_request, context) {
     }
 
     const prep = await computeMenuItemPrepCost(prisma, auth.profileId, id)
+    const extraCosts = await computeMenuItemExtraCosts(
+      prisma,
+      auth.profileId,
+      id,
+    )
 
     return jsonOk({
       stats: {
@@ -55,6 +63,8 @@ export async function GET(_request, context) {
         revenue: toMoneyStr(revenue),
         prepCost: prep.prepCost,
         prepCostIncomplete: prep.incomplete === true,
+        // Per option / customization id; prepCost stays the default recipe.
+        extraCosts,
       },
     })
   } catch (err) {
