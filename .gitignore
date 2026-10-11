@@ -5,9 +5,9 @@ dist
 build
 
 .env
-!.env.example
+.env.example
 !.env.prod
-!.env.dev
+.env.dev
 
 src/generated
 tmp
@@ -20,13 +20,12 @@ coverage
 
 # Local AI / agent / Cursor / step docs (not required to run the app)
 .cursor
-.docx
 *.docx
 *.md
 AGENTS.md
 CLAUDE.md
 AGENT.md
-rules.md
+
 
 # Editor and OS
 .DS_Store
