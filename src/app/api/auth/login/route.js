@@ -16,7 +16,11 @@ import { verifyPassword } from '@/lib/auth/password'
 import { loginBodySchema } from '@/lib/auth/schemas'
 import { handleRouteError } from '@/lib/api/route-error'
 import { jsonError } from '@/lib/api/json-response'
-import { getClientIp, rateLimitResponse } from '@/lib/api/rate-limit'
+import {
+  getClientIp,
+  hitRateLimit,
+  rateLimitResponse,
+} from '@/lib/api/rate-limit'
 import { prisma } from '@/lib/prisma'
 
 export async function POST(request) {
@@ -35,11 +39,16 @@ export async function POST(request) {
 
     const { email, password, remember } = parsed.data
     const emailNorm = email.toLowerCase()
+    // Unknown client IP (null): the per-IP checks are skipped; the failed
+    // sign-in limit per email applies whatever the IP.
     const ip = getClientIp(request)
-    const limited = rateLimitResponse([
-      ['loginIpEmail', `${ip}|${emailNorm}`],
-      ['loginIp', ip],
-    ])
+    const limited = rateLimitResponse(
+      [
+        ['loginIpEmail', ip ? `${ip}|${emailNorm}` : null],
+        ['loginIp', ip],
+      ],
+      { peek: [['loginFailedEmail', emailNorm]] },
+    )
     if (limited) return limited
 
     const creds = await prisma.user.findUnique({
@@ -58,6 +67,7 @@ export async function POST(request) {
       creds.passwordHash === 'migrated:disabled' ||
       !verifyPassword(password, creds.passwordHash)
     ) {
+      hitRateLimit('loginFailedEmail', emailNorm)
       return jsonError(401, 'INVALID_CREDENTIALS', 'Invalid email or password')
     }
     if (!creds.active) {

@@ -102,6 +102,108 @@ const RECOVERY_DELAY_MS = 2_000
 /** Thrown when checkout gets no HTTP answer in time (handled like a network error). */
 class CheckoutNoResponseError extends Error {}
 
+/**
+ * The checkout answer does not say whether the sale was saved: a network
+ * error, a 5xx (e.g. a proxy 502 / app restart after the sale committed), or
+ * anything that is not the app's own JSON. Handled like a lost connection.
+ */
+class CheckoutOutcomeUnknownError extends Error {
+  /** @param {number} status 0 when there was no HTTP answer */
+  constructor(status) {
+    super(`Checkout outcome unknown (${status})`)
+    this.status = status
+  }
+}
+
+/**
+ * The app's own JSON error body (`{ ok: false, code }`), or null.
+ * @param {unknown} data
+ */
+function appErrorCode(data) {
+  return data &&
+    typeof data === 'object' &&
+    /** @type {any} */ (data).ok === false &&
+    typeof (/** @type {any} */ (data).code) === 'string'
+    ? /** @type {any} */ (data).code
+    : null
+}
+
+/** @param {Response} res */
+async function readJson(res) {
+  try {
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * POST /pos/checkout. Resolves with the sale; throws AuthApiError only for a
+ * definitive "nothing was saved" (the app's own 4xx JSON error); throws
+ * CheckoutOutcomeUnknownError for every other answer.
+ *
+ * @param {Record<string, unknown>} body
+ */
+async function postCheckout(body) {
+  let res
+  try {
+    res = await fetch('/api/auth/pos/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    })
+  } catch {
+    throw new CheckoutOutcomeUnknownError(0)
+  }
+  const data = await readJson(res)
+  if (res.ok) {
+    if (data && typeof data === 'object' && data.invoice) return data
+    throw new CheckoutOutcomeUnknownError(res.status)
+  }
+  const code = appErrorCode(data)
+  if (res.status >= 400 && res.status < 500 && code) {
+    throw new AuthApiError(
+      res.status,
+      code,
+      typeof data.message === 'string' ? data.message : undefined,
+      data.details,
+    )
+  }
+  throw new CheckoutOutcomeUnknownError(res.status)
+}
+
+/**
+ * GET /pos/checkout/lookup for a request key, classified:
+ * `found` (the sale), `notSaved` (the app's 404), `alreadyProcessed` (the
+ * app's 409 CHECKOUT_ALREADY_PROCESSED) or `unknown` (anything else: 5xx,
+ * 401, 403, a non-JSON answer, a network error) — the outcome is still open.
+ *
+ * @param {string} key
+ * @returns {Promise<{ kind: 'found', data: Record<string, any> } | { kind: 'notSaved' | 'alreadyProcessed' | 'unknown' }>}
+ */
+async function lookupCheckout(key) {
+  let res
+  try {
+    res = await fetch(
+      `/api/auth/pos/checkout/lookup?key=${encodeURIComponent(key)}`,
+      { method: 'GET', credentials: 'same-origin' },
+    )
+  } catch {
+    return { kind: 'unknown' }
+  }
+  const data = await readJson(res)
+  if (res.ok && data && typeof data === 'object' && data.invoice) {
+    return { kind: 'found', data }
+  }
+  const code = appErrorCode(data)
+  if (res.status === 404 && code === 'NOT_FOUND') return { kind: 'notSaved' }
+  if (res.status === 409 && code === 'CHECKOUT_ALREADY_PROCESSED') {
+    return { kind: 'alreadyProcessed' }
+  }
+  return { kind: 'unknown' }
+}
+
 function newCheckoutRequestKey() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -331,6 +433,8 @@ export function PosCheckoutView({
   const [checkoutRecovery, setCheckoutRecovery] = useState(
     /** @type {{ key: string, status: 'checking' | 'failed' } | null} */ (null),
   )
+  /** Bumped when the browser closes the recovery dialog (Escape); remounting reopens it. */
+  const [recoveryDialogMount, setRecoveryDialogMount] = useState(0)
   const [givePointsModalOpen, setGivePointsModalOpen] = useState(false)
   /** @type {[{ item: Record<string, unknown> | null, mode: 'add' | 'edit', lineKey: string | null, selection?: Record<string, string>, customizationIds?: string[] }, function]} */
   const [configurator, setConfigurator] = useState({
@@ -964,14 +1068,14 @@ export function PosCheckoutView({
       if (!checkoutKeyRef.current) checkoutKeyRef.current = newCheckoutRequestKey()
       body.requestKey = checkoutKeyRef.current
       writePendingCheckoutKey(checkoutKeyRef.current)
-      return withCheckoutTimeout(authPost('/pos/checkout', body), CHECKOUT_TIMEOUT_MS)
+      return withCheckoutTimeout(postCheckout(body), CHECKOUT_TIMEOUT_MS)
     },
     onSuccess: (data) => {
       completeSale(data, { openDrawer: true })
     },
     onError: (err) => {
-      // No HTTP answer (network error / timeout): the sale may have been
-      // saved. Lock the cart and look it up by the same key.
+      // Outcome unknown (no answer, timeout, 5xx, or not the app's JSON): the
+      // sale may have been saved. Keep the key, lock the cart and look it up.
       if (!(err instanceof AuthApiError)) {
         if (checkoutKeyRef.current) {
           void recoverCheckout(checkoutKeyRef.current)
@@ -980,8 +1084,8 @@ export function PosCheckoutView({
         toast.error(tErr('generic'))
         return
       }
-      // An HTTP answer is definitive: nothing was saved. The cart stays
-      // editable; a retry of this attempt may reuse the key.
+      // The app's own 4xx error is definitive: nothing was saved. The cart
+      // stays editable; a retry of this attempt may reuse the key.
       writePendingCheckoutKey(null)
       handleCheckoutError(err)
     },
@@ -1034,29 +1138,28 @@ export function PosCheckoutView({
     setCheckoutRecovery({ key, status: 'checking' })
     for (let attempt = 0; attempt < RECOVERY_ATTEMPTS; attempt++) {
       if (attempt > 0) await sleep(RECOVERY_DELAY_MS)
-      try {
-        const data = await authGet(
-          `/pos/checkout/lookup?key=${encodeURIComponent(key)}`,
-        )
-        completeSale(data, { openDrawer: true })
+      const result = await lookupCheckout(key)
+      if (result.kind === 'found') {
+        completeSale(result.data, { openDrawer: true })
         return
-      } catch (err) {
-        if (err instanceof AuthApiError && err.status === 404) {
-          writePendingCheckoutKey(null)
-          setCheckoutRecovery(null)
-          toast.message(t('checkoutNotSaved'))
-          return
-        }
-        if (err instanceof AuthApiError && err.code === 'CHECKOUT_ALREADY_PROCESSED') {
-          checkoutKeyRef.current = null
-          writePendingCheckoutKey(null)
-          setCheckoutRecovery(null)
-          toast.error(tErr('CHECKOUT_ALREADY_PROCESSED'))
-          return
-        }
-        // Still no answer (or a transient server error): try again.
       }
+      if (result.kind === 'notSaved') {
+        // Nothing saved: unlock; the next submit of this attempt reuses the key.
+        writePendingCheckoutKey(null)
+        setCheckoutRecovery(null)
+        toast.message(t('checkoutNotSaved'))
+        return
+      }
+      if (result.kind === 'alreadyProcessed') {
+        checkoutKeyRef.current = null
+        writePendingCheckoutKey(null)
+        setCheckoutRecovery(null)
+        toast.error(tErr('CHECKOUT_ALREADY_PROCESSED'))
+        return
+      }
+      // Outcome still unknown (5xx, 401, 403, no answer): keep the key, retry.
     }
+    // Still unknown: stay locked with a manual Retry; the key is kept.
     setCheckoutRecovery({ key, status: 'failed' })
   }
 
@@ -1066,16 +1169,15 @@ export function PosCheckoutView({
     if (!key) return
     let cancelled = false
     void (async () => {
-      try {
-        const data = await authGet(
-          `/pos/checkout/lookup?key=${encodeURIComponent(key)}`,
-        )
-        if (!cancelled) completeSale(data, { recovered: true })
-      } catch (err) {
-        // Not saved (or no longer valid): forget the key silently. A network
-        // error keeps it for the next load.
-        if (err instanceof AuthApiError) writePendingCheckoutKey(null)
+      const result = await lookupCheckout(key)
+      if (cancelled) return
+      if (result.kind === 'found') {
+        completeSale(result.data, { recovered: true })
+      } else if (result.kind === 'notSaved' || result.kind === 'alreadyProcessed') {
+        // Not saved (or since cancelled): forget the key silently.
+        writePendingCheckoutKey(null)
       }
+      // Unknown (5xx, 401, 403, no answer): keep the key for the next load.
     })()
     return () => {
       cancelled = true
@@ -2895,8 +2997,11 @@ export function PosCheckoutView({
       {/* Lost checkout answer: blocks the POS (no dismiss) until we know
           whether the sale was saved. */}
       <HisabiStatusModal
+        key={recoveryDialogMount}
         open={Boolean(checkoutRecovery)}
-        onOpenChange={() => {}}
+        onOpenChange={(open) => {
+          if (!open && checkoutRecovery) setRecoveryDialogMount((n) => n + 1)
+        }}
         variant="warning"
         title={t('checkoutConnectionLostTitle')}
         description={
